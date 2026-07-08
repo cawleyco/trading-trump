@@ -1,0 +1,124 @@
+import { fetchHistoricalCongressTrades } from '../sources/congressData.js';
+import { simulateTrades } from './simulate.js';
+import { insertBacktest } from '../db.js';
+import { log } from '../logger.js';
+
+// Historical pulls are slow (Quiver payload or per-filing eFD scrape); cache
+// the most recent window for an hour and serve narrower requests from it.
+let historicalCache = { data: null, startDate: null, fetchedAt: 0 };
+
+async function getHistoricalTrades(startDate, endDate) {
+  const fresh = Date.now() - historicalCache.fetchedAt < 3600_000;
+  if (historicalCache.data && fresh && historicalCache.startDate <= startDate) {
+    return historicalCache.data.filter(
+      (t) => t.disclosureDate >= startDate && t.disclosureDate <= endDate
+    );
+  }
+  const data = await fetchHistoricalCongressTrades(startDate, endDate);
+  historicalCache = { data, startDate, fetchedAt: Date.now() };
+  return data;
+}
+
+export async function listPoliticians(startDate, endDate) {
+  const start = startDate || new Date(Date.now() - 365 * 86400_000).toISOString().slice(0, 10);
+  const end = endDate || new Date().toISOString().slice(0, 10);
+  const trades = await getHistoricalTrades(start, end);
+  const counts = new Map();
+  for (const t of trades) {
+    counts.set(t.politician, (counts.get(t.politician) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([name, tradeCount]) => ({ name, tradeCount }))
+    .sort((a, b) => b.tradeCount - a.tradeCount);
+}
+
+/**
+ * "If I had copied {politician}'s disclosed trades from {startDate} to {endDate}
+ *  with ${notionalPerTrade} per trade, what would my P&L be?"
+ *
+ * Entries at the first market open after the *disclosure* date (matching the
+ * live system's lag). Exit rule:
+ *  - 'follow': exit when the politician later discloses a sale of that ticker,
+ *              otherwise hold to today
+ *  - 'hold_30' / 'hold_90': fixed holding period in days
+ *  - 'hold_to_present': never exit early
+ */
+function buildPlans(theirs, { startDate, endDate, exitRule, stopLossPct, takeProfitPct }) {
+  const buys = theirs.filter(
+    (t) => t.type === 'buy' && t.disclosureDate >= startDate && t.disclosureDate <= endDate
+  );
+  const sells = theirs.filter((t) => t.type === 'sell');
+
+  return buys.map((t) => {
+    let exitDate = null;
+    let holdDays = null;
+    if (exitRule === 'follow') {
+      const laterSale = sells
+        .filter((s) => s.ticker === t.ticker && s.disclosureDate > t.disclosureDate)
+        .sort((a, b) => a.disclosureDate.localeCompare(b.disclosureDate))[0];
+      exitDate = laterSale ? laterSale.disclosureDate : null;
+    } else if (exitRule === 'hold_30') holdDays = 30;
+    else if (exitRule === 'hold_90') holdDays = 90;
+    // hold_to_present: leave both null
+    return {
+      ticker: t.ticker,
+      direction: 'buy',
+      entryDate: t.disclosureDate,
+      exitDate,
+      holdDays,
+      stopLossPct: stopLossPct ?? null,
+      takeProfitPct: takeProfitPct ?? null,
+      label: `${t.politician} ${t.ticker} (disclosed ${t.disclosureDate})`,
+      meta: { amountRange: t.amountRange, transactionDate: t.transactionDate },
+    };
+  });
+}
+
+export async function runCongressBacktest({ politician, startDate, endDate, notionalPerTrade, exitRule = 'follow', stopLossPct = null, takeProfitPct = null }) {
+  const all = await getHistoricalTrades(startDate, endDate);
+  const theirs = all.filter((t) => t.politician === politician && t.disclosureDate);
+  const plans = buildPlans(theirs, { startDate, endDate, exitRule, stopLossPct, takeProfitPct });
+  const results = await simulateTrades(plans, notionalPerTrade);
+  const params = { politician, startDate, endDate, notionalPerTrade, exitRule, stopLossPct, takeProfitPct };
+  const id = insertBacktest({ kind: 'congress', params, results });
+  return { id, params, results };
+}
+
+/**
+ * Backtest EVERY politician over the period and rank them by return —
+ * "who is actually worth copying?" Shares one historical fetch and the
+ * module-level bars cache across all politicians.
+ */
+export async function runCongressLeaderboard({ startDate, endDate, notionalPerTrade, exitRule = 'hold_90', minTrades = 3 }) {
+  const all = await getHistoricalTrades(startDate, endDate);
+  const byPolitician = new Map();
+  for (const t of all) {
+    if (!t.disclosureDate) continue;
+    if (!byPolitician.has(t.politician)) byPolitician.set(t.politician, []);
+    byPolitician.get(t.politician).push(t);
+  }
+
+  const rows = [];
+  for (const [politician, theirs] of byPolitician) {
+    const plans = buildPlans(theirs, { startDate, endDate, exitRule });
+    if (plans.length < minTrades) continue;
+    // Skip the SPY benchmark per politician — one shared benchmark row instead
+    const results = await simulateTrades(plans, notionalPerTrade, { benchmark: false });
+    if (results.summary.totalTrades < minTrades) continue;
+    rows.push({
+      politician,
+      trades: results.summary.totalTrades,
+      skipped: results.summary.skipped,
+      winRate: results.summary.winRate,
+      totalPnl: results.summary.totalPnl,
+      totalInvested: results.summary.totalInvested,
+      returnPct: results.summary.returnPct,
+    });
+  }
+  rows.sort((a, b) => b.returnPct - a.returnPct);
+
+  const params = { startDate, endDate, notionalPerTrade, exitRule, minTrades };
+  const results = { leaderboard: rows, politiciansConsidered: byPolitician.size };
+  const id = insertBacktest({ kind: 'leaderboard', params, results });
+  return { id, params, results };
+}

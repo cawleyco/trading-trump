@@ -1,0 +1,37 @@
+[
+  {
+    "name": "dry-run",
+    "keyEnv": "ALPACA_PAPER_KEY",
+    "secretEnv": "ALPACA_PAPER_SECRET",
+    "paper": true,
+    "enabled": true,
+    "sources": ["congress", "sentiment"],
+    "risk": {
+      "maxTradeNotionalUsd": 100,
+      "maxTradePctEquity": 2,
+      "maxOpenPositions": 10,
+      "maxTotalExposureUsd": 1000,
+      "maxDailyLossUsd": 50,
+      "maxDailyLossPct": 2
+    },
+    "sentimentConfidenceThreshold": 0.8,
+    "autoExit": { "stopLossPct": 8, "takeProfitPct": 20, "maxHoldDays": 60 }
+  },
+  {
+    "name": "real",
+    "keyEnv": "ALPACA_LIVE_KEY",
+    "secretEnv": "ALPACA_LIVE_SECRET",
+    "paper": false,
+    "enabled": false,
+    "sources": ["congress"],
+    "risk": {
+      "maxTradeNotionalUsd": 50,
+      "maxTradePctEquity": 1,
+      "maxOpenPositions": 5,
+      "maxTotalExposureUsd": 250,
+      "maxDailyLossUsd": 25,
+      "maxDailyLossPct": 1
+    },
+    "autoExit": { "stopLossPct": 8, "takeProfitPct": 20, "maxHoldDays": 60 }
+  }
+]
