@@ -105,6 +105,7 @@ async function collectBars(resp, dateSlice) {
       high: bar.HighPrice,
       low: bar.LowPrice,
       close: bar.ClosePrice,
+      volume: bar.Volume ?? null,
     });
   }
   return bars;
