@@ -37,6 +37,10 @@ export const config = {
   quiverApiKey: process.env.QUIVER_API_KEY || '',
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
 
+  // SEC asks for a contact in the User-Agent of api requests (sec.gov/os/accessing-edgar-data)
+  secContactEmail: process.env.SEC_CONTACT_EMAIL || '',
+  dataCacheDir: path.resolve(__dirname, '..', 'data-cache'),
+
   notify: {
     macos: process.env.NOTIFY_MACOS !== 'false',
     discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL || '',

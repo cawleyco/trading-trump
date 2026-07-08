@@ -6,5 +6,6 @@ funds.json
 *.db-wal
 *.db-shm
 client/dist/
+data-cache/
 .DS_Store
 HALT

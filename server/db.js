@@ -110,6 +110,15 @@ CREATE TABLE IF NOT EXISTS congress_trades (
 CREATE INDEX IF NOT EXISTS idx_ct_ticker ON congress_trades(ticker);
 CREATE INDEX IF NOT EXISTS idx_ct_politician ON congress_trades(politician);
 CREATE INDEX IF NOT EXISTS idx_ct_disclosure ON congress_trades(disclosure_date);
+
+CREATE TABLE IF NOT EXISTS ticker_meta (
+  ticker TEXT PRIMARY KEY,
+  company_name TEXT,
+  cik TEXT,
+  sic TEXT,
+  sector TEXT,           -- coarse bucket from server/lib/sicSectors.js
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // --- migrations for databases created before multi-fund support ---

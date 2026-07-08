@@ -23,6 +23,7 @@ import { makeTradeSignal } from './signal.js';
 import { notify } from './notifier.js';
 import { startCongressPoller } from './sources/congressPoller.js';
 import { startTruthSocialPoller } from './sources/truthSocialPoller.js';
+import { ensureTickerUniverse } from './sources/tickerMeta.js';
 import { startPositionManager } from './positionManager.js';
 import { runCongressBacktest, runCongressLeaderboard, listPoliticians } from './backtest/congressBacktest.js';
 import { runTweetBacktest } from './backtest/tweetBacktest.js';
@@ -249,6 +250,9 @@ app.listen(config.port, '127.0.0.1', () => {
   startCongressPoller();
   startTruthSocialPoller();
   startPositionManager();
+
+  // SEC ticker universe (name/CIK/sector lookups) — background, best-effort
+  ensureTickerUniverse();
 
   // Refresh every fund's P&L / circuit breaker every minute
   setInterval(() => {
