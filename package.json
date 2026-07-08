@@ -9,6 +9,7 @@
     "start": "node server/index.js",
     "build:client": "npm --prefix client run build",
     "dev:client": "npm --prefix client run dev",
+    "backfill": "node scripts/backfill-congress.js",
     "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {
