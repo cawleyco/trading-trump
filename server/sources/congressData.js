@@ -2,6 +2,8 @@ import axios from 'axios';
 import pRetry from 'p-retry';
 import { config } from '../config.js';
 import { fetchSenateTrades } from './senateEfd.js';
+import { parseAmountRange } from '../lib/amountRange.js';
+import { upsertCongressTrade } from '../db.js';
 
 // Normalized congress trade shape used by both the live poller and the backtester:
 // { politician, ticker, type: 'buy'|'sell', transactionDate, disclosureDate, amountRange, raw }
@@ -82,4 +84,33 @@ export async function fetchRecentCongressTrades() {
 
 export function tradeKey(t) {
   return [t.politician, t.ticker, t.transactionDate, t.type, t.amountRange].join('|');
+}
+
+/**
+ * Upsert one normalized trade into the congress_trades archive. Shared by the
+ * live poller and the backfill script. `firstSeenAt` defaults to now; the
+ * backfill passes the disclosure date (best available publish-time estimate).
+ * Returns { id, isNew }.
+ */
+export function archiveTrade(trade, { firstSeenAt = null } = {}) {
+  const { min, max, mid } = parseAmountRange(trade.amountRange);
+  const raw = trade.raw || {};
+  const isSenateEfd = raw.chamber === 'senate' && raw.docId;
+  return upsertCongressTrade({
+    tradeKey: tradeKey(trade),
+    politician: trade.politician,
+    ticker: trade.ticker,
+    type: trade.type,
+    transactionDate: trade.transactionDate,
+    disclosureDate: trade.disclosureDate,
+    firstSeenAt,
+    amountRange: trade.amountRange,
+    amountMin: min,
+    amountMax: max,
+    amountMid: mid,
+    assetDescription: raw.assetName ?? raw.Description ?? null,
+    source: isSenateEfd ? 'senate-efd' : 'quiver',
+    sourceUrl: raw.url ?? null,
+    raw,
+  });
 }

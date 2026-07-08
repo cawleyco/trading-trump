@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { hasSeenCongressTrade, markCongressTradeSeen } from '../db.js';
 import { makeTradeSignal } from '../signal.js';
 import { processSignal } from '../riskManager.js';
-import { fetchRecentCongressTrades, tradeKey } from './congressData.js';
+import { archiveTrade, fetchRecentCongressTrades, tradeKey } from './congressData.js';
 import { log } from '../logger.js';
 
 let firstRun = true;
@@ -22,6 +22,16 @@ export async function pollCongressTrades() {
 
   for (const trade of trades) {
     const key = tradeKey(trade);
+
+    // Archive every fetched trade (idempotent) before the dedup check — the
+    // congress_trades table is the full-row archive; seen_congress_trades
+    // keeps its exact dedup semantics.
+    try {
+      archiveTrade(trade);
+    } catch (err) {
+      log.error('congress', `Failed to archive trade ${key}: ${err.message}`);
+    }
+
     if (hasSeenCongressTrade(key)) continue;
     markCongressTradeSeen(key);
     newCount++;

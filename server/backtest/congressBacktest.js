@@ -1,13 +1,35 @@
 import { fetchHistoricalCongressTrades } from '../sources/congressData.js';
 import { simulateTrades } from './simulate.js';
-import { insertBacktest } from '../db.js';
+import { insertBacktest, listCongressTrades } from '../db.js';
 import { log } from '../logger.js';
 
 // Historical pulls are slow (Quiver payload or per-filing eFD scrape); cache
 // the most recent window for an hour and serve narrower requests from it.
 let historicalCache = { data: null, startDate: null, fetchedAt: 0 };
 
+/** Archived rows (congress_trades) mapped back to the normalized trade shape. */
+function archivedTrades(startDate, endDate) {
+  return listCongressTrades({ since: startDate, until: endDate }).map((r) => {
+    let raw = null;
+    try { raw = r.raw ? JSON.parse(r.raw) : null; } catch { /* keep null */ }
+    return {
+      politician: r.politician,
+      ticker: r.ticker,
+      type: r.type,
+      transactionDate: r.transaction_date,
+      disclosureDate: r.disclosure_date,
+      amountRange: r.amount_range,
+      raw,
+    };
+  });
+}
+
 async function getHistoricalTrades(startDate, endDate) {
+  // The local archive (populated by the poller + backfill script) is the
+  // preferred source; fall back to the network while it's still empty.
+  const archived = archivedTrades(startDate, endDate);
+  if (archived.length > 0) return archived;
+
   const fresh = Date.now() - historicalCache.fetchedAt < 3600_000;
   if (historicalCache.data && fresh && historicalCache.startDate <= startDate) {
     return historicalCache.data.filter(

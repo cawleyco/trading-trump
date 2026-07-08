@@ -84,6 +84,32 @@ CREATE TABLE IF NOT EXISTS backtests (
   results TEXT NOT NULL,            -- JSON: summary + per-trade breakdown + curve
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS congress_trades (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  trade_key TEXT UNIQUE NOT NULL,        -- same key as seen_congress_trades
+  politician TEXT NOT NULL,
+  politician_id TEXT,                    -- bioguide id, filled by Phase 6; NULL ok
+  ticker TEXT NOT NULL,
+  type TEXT NOT NULL,                    -- 'buy' | 'sell'
+  transaction_date TEXT,                 -- YYYY-MM-DD
+  disclosure_date TEXT,                  -- YYYY-MM-DD (filing date)
+  first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),  -- when WE first saw it (publish time)
+  amount_range TEXT,                     -- raw band string e.g. "$15,001 - $50,000"
+  amount_min REAL, amount_max REAL, amount_mid REAL,      -- parsed from the band
+  asset_description TEXT,                -- raw asset text when available
+  owner TEXT,                            -- 'self' | 'spouse' | 'dependent' | NULL
+  is_option INTEGER NOT NULL DEFAULT 0,
+  option_detail TEXT,                    -- JSON {type,strike,expiry} when parseable
+  source TEXT NOT NULL,                  -- 'quiver' | 'senate-efd'
+  source_url TEXT,                       -- link to the original filing when known
+  parse_confidence REAL NOT NULL DEFAULT 1.0,  -- Phase 1 fills this
+  amendment_of TEXT,                     -- trade_key this row amends, if any
+  raw TEXT                               -- original JSON row
+);
+CREATE INDEX IF NOT EXISTS idx_ct_ticker ON congress_trades(ticker);
+CREATE INDEX IF NOT EXISTS idx_ct_politician ON congress_trades(politician);
+CREATE INDEX IF NOT EXISTS idx_ct_disclosure ON congress_trades(disclosure_date);
 `);
 
 // --- migrations for databases created before multi-fund support ---
@@ -208,6 +234,54 @@ export function getActiveKillSwitchEvent(fund) {
       `SELECT * FROM kill_switch_events WHERE reset_at IS NULL AND fund = ? ORDER BY id DESC LIMIT 1`
     )
     .get(fund || 'default');
+}
+
+/**
+ * Insert a trade into the congress_trades archive (INSERT OR IGNORE by
+ * trade_key). Returns { id, isNew }. `firstSeenAt` null = now (live poller);
+ * backfill passes the disclosure date as the best available estimate.
+ */
+export function upsertCongressTrade(t) {
+  const res = db
+    .prepare(
+      `INSERT OR IGNORE INTO congress_trades
+         (trade_key, politician, ticker, type, transaction_date, disclosure_date,
+          first_seen_at, amount_range, amount_min, amount_max, amount_mid,
+          asset_description, owner, is_option, option_detail, source, source_url,
+          parse_confidence, amendment_of, raw)
+       VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 1.0), ?, ?)`
+    )
+    .run(
+      t.tradeKey, t.politician, t.ticker, t.type,
+      t.transactionDate ?? null, t.disclosureDate ?? null, t.firstSeenAt ?? null,
+      t.amountRange ?? null, t.amountMin ?? null, t.amountMax ?? null, t.amountMid ?? null,
+      t.assetDescription ?? null, t.owner ?? null, t.isOption ? 1 : 0,
+      t.optionDetail ? JSON.stringify(t.optionDetail) : null,
+      t.source, t.sourceUrl ?? null,
+      t.parseConfidence ?? null, t.amendmentOf ?? null,
+      t.raw ? JSON.stringify(t.raw) : null
+    );
+  if (res.changes > 0) return { id: res.lastInsertRowid, isNew: true };
+  const existing = db.prepare(`SELECT id FROM congress_trades WHERE trade_key = ?`).get(t.tradeKey);
+  return { id: existing?.id ?? null, isNew: false };
+}
+
+export function getCongressTradeByKey(tradeKey) {
+  return db.prepare(`SELECT * FROM congress_trades WHERE trade_key = ?`).get(tradeKey) || null;
+}
+
+export function listCongressTrades({ politician, ticker, since, until, limit } = {}) {
+  const where = [];
+  const params = [];
+  if (politician) { where.push('politician = ?'); params.push(politician); }
+  if (ticker) { where.push('ticker = ?'); params.push(ticker); }
+  if (since) { where.push('disclosure_date >= ?'); params.push(since); }
+  if (until) { where.push('disclosure_date <= ?'); params.push(until); }
+  let sql = `SELECT * FROM congress_trades` +
+    (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
+    ` ORDER BY disclosure_date DESC, id DESC`;
+  if (limit) { sql += ` LIMIT ?`; params.push(limit); }
+  return db.prepare(sql).all(...params);
 }
 
 export function hasSeenCongressTrade(tradeKey) {
