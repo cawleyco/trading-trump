@@ -180,7 +180,7 @@ The overfitting guard. `runWalkForward` splits the range into `folds` contiguous
 
 Merges the public archive of Trump's posts (~15 MB JSON, cached 1 hour) with **posts the bot's own poller has collected** (the archive lags — results include its coverage dates and warn when your range falls outside), samples up to `maxPosts` **evenly across the range**, classifies them with the **same** Claude classifier used live, and simulates every above-threshold ticker (daily `holdDays` or intraday `holdHours`, optional SL/TP). Results include every post's classification with per-ticker confidences and whether it traded — so "no trades" is always explainable — plus scanned/classified/no-impact/below-threshold counts.
 
-All backtest kinds persist params + full results in the `backtests` table for instant reload later.
+All backtest kinds persist params + full results in the `backtests` table for instant reload later. The dashboard also has reusable research presets stored in `backtest_presets`, so common setups can be named, reapplied, and updated without re-entering every parameter.
 
 ## Web server & dashboard (`server/index.js`, `client/`)
 

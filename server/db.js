@@ -87,6 +87,15 @@ CREATE TABLE IF NOT EXISTS backtests (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS backtest_presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  kind TEXT NOT NULL,
+  params TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS congress_trades (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   trade_key TEXT UNIQUE NOT NULL,        -- same key as seen_congress_trades
@@ -697,6 +706,11 @@ function parseApprovalRow(row) {
   return { ...row, proposed: jsonOrNull(row.proposed) ?? {} };
 }
 
+function parseBacktestPresetRow(row) {
+  if (!row) return null;
+  return { ...row, params: jsonOrNull(row.params) ?? {} };
+}
+
 function seedStrategiesIfEmpty() {
   const row = db.prepare(`SELECT COUNT(*) AS count FROM strategies`).get();
   if (Number(row?.count ?? 0) > 0) return;
@@ -713,6 +727,45 @@ export function listStrategies({ includeDisabled = true } = {}) {
     .prepare(`SELECT * FROM strategies ${includeDisabled ? '' : 'WHERE enabled = 1'} ORDER BY id ASC`)
     .all()
     .map(parseStrategyRow);
+}
+
+export function listBacktestPresets() {
+  return db
+    .prepare(`SELECT * FROM backtest_presets ORDER BY updated_at DESC, id DESC`)
+    .all()
+    .map(parseBacktestPresetRow);
+}
+
+export function getBacktestPreset(id) {
+  return parseBacktestPresetRow(db.prepare(`SELECT * FROM backtest_presets WHERE id = ?`).get(id));
+}
+
+export function createBacktestPreset({ name, kind, params }) {
+  const res = db
+    .prepare(`INSERT INTO backtest_presets (name, kind, params) VALUES (?, ?, ?)`)
+    .run(name, kind, JSON.stringify(params ?? {}));
+  return getBacktestPreset(res.lastInsertRowid);
+}
+
+export function updateBacktestPreset(id, { name, kind, params }) {
+  const current = getBacktestPreset(id);
+  if (!current) return null;
+  db.prepare(
+    `UPDATE backtest_presets
+     SET name = ?, kind = ?, params = ?, updated_at = datetime('now')
+     WHERE id = ?`
+  ).run(
+    name ?? current.name,
+    kind ?? current.kind,
+    JSON.stringify(params ?? current.params),
+    id
+  );
+  return getBacktestPreset(id);
+}
+
+export function deleteBacktestPreset(id) {
+  const res = db.prepare(`DELETE FROM backtest_presets WHERE id = ?`).run(id);
+  return res.changes > 0;
 }
 
 export function getStrategy(id) {

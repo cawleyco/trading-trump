@@ -8,9 +8,12 @@ export default function Backtest() {
   const [kind, setKind] = useState('congress')
   const [politicians, setPoliticians] = useState([])
   const [history, setHistory] = useState([])
+  const [presets, setPresets] = useState([])
   const [running, setRunning] = useState(false)
+  const [savingPreset, setSavingPreset] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+  const [presetName, setPresetName] = useState('')
 
   // congress form
   const [politician, setPolitician] = useState('')
@@ -38,7 +41,83 @@ export default function Backtest() {
       if (p.length) setPolitician((current) => current || p[0].name)
     }).catch((e) => setError(`Could not load politician list: ${e.message}`))
     api.backtests().then(setHistory).catch(() => {})
+    api.backtestPresets().then(setPresets).catch(() => {})
   }, [])
+
+  const currentParams = () => ({
+    politician,
+    exitRule,
+    entryBasis,
+    minTrades,
+    folds,
+    topN,
+    holdValue,
+    holdUnit,
+    maxPosts,
+    threshold,
+    startDate,
+    endDate,
+    notional,
+    stopLoss,
+    takeProfit,
+  })
+
+  const applyPreset = (preset) => {
+    const p = preset.params || {}
+    setKind(preset.kind)
+    if (p.politician != null) setPolitician(p.politician)
+    if (p.exitRule != null) setExitRule(p.exitRule)
+    if (p.entryBasis != null) setEntryBasis(p.entryBasis)
+    if (p.minTrades != null) setMinTrades(Number(p.minTrades))
+    if (p.folds != null) setFolds(Number(p.folds))
+    if (p.topN != null) setTopN(Number(p.topN))
+    if (p.holdValue != null) setHoldValue(Number(p.holdValue))
+    if (p.holdUnit != null) setHoldUnit(p.holdUnit)
+    if (p.maxPosts != null) setMaxPosts(Number(p.maxPosts))
+    if (p.threshold != null) setThreshold(Number(p.threshold))
+    if (p.startDate != null) setStartDate(p.startDate)
+    if (p.endDate != null) setEndDate(p.endDate)
+    if (p.notional != null) setNotional(Number(p.notional))
+    if (p.stopLoss != null) setStopLoss(p.stopLoss)
+    if (p.takeProfit != null) setTakeProfit(p.takeProfit)
+    setPresetName(preset.name)
+    setResult(null)
+    setCompare(null)
+  }
+
+  const savePreset = async () => {
+    const name = presetName.trim()
+    if (!name) {
+      setError('Name the preset before saving it.')
+      return
+    }
+    setSavingPreset(true)
+    setError(null)
+    try {
+      const existing = presets.find((p) => p.name.toLowerCase() === name.toLowerCase())
+      const body = { name, kind, params: currentParams() }
+      if (existing) {
+        await api.updateBacktestPreset(existing.id, body)
+      } else {
+        await api.createBacktestPreset(body)
+      }
+      setPresets(await api.backtestPresets())
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setSavingPreset(false)
+    }
+  }
+
+  const removePreset = async (id) => {
+    setError(null)
+    try {
+      await api.deleteBacktestPreset(id)
+      setPresets(await api.backtestPresets())
+    } catch (e) {
+      setError(e.message)
+    }
+  }
 
   const run = async () => {
     setRunning(true)
@@ -109,6 +188,41 @@ export default function Backtest() {
   return (
     <div>
       <section style={card}>
+        <h3>Research Presets</h3>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <Field label="Load setup">
+            <select value="" onChange={(e) => {
+              const preset = presets.find((p) => String(p.id) === e.target.value)
+              if (preset) applyPreset(preset)
+            }} style={{ minWidth: 240 }}>
+              <option value="">Choose a saved preset</option>
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>{p.name} · {labelKind(p.kind)}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Preset name">
+            <input value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder="e.g. Top 5 disclosure walk-forward" style={{ minWidth: 300 }} />
+          </Field>
+          <button onClick={savePreset} disabled={savingPreset}>
+            {savingPreset ? 'Saving…' : 'Save current setup'}
+          </button>
+        </div>
+        {presets.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+            {presets.slice(0, 8).map((p) => (
+              <div key={p.id} style={presetPill}>
+                <button onClick={() => applyPreset(p)} style={pillButton} title={describePreset(p)}>
+                  {p.name}
+                </button>
+                <button onClick={() => removePreset(p.id)} style={deletePillButton} title={`Delete ${p.name}`}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section style={{ ...card, marginTop: 16 }}>
         <h3>Run a Backtest</h3>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <Field label="Strategy">
@@ -275,6 +389,22 @@ export default function Backtest() {
   )
 }
 
+function labelKind(kind) {
+  if (kind === 'congress') return 'Politician copy'
+  if (kind === 'leaderboard') return 'Leaderboard'
+  if (kind === 'walk-forward') return 'Walk-forward'
+  if (kind === 'tweet') return 'Post sentiment'
+  return kind
+}
+
+function describePreset(preset) {
+  const p = preset.params || {}
+  if (preset.kind === 'congress') return `${p.politician || 'Politician'}, ${p.startDate || '?'} to ${p.endDate || '?'}, ${p.exitRule || 'exit'}`
+  if (preset.kind === 'leaderboard') return `${p.startDate || '?'} to ${p.endDate || '?'}, min ${p.minTrades || '?'} trades`
+  if (preset.kind === 'walk-forward') return `${p.folds || '?'} folds, top ${p.topN || '?'}, ${p.startDate || '?'} to ${p.endDate || '?'}`
+  return `${p.startDate || '?'} to ${p.endDate || '?'}, confidence >= ${p.threshold ?? '?'}`
+}
+
 function describeParams(h) {
   const p = h.params
   const slTp = (p.stopLossPct || p.takeProfitPct)
@@ -362,6 +492,7 @@ function WalkForwardResults({ result }) {
         Each fold ranks politicians in-sample, then copies only the top {topN} into the next (unseen) fold.
         Out-of-sample return is the honest estimate; a big drop from in-sample rank is overfitting.
       </p>
+      {aggregate && <ResultQuality results={aggregate} label="Out-of-sample quality" />}
       <table>
         <thead>
           <tr><th>Fold</th><th>Train → Test window</th><th>Top politicians (in-sample)</th><th>OOS trades</th><th>OOS return</th><th>SPY</th></tr>
@@ -492,6 +623,7 @@ function Results({ result }) {
           `${r.noImpactPosts ?? '?'} no market impact, ${r.belowThresholdTickers ?? '?'} ticker calls below threshold`}
         {r.fellBackToDaily > 0 && ` · ${r.fellBackToDaily} trades fell back to daily bars (no minute data)`}
       </p>
+      <ResultQuality results={result.results} />
 
       {chartData.length > 1 && (
         <div style={{ height: 280 }}>
@@ -576,6 +708,79 @@ function Results({ result }) {
   )
 }
 
+function ResultQuality({ results, label = 'Result quality' }) {
+  const summary = results?.summary
+  if (!summary) return null
+  const trades = results.trades || []
+  const executed = trades.filter((t) => !t.skipped)
+  const biggest = executed.length
+    ? executed.reduce((best, t) => Math.abs(t.pnl || 0) > Math.abs(best.pnl || 0) ? t : best, executed[0])
+    : null
+  const concentrationPct = biggest && summary.totalPnl
+    ? Math.abs((biggest.pnl / summary.totalPnl) * 100)
+    : null
+  const hasCosts = executed.some((t) => (t.slippageBps || 0) > 0 || (t.feePerTradeUsd || 0) > 0)
+  const benchmarkDelta = results.benchmark
+    ? Number((summary.returnPct - results.benchmark.returnPct).toFixed(2))
+    : null
+  const checks = [
+    {
+      label: 'Sample',
+      value: `${summary.totalTrades} trades`,
+      tone: summary.totalTrades >= 30 ? 'good' : summary.totalTrades >= 10 ? 'warn' : 'bad',
+      detail: summary.totalTrades >= 30 ? 'broad enough to start trusting' : summary.totalTrades >= 10 ? 'usable, but still thin' : 'too small for much confidence',
+    },
+    {
+      label: 'Benchmark',
+      value: results.benchmark ? `${benchmarkDelta >= 0 ? '+' : ''}${benchmarkDelta}% vs SPY` : 'not run',
+      tone: results.benchmark ? (benchmarkDelta > 0 ? 'good' : 'bad') : 'warn',
+      detail: results.benchmark ? (benchmarkDelta > 0 ? 'beat the market baseline' : 'trailed the market baseline') : 'no index comparison available',
+    },
+    {
+      label: 'Data coverage',
+      value: `${summary.skipped || 0} skipped`,
+      tone: summary.skipped ? 'warn' : 'good',
+      detail: summary.skipped ? 'some trades had no usable price data' : 'all planned trades had price data',
+    },
+    {
+      label: 'Costs',
+      value: hasCosts ? 'included' : 'not included',
+      tone: hasCosts ? 'good' : 'warn',
+      detail: hasCosts ? 'returns include slippage or fees' : 'results may be optimistic',
+    },
+    {
+      label: 'Concentration',
+      value: concentrationPct == null ? 'n/a' : `${Math.round(concentrationPct)}% biggest trade`,
+      tone: concentrationPct == null ? 'warn' : concentrationPct <= 35 ? 'good' : concentrationPct <= 60 ? 'warn' : 'bad',
+      detail: concentrationPct == null ? 'not enough profit dispersion to measure' : concentrationPct <= 35 ? 'not dominated by one trade' : 'one trade explains a large share of P&L',
+    },
+  ]
+
+  return (
+    <div style={qualityBox}>
+      <div style={{ fontSize: '0.82em', color: '#a1a1aa', fontWeight: 700, marginBottom: 8 }}>{label}</div>
+      <div style={qualityGrid}>
+        {checks.map((c) => (
+          <div key={c.label} style={{ ...qualityItem, borderColor: toneColor(c.tone, 0.45) }}>
+            <div style={{ color: toneColor(c.tone), fontWeight: 750 }}>{c.value}</div>
+            <div style={{ color: '#f3f4f6', fontSize: '0.78em', marginTop: 2 }}>{c.label}</div>
+            <div style={{ color: '#a1a1aa', fontSize: '0.76em', marginTop: 3 }}>{c.detail}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function toneColor(tone, alpha = 1) {
+  const colors = {
+    good: `rgba(134, 239, 172, ${alpha})`,
+    warn: `rgba(234, 179, 8, ${alpha})`,
+    bad: `rgba(252, 165, 165, ${alpha})`,
+  }
+  return colors[tone] || colors.warn
+}
+
 function Field({ label, children }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.8em', color: '#a1a1aa' }}>
@@ -588,6 +793,53 @@ function Field({ label, children }) {
 const card = {
   background: '#16181d',
   border: '1px solid #26282f',
-  borderRadius: 10,
+  borderRadius: 8,
   padding: '16px 20px',
+}
+
+const presetPill = {
+  display: 'inline-flex',
+  alignItems: 'stretch',
+  border: '1px solid #344255',
+  borderRadius: 6,
+  overflow: 'hidden',
+  background: '#111821',
+}
+
+const pillButton = {
+  border: 0,
+  borderRadius: 0,
+  background: 'transparent',
+  padding: '6px 9px',
+}
+
+const deletePillButton = {
+  borderWidth: '0 0 0 1px',
+  borderColor: '#344255',
+  borderRadius: 0,
+  background: 'transparent',
+  padding: '6px 8px',
+  color: '#a1a1aa',
+}
+
+const qualityBox = {
+  border: '1px solid #26282f',
+  borderRadius: 8,
+  padding: 12,
+  margin: '12px 0',
+  background: '#111821',
+}
+
+const qualityGrid = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+  gap: 8,
+}
+
+const qualityItem = {
+  border: '1px solid',
+  borderRadius: 6,
+  padding: 10,
+  minHeight: 86,
+  background: '#16181d',
 }

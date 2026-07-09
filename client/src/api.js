@@ -116,6 +116,21 @@ export const api = {
   politicians: () => req('/api/politicians'),
   backtests: () => req('/api/backtests'),
   backtest: (id) => req(`/api/backtests/${id}`),
+  backtestPresets: () => req('/api/backtest-presets'),
+  createBacktestPreset: (body) =>
+    req('/api/backtest-presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  updateBacktestPreset: (id, body) =>
+    req(`/api/backtest-presets/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  deleteBacktestPreset: (id) =>
+    req(`/api/backtest-presets/${id}`, { method: 'DELETE' }),
   runCongressBacktest: (body) =>
     req('/api/backtests/congress', {
       method: 'POST',

@@ -14,6 +14,10 @@ import {
   resetKillSwitch,
   listBacktests,
   getBacktest,
+  listBacktestPresets,
+  createBacktestPreset,
+  updateBacktestPreset,
+  deleteBacktestPreset,
   listReviewQueue,
   resolveReviewItem,
   getCongressTradeByKey,
@@ -498,6 +502,56 @@ app.get('/api/attribution', (req, res) => {
 
 // ---------- backtests ----------
 app.get('/api/backtests', (req, res) => res.json(listBacktests()));
+
+const BACKTEST_KINDS = new Set(['congress', 'leaderboard', 'walk-forward', 'tweet']);
+
+function validateBacktestPresetBody(body, { partial = false } = {}) {
+  const patch = {};
+  if (!partial || body?.name != null) {
+    const name = String(body?.name || '').trim();
+    if (!name) throw new Error('name is required');
+    patch.name = name;
+  }
+  if (!partial || body?.kind != null) {
+    const kind = String(body?.kind || '').trim();
+    if (!BACKTEST_KINDS.has(kind)) throw new Error(`kind must be one of ${Array.from(BACKTEST_KINDS).join(', ')}`);
+    patch.kind = kind;
+  }
+  if (!partial || body?.params != null) {
+    if (!body?.params || Array.isArray(body.params) || typeof body.params !== 'object') {
+      throw new Error('params must be an object');
+    }
+    patch.params = body.params;
+  }
+  return patch;
+}
+
+app.get('/api/backtest-presets', (req, res) => res.json(listBacktestPresets()));
+
+app.post('/api/backtest-presets', (req, res) => {
+  try {
+    res.status(201).json(createBacktestPreset(validateBacktestPresetBody(req.body)));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/backtest-presets/:id', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });
+  try {
+    const updated = updateBacktestPreset(Number(req.params.id), validateBacktestPresetBody(req.body, { partial: true }));
+    if (!updated) return res.status(404).json({ error: 'preset not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/backtest-presets/:id', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });
+  if (!deleteBacktestPreset(Number(req.params.id))) return res.status(404).json({ error: 'preset not found' });
+  res.json({ deleted: Number(req.params.id) });
+});
 
 app.get('/api/backtests/:id', (req, res) => {
   if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });

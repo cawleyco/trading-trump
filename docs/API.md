@@ -412,6 +412,56 @@ Tweet backtests additionally include: `postsInRange`, `postsScanned`, `classifie
 
 List past runs (params only) / fetch one with full results. Nothing is recomputed.
 
+### `GET /api/backtest-presets`
+
+Lists saved reusable backtest setups, newest updated first.
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Top 5 disclosure walk-forward",
+    "kind": "walk-forward",
+    "params": {
+      "startDate": "2025-01-01",
+      "endDate": "2026-01-01",
+      "notional": 1000,
+      "folds": 4,
+      "topN": 5,
+      "entryBasis": "disclosure"
+    },
+    "updated_at": "2026-07-09 12:00:00"
+  }
+]
+```
+
+### `POST /api/backtest-presets`
+
+Creates a named preset. `kind` must be `congress`, `leaderboard`, `walk-forward`, or `tweet`; `params` is the saved dashboard form state.
+
+```json
+{
+  "name": "Gary Peters 90d realistic",
+  "kind": "congress",
+  "params": {
+    "politician": "Gary C Peters",
+    "startDate": "2025-07-01",
+    "endDate": "2026-07-01",
+    "notional": 1000,
+    "exitRule": "hold_90",
+    "entryBasis": "disclosure"
+  }
+}
+```
+
+### `PUT /api/backtest-presets/:id`
+
+Updates any subset of `name`, `kind`, or `params`. Returns the updated preset.
+
+### `DELETE /api/backtest-presets/:id`
+
+Deletes a saved preset. Returns `{ "deleted": id }`.
+
 ## Errors
 
 All endpoints return `{ "error": "message" }` with status 400 (bad input), 404 (not found), or 500 (upstream failure: Alpaca auth, eFD rate limit, Claude API, etc.). Backtest and status errors are also logged to stdout with component context.
