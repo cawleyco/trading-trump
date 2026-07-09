@@ -118,8 +118,21 @@ Per-politician disclosure-speed stats over the archive, fastest median first. `m
   "notionalPerTrade": 1000,          // required, dollars per copied trade
   "exitRule": "follow",              // follow | hold_30 | hold_90 | hold_to_present
   "stopLossPct": 8,                  // optional, exit at -8% (checked bar by bar)
-  "takeProfitPct": 20                // optional, exit at +20%
+  "takeProfitPct": 20,               // optional, exit at +20%
+  "entryBasis": "disclosure"         // disclosure (default) | transaction | first_seen
 }
+```
+
+`entryBasis` chooses which date becomes the entry: `disclosure` (realistic — first open after the filing, the live system's behavior), `transaction` (**fantasy** upper bound — assumes you knew on the trade date; results echo `entryBasis` and the UI banners it), or `first_seen` (when our poller actually saw it; ≈ disclosure for backfilled rows). The window is always a disclosure-date range, so all bases compare the same set of trades. `results.entryBasis` echoes the choice.
+
+### `POST /api/backtests/congress/compare`
+
+Same body as `/api/backtests/congress` (no `entryBasis`). Runs the params under `transaction` and `disclosure` and returns both, plus the return gap — the fantasy-vs-realistic delta the disclosure lag costs.
+
+```json
+{ "transaction": { "id": 8, "results": { "...": "..." } },
+  "disclosure":  { "id": 9, "results": { "...": "..." } },
+  "gapPct": 4.2 }
 ```
 
 ### `POST /api/backtests/congress-leaderboard`
@@ -129,7 +142,8 @@ Per-politician disclosure-speed stats over the archive, fastest median first. `m
   "startDate": "2026-01-01", "endDate": "2026-07-01",  // required
   "notionalPerTrade": 1000,                              // required
   "exitRule": "hold_90",                                 // default hold_90
-  "minTrades": 3                                         // skip politicians with fewer (default 3)
+  "minTrades": 3,                                        // skip politicians with fewer (default 3)
+  "entryBasis": "disclosure"                             // disclosure (default) | transaction | first_seen
 }
 ```
 

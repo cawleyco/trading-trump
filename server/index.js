@@ -30,7 +30,7 @@ import { startCongressPoller } from './sources/congressPoller.js';
 import { startTruthSocialPoller } from './sources/truthSocialPoller.js';
 import { ensureTickerUniverse } from './sources/tickerMeta.js';
 import { startPositionManager } from './positionManager.js';
-import { runCongressBacktest, runCongressLeaderboard, listPoliticians } from './backtest/congressBacktest.js';
+import { runCongressBacktest, runCongressLeaderboard, runEntryBasisComparison, listPoliticians, ENTRY_BASES } from './backtest/congressBacktest.js';
 import { runTweetBacktest } from './backtest/tweetBacktest.js';
 import { getAttribution } from './attribution.js';
 import { log } from './logger.js';
@@ -206,6 +206,12 @@ app.get('/api/politicians', async (req, res) => {
   }
 });
 
+function validEntryBasis(v) {
+  if (v == null) return 'disclosure';
+  if (!ENTRY_BASES.includes(v)) throw new Error(`entryBasis must be one of ${ENTRY_BASES.join(', ')}`);
+  return v;
+}
+
 app.post('/api/backtests/congress', async (req, res) => {
   try {
     const { politician, startDate, endDate, notionalPerTrade, exitRule, stopLossPct, takeProfitPct } = req.body;
@@ -221,10 +227,34 @@ app.post('/api/backtests/congress', async (req, res) => {
         exitRule,
         stopLossPct: stopLossPct ? Number(stopLossPct) : null,
         takeProfitPct: takeProfitPct ? Number(takeProfitPct) : null,
+        entryBasis: validEntryBasis(req.body.entryBasis),
       })
     );
   } catch (err) {
     log.error('server', `Congress backtest failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/backtests/congress/compare', async (req, res) => {
+  try {
+    const { politician, startDate, endDate, notionalPerTrade, exitRule, stopLossPct, takeProfitPct } = req.body;
+    if (!politician || !startDate || !endDate || !notionalPerTrade) {
+      return res.status(400).json({ error: 'politician, startDate, endDate, notionalPerTrade required' });
+    }
+    res.json(
+      await runEntryBasisComparison({
+        politician,
+        startDate,
+        endDate,
+        notionalPerTrade: Number(notionalPerTrade),
+        exitRule,
+        stopLossPct: stopLossPct ? Number(stopLossPct) : null,
+        takeProfitPct: takeProfitPct ? Number(takeProfitPct) : null,
+      })
+    );
+  } catch (err) {
+    log.error('server', `Compare-modes backtest failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });
@@ -242,6 +272,7 @@ app.post('/api/backtests/congress-leaderboard', async (req, res) => {
         notionalPerTrade: Number(notionalPerTrade),
         exitRule,
         minTrades: minTrades ? Number(minTrades) : 3,
+        entryBasis: validEntryBasis(req.body.entryBasis),
       })
     );
   } catch (err) {

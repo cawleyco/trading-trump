@@ -15,7 +15,9 @@ export default function Backtest() {
   // congress form
   const [politician, setPolitician] = useState('')
   const [exitRule, setExitRule] = useState('follow')
+  const [entryBasis, setEntryBasis] = useState('disclosure')
   const [minTrades, setMinTrades] = useState(3)
+  const [compare, setCompare] = useState(null)
   // tweet form
   const [holdValue, setHoldValue] = useState(1)
   const [holdUnit, setHoldUnit] = useState('days')
@@ -40,6 +42,7 @@ export default function Backtest() {
     setRunning(true)
     setError(null)
     setResult(null)
+    setCompare(null)
     try {
       const body = {
         startDate, endDate, notionalPerTrade: notional,
@@ -48,9 +51,9 @@ export default function Backtest() {
       }
       let res
       if (kind === 'congress') {
-        res = await api.runCongressBacktest({ ...body, politician, exitRule })
+        res = await api.runCongressBacktest({ ...body, politician, exitRule, entryBasis })
       } else if (kind === 'leaderboard') {
-        res = await api.runLeaderboard({ startDate, endDate, notionalPerTrade: notional, exitRule, minTrades })
+        res = await api.runLeaderboard({ startDate, endDate, notionalPerTrade: notional, exitRule, minTrades, entryBasis })
       } else {
         res = await api.runTweetBacktest({
           ...body,
@@ -71,7 +74,26 @@ export default function Backtest() {
 
   const loadPast = async (id) => {
     setError(null)
+    setCompare(null)
     setResult(await api.backtest(id))
+  }
+
+  const runCompare = async () => {
+    setRunning(true)
+    setError(null)
+    setResult(null)
+    setCompare(null)
+    try {
+      setCompare(await api.compareEntryBasis({
+        politician, startDate, endDate, notionalPerTrade: notional, exitRule,
+        stopLossPct: stopLoss !== '' ? Number(stopLoss) : undefined,
+        takeProfitPct: takeProfit !== '' ? Number(takeProfit) : undefined,
+      }))
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setRunning(false)
+    }
   }
 
   const runFullFor = (name) => {
@@ -110,6 +132,16 @@ export default function Backtest() {
                 <option value="hold_30">Hold 30 days</option>
                 <option value="hold_90">Hold 90 days</option>
                 <option value="hold_to_present">Hold to present</option>
+              </select>
+            </Field>
+          )}
+
+          {(kind === 'congress' || kind === 'leaderboard') && (
+            <Field label="Entry basis">
+              <select value={entryBasis} onChange={(e) => setEntryBasis(e.target.value)}>
+                <option value="disclosure">Disclosure date (realistic)</option>
+                <option value="transaction">Transaction date (fantasy)</option>
+                <option value="first_seen">First seen (live copier)</option>
               </select>
             </Field>
           )}
@@ -164,7 +196,17 @@ export default function Backtest() {
           <button onClick={run} disabled={running} style={{ borderColor: '#6366f1' }}>
             {running ? 'Running…' : 'Run backtest'}
           </button>
+          {kind === 'congress' && (
+            <button onClick={runCompare} disabled={running} title="Run transaction vs disclosure basis side by side">
+              Compare modes
+            </button>
+          )}
         </div>
+        {(kind === 'congress' || kind === 'leaderboard') && entryBasis === 'transaction' && (
+          <p style={{ background: '#7f1d1d', borderRadius: 6, padding: '8px 12px', marginTop: 10 }}>
+            ⚠️ Fantasy mode: assumes you knew on the trade date — not achievable. Upper bound only.
+          </p>
+        )}
         {kind === 'tweet' && (
           <p style={{ color: '#a1a1aa', fontSize: '0.8em' }}>
             Each post is classified with a Claude API call — the post cap keeps cost bounded.
@@ -178,6 +220,8 @@ export default function Backtest() {
         )}
         {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
       </section>
+
+      {compare && <CompareResults compare={compare} />}
 
       {result && (result.results.leaderboard
         ? <LeaderboardResults result={result} onPick={runFullFor} />
@@ -254,8 +298,45 @@ function LeaderboardResults({ result, onPick }) {
   )
 }
 
+function CompareResults({ compare }) {
+  const t = compare.transaction.results.summary
+  const d = compare.disclosure.results.summary
+  const row = (label, s, note) => (
+    <tr>
+      <td>{label}</td>
+      <td>{s.totalTrades}</td>
+      <td>{s.winRate}%</td>
+      <td style={{ color: s.returnPct < 0 ? '#fca5a5' : '#86efac' }}>
+        {s.returnPct >= 0 ? '+' : ''}{s.returnPct}%
+      </td>
+      <td style={{ color: '#a1a1aa', fontSize: '0.85em' }}>{note}</td>
+    </tr>
+  )
+  return (
+    <section style={{ ...card, marginTop: 24 }}>
+      <h3>Fantasy vs realistic — the disclosure gap</h3>
+      <p style={{ background: '#7f1d1d', borderRadius: 6, padding: '8px 12px' }}>
+        ⚠️ Transaction basis assumes you knew on the trade date — not achievable. Upper bound only.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Basis</th><th>Trades</th><th>Win rate</th><th>Return</th><th /></tr>
+        </thead>
+        <tbody>
+          {row('Transaction (fantasy)', t, 'you cannot know before disclosure')}
+          {row('Disclosure (realistic)', d, 'what a live copier could achieve')}
+        </tbody>
+      </table>
+      <p style={{ marginTop: 8 }}>
+        The disclosure lag costs <strong style={{ color: '#eab308' }}>{compare.gapPct >= 0 ? '' : '+'}{(-compare.gapPct).toFixed(2)} pts</strong> of return
+        {' '}({t.returnPct}% → {d.returnPct}%).
+      </p>
+    </section>
+  )
+}
+
 function Results({ result }) {
-  const { summary, curve, trades, warning, classifications, benchmark } = result.results
+  const { summary, curve, trades, warning, classifications, benchmark, entryBasis } = result.results
   const r = result.results
 
   // Merge strategy + benchmark curves into one dataset for the chart
@@ -273,6 +354,14 @@ function Results({ result }) {
     <section style={{ ...card, marginTop: 24 }}>
       {warning && (
         <p style={{ background: '#7f1d1d', borderRadius: 6, padding: '8px 12px' }}>⚠️ {warning}</p>
+      )}
+      {entryBasis === 'transaction' && (
+        <p style={{ background: '#7f1d1d', borderRadius: 6, padding: '8px 12px' }}>
+          ⚠️ Fantasy mode (transaction-date entry): assumes you knew on the trade date — not achievable. Upper bound only.
+        </p>
+      )}
+      {entryBasis && entryBasis !== 'transaction' && (
+        <p style={{ color: '#a1a1aa', fontSize: '0.8em', margin: '0 0 4px' }}>Entry basis: {entryBasis}</p>
       )}
       <h3>
         Result: {summary.totalPnl >= 0 ? '+' : ''}${summary.totalPnl.toLocaleString()}

@@ -45,6 +45,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  compareEntryBasis: (body) =>
+    req('/api/backtests/congress/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   runTweetBacktest: (body) =>
     req('/api/backtests/tweet', {
       method: 'POST',

@@ -18,6 +18,7 @@ function archivedTrades(startDate, endDate) {
       type: r.type,
       transactionDate: r.transaction_date,
       disclosureDate: r.disclosure_date,
+      firstSeenAt: r.first_seen_at,
       amountRange: r.amount_range,
       raw,
     };
@@ -58,52 +59,90 @@ export async function listPoliticians(startDate, endDate) {
  * "If I had copied {politician}'s disclosed trades from {startDate} to {endDate}
  *  with ${notionalPerTrade} per trade, what would my P&L be?"
  *
- * Entries at the first market open after the *disclosure* date (matching the
- * live system's lag). Exit rule:
+ * Entry basis (which date becomes the entry) is one of:
+ *  - 'transaction': the trade date itself — a fantasy upper bound, not
+ *                   achievable (you can't know before disclosure)
+ *  - 'disclosure' (default): first open after the disclosure date, matching
+ *                   the live system's lag
+ *  - 'first_seen': when our poller actually saw it (truest copy entry; only
+ *                  meaningful for rows collected live, else ≈ disclosure)
+ *
+ * Exit rule:
  *  - 'follow': exit when the politician later discloses a sale of that ticker,
  *              otherwise hold to today
  *  - 'hold_30' / 'hold_90': fixed holding period in days
  *  - 'hold_to_present': never exit early
  */
-function buildPlans(theirs, { startDate, endDate, exitRule, stopLossPct, takeProfitPct }) {
+export const ENTRY_BASES = ['transaction', 'disclosure', 'first_seen'];
+
+function entryDateFor(t, entryBasis) {
+  if (entryBasis === 'transaction') return t.transactionDate || null;
+  if (entryBasis === 'first_seen') return (t.firstSeenAt || t.disclosureDate)?.slice(0, 10) || null;
+  return t.disclosureDate || null; // disclosure (default)
+}
+
+function buildPlans(theirs, { startDate, endDate, exitRule, stopLossPct, takeProfitPct, entryBasis = 'disclosure' }) {
+  // The window is always a disclosure-date range (what a live copier could
+  // have known about), so all entry bases compare the same set of trades.
   const buys = theirs.filter(
     (t) => t.type === 'buy' && t.disclosureDate >= startDate && t.disclosureDate <= endDate
   );
   const sells = theirs.filter((t) => t.type === 'sell');
 
-  return buys.map((t) => {
-    let exitDate = null;
-    let holdDays = null;
-    if (exitRule === 'follow') {
-      const laterSale = sells
-        .filter((s) => s.ticker === t.ticker && s.disclosureDate > t.disclosureDate)
-        .sort((a, b) => a.disclosureDate.localeCompare(b.disclosureDate))[0];
-      exitDate = laterSale ? laterSale.disclosureDate : null;
-    } else if (exitRule === 'hold_30') holdDays = 30;
-    else if (exitRule === 'hold_90') holdDays = 90;
-    // hold_to_present: leave both null
-    return {
-      ticker: t.ticker,
-      direction: 'buy',
-      entryDate: t.disclosureDate,
-      exitDate,
-      holdDays,
-      stopLossPct: stopLossPct ?? null,
-      takeProfitPct: takeProfitPct ?? null,
-      label: `${t.politician} ${t.ticker} (disclosed ${t.disclosureDate})`,
-      meta: { amountRange: t.amountRange, transactionDate: t.transactionDate },
-    };
-  });
+  return buys
+    .map((t) => {
+      const entryDate = entryDateFor(t, entryBasis);
+      if (!entryDate) return null; // e.g. transaction basis with no trade date
+      let exitDate = null;
+      let holdDays = null;
+      if (exitRule === 'follow') {
+        const laterSale = sells
+          .filter((s) => s.ticker === t.ticker && s.disclosureDate > t.disclosureDate)
+          .sort((a, b) => a.disclosureDate.localeCompare(b.disclosureDate))[0];
+        exitDate = laterSale ? laterSale.disclosureDate : null;
+      } else if (exitRule === 'hold_30') holdDays = 30;
+      else if (exitRule === 'hold_90') holdDays = 90;
+      // hold_to_present: leave both null
+      return {
+        ticker: t.ticker,
+        direction: 'buy',
+        entryDate,
+        exitDate,
+        holdDays,
+        stopLossPct: stopLossPct ?? null,
+        takeProfitPct: takeProfitPct ?? null,
+        label: `${t.politician} ${t.ticker} (disclosed ${t.disclosureDate})`,
+        meta: { amountRange: t.amountRange, transactionDate: t.transactionDate },
+      };
+    })
+    .filter(Boolean);
 }
 
-export async function runCongressBacktest({ politician, startDate, endDate, notionalPerTrade, exitRule = 'follow', stopLossPct = null, takeProfitPct = null }) {
+export async function runCongressBacktest({ politician, startDate, endDate, notionalPerTrade, exitRule = 'follow', stopLossPct = null, takeProfitPct = null, entryBasis = 'disclosure' }) {
   const all = await getHistoricalTrades(startDate, endDate);
   const theirs = all.filter((t) => t.politician === politician && t.disclosureDate);
-  const plans = buildPlans(theirs, { startDate, endDate, exitRule, stopLossPct, takeProfitPct });
+  const plans = buildPlans(theirs, { startDate, endDate, exitRule, stopLossPct, takeProfitPct, entryBasis });
   const results = await simulateTrades(plans, notionalPerTrade);
-  const params = { politician, startDate, endDate, notionalPerTrade, exitRule, stopLossPct, takeProfitPct };
+  results.entryBasis = entryBasis;
+  const params = { politician, startDate, endDate, notionalPerTrade, exitRule, stopLossPct, takeProfitPct, entryBasis };
   const id = insertBacktest({ kind: 'congress', params, results });
   return { id, params, results };
+}
+
+/**
+ * Run the same params under 'transaction' (fantasy) and 'disclosure'
+ * (realistic) bases — the gap between them is the product insight.
+ */
+export async function runEntryBasisComparison(opts) {
+  const transaction = await runCongressBacktest({ ...opts, entryBasis: 'transaction' });
+  const disclosure = await runCongressBacktest({ ...opts, entryBasis: 'disclosure' });
+  return {
+    transaction,
+    disclosure,
+    gapPct: Number(
+      (transaction.results.summary.returnPct - disclosure.results.summary.returnPct).toFixed(2)
+    ),
+  };
 }
 
 /**
@@ -111,7 +150,7 @@ export async function runCongressBacktest({ politician, startDate, endDate, noti
  * "who is actually worth copying?" Shares one historical fetch and the
  * module-level bars cache across all politicians.
  */
-export async function runCongressLeaderboard({ startDate, endDate, notionalPerTrade, exitRule = 'hold_90', minTrades = 3 }) {
+export async function runCongressLeaderboard({ startDate, endDate, notionalPerTrade, exitRule = 'hold_90', minTrades = 3, entryBasis = 'disclosure' }) {
   const all = await getHistoricalTrades(startDate, endDate);
   const byPolitician = new Map();
   for (const t of all) {
@@ -122,7 +161,7 @@ export async function runCongressLeaderboard({ startDate, endDate, notionalPerTr
 
   const rows = [];
   for (const [politician, theirs] of byPolitician) {
-    const plans = buildPlans(theirs, { startDate, endDate, exitRule });
+    const plans = buildPlans(theirs, { startDate, endDate, exitRule, entryBasis });
     if (plans.length < minTrades) continue;
     // Skip the SPY benchmark per politician — one shared benchmark row instead
     const results = await simulateTrades(plans, notionalPerTrade, { benchmark: false });
@@ -139,8 +178,8 @@ export async function runCongressLeaderboard({ startDate, endDate, notionalPerTr
   }
   rows.sort((a, b) => b.returnPct - a.returnPct);
 
-  const params = { startDate, endDate, notionalPerTrade, exitRule, minTrades };
-  const results = { leaderboard: rows, politiciansConsidered: byPolitician.size };
+  const params = { startDate, endDate, notionalPerTrade, exitRule, minTrades, entryBasis };
+  const results = { leaderboard: rows, politiciansConsidered: byPolitician.size, entryBasis };
   const id = insertBacktest({ kind: 'leaderboard', params, results });
   return { id, params, results };
 }
