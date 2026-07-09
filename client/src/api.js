@@ -48,6 +48,8 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     }),
+  thesisCard: (tradeKey, force = false) =>
+    req(`/api/intel/card/${encodeURIComponent(tradeKey)}${force ? '?force=true' : ''}`),
   reviewQueue: (status = 'pending') => req(`/api/review-queue?status=${status}`),
   resolveReview: (id, status) =>
     req(`/api/review-queue/${id}/resolve`, {

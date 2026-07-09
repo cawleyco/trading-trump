@@ -106,6 +106,8 @@ Sell-signal sizing is special: a sell closes up to the whole existing position (
 | Variable | Default | Meaning |
 |---|---|---|
 | `SENTIMENT_MODEL` | `claude-haiku-4-5-20251001` | Claude model for classification. Haiku is fast/cheap and sufficient for short-text classification; check current model names/pricing at platform.claude.com before changing. |
+| `THESIS_LLM` | `false` | When `true`, thesis cards are additionally rewritten into a short analyst note by Claude. Off by default — cards are deterministic and free. Any API error falls back to the deterministic card silently. |
+| `THESIS_MODEL` | `SENTIMENT_MODEL` (else Haiku) | Claude model used for the optional thesis-card polish. |
 | `PORT` | `3000` | Dashboard/API port. The server binds to `127.0.0.1` only — it is not reachable from other machines, which is also why the dashboard has no login. |
 
 ## Files the bot manages

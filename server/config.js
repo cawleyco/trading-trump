@@ -84,6 +84,13 @@ export const config = {
 
   sentimentModel: process.env.SENTIMENT_MODEL || 'claude-haiku-4-5-20251001',
 
+  // Thesis cards are deterministic by default; THESIS_LLM=true adds an optional,
+  // fault-tolerant Claude rewrite of the card into an analyst note.
+  thesis: {
+    llmEnabled: process.env.THESIS_LLM === 'true',
+    model: process.env.THESIS_MODEL || process.env.SENTIMENT_MODEL || 'claude-haiku-4-5-20251001',
+  },
+
   port: num('PORT', 3000),
 };
 

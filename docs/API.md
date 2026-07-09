@@ -158,6 +158,25 @@ Archive feed joined to persisted scores, newest first. Filters are optional; `re
 ]
 ```
 
+### `GET /api/intel/card/:tradeKey`
+
+Deterministic, template-based thesis card for one archived trade. Scores the trade first if it has no persisted score, then builds and caches the card in `thesis_cards` (rebuilt automatically when the trade's score is newer). Pass `?force=true` to rebuild unconditionally. `polished` is a Claude-written analyst note, present only when `THESIS_LLM=true` and the call succeeds; it is `null` otherwise (the deterministic card still renders). The path segment contains `|` and spaces — URL-encode it.
+
+```json
+{ "trade_key": "Jane Doe|NVDA|2026-06-20|buy|$50,001 - $100,000",
+  "score_computed_at": "2026-07-08 06:30:00",
+  "polished": null,
+  "cached": false,
+  "card": {
+    "what": "Rep. Jane Doe purchased NVDA ($50k–$100k) on 2026-06-20, disclosed 2026-06-27.",
+    "whyItMatters": ["Repeat purchase — 3rd NVDA buy in 90 days.", "3 members traded NVDA the same direction within 30 days."],
+    "sinceThen": "NVDA is up 3.1% since the trade date and up 1.2% since disclosure.",
+    "signal": { "copyScore": 82, "confidence": 0.86, "recommendation": "copy-candidate", "politicianEdge": "Top-quartile 90-day returns (edge 78/100)." },
+    "risks": ["Disclosure lag of 7 days."],
+    "suggestedAction": "copy-candidate" }
+}
+```
+
 ## Backtesting
 
 ### `GET /api/politicians`

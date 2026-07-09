@@ -19,6 +19,7 @@ import {
 import { filingSpeedLeaderboard } from './intel/freshnessReports.js';
 import { getStatsProfile, listStats, refreshAllPoliticianStats } from './intel/politicianStats.js';
 import { rescoreRecentTrades, scoreTrade } from './intel/scoreRunner.js';
+import { getOrBuildThesisCard } from './intel/cardRunner.js';
 import { driftSincePct } from './marketData.js';
 import { fundClients, getFundClient } from './alpacaClient.js';
 import {
@@ -206,6 +207,17 @@ app.get('/api/intel/drift/:tradeKey', async (req, res) => {
 app.post('/api/intel/score/:tradeKey', async (req, res) => {
   try {
     res.json(await scoreTrade(req.params.tradeKey, { force: req.body?.force === true }));
+  } catch (err) {
+    const status = err.message.startsWith('unknown trade key') ? 404 : 500;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// Deterministic thesis card for one trade (scores + caches on demand).
+// tradeKey contains "|" and spaces — clients must URL-encode it.
+app.get('/api/intel/card/:tradeKey', async (req, res) => {
+  try {
+    res.json(await getOrBuildThesisCard(req.params.tradeKey, { force: req.query.force === 'true' }));
   } catch (err) {
     const status = err.message.startsWith('unknown trade key') ? 404 : 500;
     res.status(status).json({ error: err.message });

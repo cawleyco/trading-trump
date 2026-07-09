@@ -122,6 +122,7 @@ function TradeTable({ rows, expanded, setExpanded, scoreOne }) {
             {expanded === r.trade_key && (
               <tr>
                 <td colSpan={10}>
+                  {r.score != null && <ThesisCard tradeKey={r.trade_key} />}
                   <FactorBreakdown row={r} />
                 </td>
               </tr>
@@ -154,6 +155,77 @@ function Warnings({ warnings }) {
         </span>
       ))}
     </span>
+  )
+}
+
+function ThesisCard({ tradeKey }) {
+  const [card, setCard] = useState(null)
+  const [polished, setPolished] = useState(null)
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let live = true
+    setLoading(true)
+    setError(null)
+    api.thesisCard(tradeKey)
+      .then((data) => {
+        if (!live) return
+        setCard(data.card)
+        setPolished(data.polished || null)
+      })
+      .catch((e) => live && setError(e.message))
+      .finally(() => live && setLoading(false))
+    return () => { live = false }
+  }, [tradeKey])
+
+  if (loading) return <div style={{ ...cardBox, color: '#a1a1aa' }}>Building thesis card…</div>
+  if (error) return <div style={{ ...cardBox, color: '#fca5a5' }}>Card error: {error}</div>
+  if (!card) return null
+
+  return (
+    <div style={cardBox}>
+      {polished && (
+        <p style={{ margin: '0 0 12px', fontStyle: 'italic', color: '#d4d4d8', lineHeight: 1.5 }}>{polished}</p>
+      )}
+      <CardSection title="What happened">
+        <p style={{ margin: 0 }}>{card.what}</p>
+      </CardSection>
+      {card.whyItMatters?.length > 0 && (
+        <CardSection title="Why it might matter">
+          <ul style={bullets}>{card.whyItMatters.map((s, i) => <li key={i}>{s}</li>)}</ul>
+        </CardSection>
+      )}
+      {card.sinceThen && (
+        <CardSection title="Since then">
+          <p style={{ margin: 0 }}>{card.sinceThen}</p>
+        </CardSection>
+      )}
+      <CardSection title="Signal strength">
+        <p style={{ margin: 0 }}>
+          Copy score <strong>{card.signal.copyScore}</strong> · confidence {Math.round((card.signal.confidence ?? 0) * 100)}% ·{' '}
+          <Recommendation value={card.signal.recommendation} />
+        </p>
+        {card.signal.politicianEdge && <p style={{ margin: '4px 0 0', color: '#a1a1aa' }}>{card.signal.politicianEdge}</p>}
+      </CardSection>
+      {card.risks?.length > 0 && (
+        <CardSection title="Risks">
+          <ul style={bullets}>{card.risks.map((s, i) => <li key={i} style={{ color: '#fca5a5' }}>{s}</li>)}</ul>
+        </CardSection>
+      )}
+      <CardSection title="Suggested action">
+        <Recommendation value={card.suggestedAction} />
+      </CardSection>
+    </div>
+  )
+}
+
+function CardSection({ title, children }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ color: '#71717a', fontSize: '0.72em', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{title}</div>
+      {children}
+    </div>
   )
 }
 
@@ -208,4 +280,19 @@ const chip = {
   borderRadius: 999,
   padding: '2px 7px',
   fontSize: '0.78em',
+}
+
+const cardBox = {
+  background: '#0f1115',
+  border: '1px solid #26282f',
+  borderRadius: 8,
+  padding: 14,
+  marginBottom: 10,
+}
+
+const bullets = {
+  margin: 0,
+  paddingLeft: 18,
+  display: 'grid',
+  gap: 3,
 }

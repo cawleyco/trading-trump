@@ -162,6 +162,14 @@ CREATE TABLE IF NOT EXISTS trade_scores (
   computed_at TEXT NOT NULL DEFAULT (datetime('now')),
   inputs_hash TEXT
 );
+
+CREATE TABLE IF NOT EXISTS thesis_cards (
+  trade_key TEXT PRIMARY KEY REFERENCES congress_trades(trade_key),
+  card TEXT NOT NULL,                -- deterministic card JSON
+  polished TEXT,                     -- optional LLM analyst note
+  score_computed_at TEXT,            -- score's computed_at when built (cache invalidation)
+  computed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // --- migrations for databases created before multi-fund support ---
@@ -455,6 +463,28 @@ export function upsertTradeScore({ tradeKey, score, confidence, recommendation, 
 
 export function getTradeScore(tradeKey) {
   return parseTradeScoreRow(db.prepare(`SELECT * FROM trade_scores WHERE trade_key = ?`).get(tradeKey));
+}
+
+function parseThesisCardRow(row) {
+  if (!row) return null;
+  return { ...row, card: row.card ? JSON.parse(row.card) : null };
+}
+
+export function getThesisCard(tradeKey) {
+  return parseThesisCardRow(db.prepare(`SELECT * FROM thesis_cards WHERE trade_key = ?`).get(tradeKey));
+}
+
+export function upsertThesisCard({ tradeKey, card, polished, scoreComputedAt }) {
+  db.prepare(
+    `INSERT INTO thesis_cards (trade_key, card, polished, score_computed_at, computed_at)
+     VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(trade_key) DO UPDATE SET
+       card = excluded.card,
+       polished = excluded.polished,
+       score_computed_at = excluded.score_computed_at,
+       computed_at = datetime('now')`
+  ).run(tradeKey, JSON.stringify(card ?? {}), polished ?? null, scoreComputedAt ?? null);
+  return getThesisCard(tradeKey);
 }
 
 export function listRecentTradeKeys(days = 60) {
