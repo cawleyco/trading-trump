@@ -3,10 +3,14 @@ import { api } from '../api.js'
 
 export default function StatusBar() {
   const [status, setStatus] = useState(null)
+  const [posture, setPosture] = useState({})
   const [error, setError] = useState(null)
 
   const refresh = () => {
     api.status().then((s) => { setStatus(s); setError(null) }).catch((e) => setError(e.message))
+    api.posture()
+      .then((p) => setPosture(Object.fromEntries((p.funds || []).map((f) => [f.name, f]))))
+      .catch(() => {})
   }
 
   useEffect(() => {
@@ -33,13 +37,20 @@ export default function StatusBar() {
         </span>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
-        {status.funds.map((f) => <FundChip key={f.name} fund={f} live={live} onChange={refresh} />)}
+        {status.funds.map((f) => <FundChip key={f.name} fund={f} posture={posture[f.name]} live={live} onChange={refresh} />)}
       </div>
     </div>
   )
 }
 
-function FundChip({ fund, live, onChange }) {
+function autoLabel(posture) {
+  if (!posture) return null
+  if (posture.autoStrategiesEffective) return 'auto: ON'
+  if (posture.allowAutoStrategies) return 'auto: opted-in (needs live)'
+  return 'auto: off'
+}
+
+function FundChip({ fund, posture, live, onChange }) {
   const onHalt = async () => {
     if (!confirm(`Halt fund "${fund.name}"? Its open orders will be cancelled.`)) return
     await api.halt('dashboard fund chip', fund.name)
@@ -70,6 +81,7 @@ function FundChip({ fund, live, onChange }) {
           {fund.halted ? 'HALTED' : fund.paper ? 'PAPER' : 'LIVE'} {fund.name}
           <span style={{ color: 'var(--color-text-muted)', fontWeight: 400, fontSize: '0.8em' }}>
             {' '}· {fund.paper ? 'paper' : 'LIVE'} · {fund.sources.join('+')}
+            {posture && <> · {autoLabel(posture)} · {posture.activeStrategies} strat</>}
           </span>
         </div>
         <div style={{ fontSize: '0.8em', color: 'var(--color-text-muted)' }}>

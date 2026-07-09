@@ -13,6 +13,7 @@ async function req(path, options) {
 
 export const api = {
   status: () => req('/api/status'),
+  posture: () => req('/api/posture'),
   signals: (limit = 100) => req(`/api/signals?limit=${limit}`),
   auditSignal: (signalId) => req(`/api/audit/signal/${encodeURIComponent(signalId)}`),
   auditOrder: (orderId) => req(`/api/audit/order/${encodeURIComponent(orderId)}`),

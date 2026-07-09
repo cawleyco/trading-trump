@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import cron from 'node-cron';
-import { config, enabledFunds } from './config.js';
+import { config, enabledFunds, assertStrategyModeAllowed, fundPosture } from './config.js';
 import {
   listSignalsWithDecisions,
   getSeenPost,
@@ -183,6 +183,25 @@ app.get('/api/status', async (req, res) => {
   });
 });
 
+// ---------- compliance posture (Phase 12.1) ----------
+// Per-fund mode-ladder posture plus its active strategy count, grouped by the
+// strategy's target fund. Powers the startup log line and the UI status bar.
+function buildPosture() {
+  const activeByFund = {};
+  for (const s of listStrategies({ includeDisabled: false })) {
+    const fund = s.definition?.action?.fund || 'paper';
+    activeByFund[fund] = (activeByFund[fund] || 0) + 1;
+  }
+  return enabledFunds.map((f) => ({
+    ...fundPosture(f),
+    activeStrategies: activeByFund[f.name] || 0,
+  }));
+}
+
+app.get('/api/posture', (req, res) => {
+  res.json({ tradingMode: config.tradingMode, funds: buildPosture() });
+});
+
 // ---------- signals / decisions log ----------
 app.get('/api/signals', (req, res) => {
   res.json(listSignalsWithDecisions(Number(req.query.limit) || 100));
@@ -283,6 +302,7 @@ app.post('/api/strategies', (req, res) => {
     const name = String(req.body?.name || '').trim();
     if (!name) return res.status(400).json({ error: 'name is required' });
     const definition = validateStrategyDefinition(req.body?.definition);
+    assertStrategyModeAllowed(definition.action);
     res.status(201).json(createStrategy({ name, enabled: req.body?.enabled !== false, definition }));
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -298,7 +318,10 @@ app.put('/api/strategies/:id', (req, res) => {
       if (!patch.name) return res.status(400).json({ error: 'name cannot be empty' });
     }
     if (req.body?.enabled != null) patch.enabled = !!req.body.enabled;
-    if (req.body?.definition != null) patch.definition = validateStrategyDefinition(req.body.definition);
+    if (req.body?.definition != null) {
+      patch.definition = validateStrategyDefinition(req.body.definition);
+      assertStrategyModeAllowed(patch.definition.action);
+    }
     const updated = updateStrategy(Number(req.params.id), patch);
     if (!updated) return res.status(404).json({ error: 'strategy not found' });
     res.json(updated);
@@ -1188,6 +1211,15 @@ app.listen(config.port, '127.0.0.1', () => {
     log.info('server', `Fund "${fund.name}": ${fund.paper ? 'PAPER' : 'LIVE'} account, sources [${fund.sources.join(', ')}]${fund.autoExit ? ', auto-exit on' : ''}`);
   }
   log.info('server', `Dashboard: http://localhost:${config.port}`);
+  // Mode-ladder posture summary, one line per fund (Phase 12.1).
+  for (const p of buildPosture()) {
+    log.info(
+      'server',
+      `Posture "${p.name}": ${p.tradingMode}, ${p.account} account, ` +
+        `auto-strategies ${p.autoStrategiesEffective ? 'ENABLED' : p.allowAutoStrategies ? 'opted-in (needs live)' : 'disabled'}, ` +
+        `${p.activeStrategies} active strateg${p.activeStrategies === 1 ? 'y' : 'ies'}`
+    );
+  }
   log.info('server', `================================================================`);
 
   for (const client of fundClients.values()) {

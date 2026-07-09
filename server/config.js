@@ -175,6 +175,7 @@ function loadFunds() {
         risk: riskFromEnv(),
         sentimentConfidenceThreshold: config.signals.sentimentConfidenceThreshold,
         autoExit: null,
+        allowAutoStrategies: false,
       },
     ];
   }
@@ -238,6 +239,7 @@ function loadFunds() {
       risk,
       sentimentConfidenceThreshold,
       autoExit: f.autoExit || null,
+      allowAutoStrategies: f.allowAutoStrategies === true,
     };
   });
 }
@@ -255,4 +257,44 @@ for (const f of enabledFunds) {
       `[config] Fund "${f.name}" targets the LIVE Alpaca account and TRADING_MODE=live — real money will move.`
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Mode ladder (Phase 12.1): research → paper → manual → semi-auto. Fully
+// automatic strategy execution is the top rung and is gated twice: the target
+// fund must opt in (funds.json "allowAutoStrategies": true) AND the process must
+// run live (TRADING_MODE=live). Anything short of both is refused at save time.
+// ---------------------------------------------------------------------------
+
+export function getFund(name) {
+  return funds.find((f) => f.name === name) || null;
+}
+
+/** Throw if a strategy's action.mode is not permitted for its target fund. */
+export function assertStrategyModeAllowed(action) {
+  if (!action || action.mode !== 'auto') return;
+  const fund = getFund(action.fund);
+  if (!fund) throw new Error(`auto-mode strategy targets unknown fund "${action.fund}"`);
+  if (!fund.allowAutoStrategies) {
+    throw new Error(
+      `fund "${fund.name}" does not permit auto-mode strategies — set "allowAutoStrategies": true in funds.json ` +
+        'or use a lower mode (watch, paper, manual)'
+    );
+  }
+  if (!config.isLive) {
+    throw new Error('auto-mode strategies require TRADING_MODE=live (currently dry_run)');
+  }
+}
+
+/** Per-fund compliance posture for the startup log and GET /api/posture. */
+export function fundPosture(fund) {
+  return {
+    name: fund.name,
+    account: fund.paper ? 'paper' : 'live',
+    tradingMode: config.tradingMode,
+    sources: fund.sources,
+    allowAutoStrategies: !!fund.allowAutoStrategies,
+    // Auto strategies only actually execute when the fund opts in AND we're live.
+    autoStrategiesEffective: !!fund.allowAutoStrategies && config.isLive,
+  };
 }
