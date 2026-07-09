@@ -1,0 +1,100 @@
+{
+  "senateClean": {
+    "politician": "Sheldon Whitehouse",
+    "ticker": "AAPL",
+    "type": "sell",
+    "transactionDate": "2026-06-20",
+    "disclosureDate": "2026-07-08",
+    "amountRange": "$15,001 - $50,000",
+    "raw": {
+      "chamber": "senate",
+      "docId": "abc-123",
+      "url": "https://efdsearch.senate.gov/search/view/ptr/abc-123/",
+      "owner": "Self",
+      "assetName": "Apple Inc",
+      "assetType": "Stock",
+      "reportTitle": "Periodic Transaction Report for 06/20/2026"
+    }
+  },
+  "senateSpouseOption": {
+    "politician": "Jane Doe",
+    "ticker": "TSLA",
+    "type": "buy",
+    "transactionDate": "2026-05-01",
+    "disclosureDate": "2026-05-20",
+    "amountRange": "$50,001 - $100,000",
+    "raw": {
+      "chamber": "senate",
+      "docId": "def-456",
+      "url": "https://efdsearch.senate.gov/search/view/ptr/def-456/",
+      "owner": "Spouse",
+      "assetName": "Tesla Inc - Call option $300 strike exp 01/16/2027",
+      "assetType": "Stock Option",
+      "reportTitle": "Periodic Transaction Report for 05/01/2026"
+    }
+  },
+  "senateAmendment": {
+    "politician": "Sheldon Whitehouse",
+    "ticker": "AAPL",
+    "type": "sell",
+    "transactionDate": "2026-06-20",
+    "disclosureDate": "2026-07-15",
+    "amountRange": "$50,001 - $100,000",
+    "raw": {
+      "chamber": "senate",
+      "docId": "ghi-789",
+      "url": "https://efdsearch.senate.gov/search/view/ptr/ghi-789/",
+      "owner": "Self",
+      "assetName": "Apple Inc",
+      "assetType": "Stock",
+      "reportTitle": "Periodic Transaction Report (Amendment) for 06/20/2026"
+    }
+  },
+  "quiverClean": {
+    "politician": "Nancy Pelosi",
+    "ticker": "NVDA",
+    "type": "buy",
+    "transactionDate": "2026-06-01",
+    "disclosureDate": "2026-06-25",
+    "amountRange": "$1,000,001 - $5,000,000",
+    "raw": {
+      "Representative": "Nancy Pelosi",
+      "Ticker": "NVDA",
+      "Transaction": "Purchase",
+      "Owner": "Spouse",
+      "Description": "NVIDIA Corporation"
+    }
+  },
+  "quiverUnparsedOption": {
+    "politician": "John Roe",
+    "ticker": "AMD",
+    "type": "buy",
+    "transactionDate": "2026-06-10",
+    "disclosureDate": "2026-06-28",
+    "amountRange": "$1,001 - $15,000",
+    "raw": {
+      "Representative": "John Roe",
+      "Ticker": "AMD",
+      "Transaction": "Purchase",
+      "Description": "Advanced Micro Devices call options"
+    }
+  },
+  "garbage": {
+    "politician": "Unknown",
+    "ticker": "ZZZZQ",
+    "type": "buy",
+    "transactionDate": null,
+    "disclosureDate": "2026-06-01",
+    "amountRange": "N/A",
+    "raw": { "assetName": "Some Delisted Thing", "owner": "Dependent Child" }
+  },
+  "dateInconsistent": {
+    "politician": "Back Dater",
+    "ticker": "MSFT",
+    "type": "buy",
+    "transactionDate": "2026-06-20",
+    "disclosureDate": "2026-06-10",
+    "amountRange": "$15,001 - $50,000",
+    "raw": { "assetName": "Microsoft Corp", "owner": "Self" }
+  }
+}

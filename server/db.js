@@ -279,6 +279,23 @@ export function getCongressTradeByKey(tradeKey) {
   return db.prepare(`SELECT * FROM congress_trades WHERE trade_key = ?`).get(tradeKey) || null;
 }
 
+/**
+ * Find an existing archived trade this row could be an amendment of: same
+ * politician + ticker + transaction date, a different trade_key. Returns the
+ * earliest such row's trade_key, or null.
+ */
+export function findAmendableTradeKey({ politician, ticker, transactionDate, excludeKey }) {
+  if (!politician || !ticker || !transactionDate) return null;
+  const row = db
+    .prepare(
+      `SELECT trade_key FROM congress_trades
+       WHERE politician = ? AND ticker = ? AND transaction_date = ? AND trade_key != ?
+       ORDER BY id ASC LIMIT 1`
+    )
+    .get(politician, ticker, transactionDate, excludeKey ?? '');
+  return row?.trade_key ?? null;
+}
+
 export function listCongressTrades({ politician, ticker, since, until, limit } = {}) {
   const where = [];
   const params = [];

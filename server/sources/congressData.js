@@ -3,7 +3,9 @@ import pRetry from 'p-retry';
 import { config } from '../config.js';
 import { fetchSenateTrades } from './senateEfd.js';
 import { parseAmountRange } from '../lib/amountRange.js';
-import { upsertCongressTrade } from '../db.js';
+import { assessTrade } from '../lib/filingQuality.js';
+import { resolveTicker } from './tickerMeta.js';
+import { upsertCongressTrade, findAmendableTradeKey } from '../db.js';
 
 // Normalized congress trade shape used by both the live poller and the backtester:
 // { politician, ticker, type: 'buy'|'sell', transactionDate, disclosureDate, amountRange, raw }
@@ -96,8 +98,24 @@ export function archiveTrade(trade, { firstSeenAt = null } = {}) {
   const { min, max, mid } = parseAmountRange(trade.amountRange);
   const raw = trade.raw || {};
   const isSenateEfd = raw.chamber === 'senate' && raw.docId;
+  const key = tradeKey(trade);
+
+  const quality = assessTrade(trade, { resolveTicker });
+
+  // Amendment detection: filings whose title marks them an amendment point at
+  // an earlier archived row for the same politician/ticker/transaction date.
+  let amendmentOf = null;
+  if (/\(?amendment/i.test(String(raw.reportTitle || ''))) {
+    amendmentOf = findAmendableTradeKey({
+      politician: trade.politician,
+      ticker: trade.ticker,
+      transactionDate: trade.transactionDate,
+      excludeKey: key,
+    });
+  }
+
   return upsertCongressTrade({
-    tradeKey: tradeKey(trade),
+    tradeKey: key,
     politician: trade.politician,
     ticker: trade.ticker,
     type: trade.type,
@@ -108,9 +126,14 @@ export function archiveTrade(trade, { firstSeenAt = null } = {}) {
     amountMin: min,
     amountMax: max,
     amountMid: mid,
-    assetDescription: raw.assetName ?? raw.Description ?? null,
+    assetDescription: quality.assetDescription,
+    owner: quality.owner,
+    isOption: quality.isOption,
+    optionDetail: quality.optionDetail,
+    parseConfidence: quality.parseConfidence,
+    amendmentOf,
     source: isSenateEfd ? 'senate-efd' : 'quiver',
     sourceUrl: raw.url ?? null,
-    raw,
+    raw: { ...raw, _qualityFlags: quality.flags },
   });
 }

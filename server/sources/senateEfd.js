@@ -90,11 +90,15 @@ async function listFilings(jar, startDate, endDate) {
       if (!link) continue; // paper filing (scanned PDF) — skip
       const dateMatch = String(row[4]).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
       if (!dateMatch) continue;
+      // Anchor text is the report title, e.g. "Periodic Transaction Report"
+      // or "...(Amendment)" — used downstream to detect amended filings.
+      const titleMatch = String(row[3]).match(/>([^<]+)<\/a>/);
       filings.push({
         member: `${row[0]} ${row[1]}`.trim(),
         url: BASE + link[1],
         docId: link[2],
         filingDate: `${dateMatch[3]}-${dateMatch[1]}-${dateMatch[2]}`,
+        reportTitle: titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : null,
       });
     }
     if (rows.length < pageSize) break;
@@ -122,6 +126,8 @@ function parsePtrHtml(html) {
     const typeToken = cells[6].trim().toUpperCase();
     trades.push({
       ticker: ticker.toUpperCase(),
+      owner: cells[2],
+      assetName: cells[4],
       assetType: cells[5],
       type: typeToken.startsWith('P') ? 'buy' : typeToken.startsWith('S') ? 'sell' : null,
       transactionDate: dateMatch ? `${dateMatch[3]}-${dateMatch[1]}-${dateMatch[2]}` : null,
@@ -143,7 +149,15 @@ async function fetchPtr(jar, filing) {
     transactionDate: t.transactionDate,
     disclosureDate: filing.filingDate,
     amountRange: t.amountRange,
-    raw: { chamber: 'senate', docId: filing.docId, url: filing.url, assetType: t.assetType },
+    raw: {
+      chamber: 'senate',
+      docId: filing.docId,
+      url: filing.url,
+      owner: t.owner,
+      assetName: t.assetName,
+      assetType: t.assetType,
+      reportTitle: filing.reportTitle,
+    },
   }));
 }
 

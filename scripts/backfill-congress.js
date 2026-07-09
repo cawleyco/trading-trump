@@ -11,6 +11,7 @@
 
 import { db } from '../server/db.js';
 import { archiveTrade, fetchHistoricalCongressTrades } from '../server/sources/congressData.js';
+import { ensureTickerUniverse } from '../server/sources/tickerMeta.js';
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
@@ -26,6 +27,10 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
   console.error('Dates must be YYYY-MM-DD');
   process.exit(1);
 }
+
+// Load the SEC ticker universe first so ticker resolution (and thus parse
+// confidence) works during archiving; best-effort, never fatal.
+await ensureTickerUniverse();
 
 console.log(`Backfilling congress trades disclosed ${start} → ${end}...`);
 const trades = await fetchHistoricalCongressTrades(start, end);
