@@ -25,7 +25,7 @@ function archivedTrades(startDate, endDate) {
   });
 }
 
-async function getHistoricalTrades(startDate, endDate) {
+export async function getHistoricalTrades(startDate, endDate) {
   // The local archive (populated by the poller + backfill script) is the
   // preferred source; fall back to the network while it's still empty.
   const archived = archivedTrades(startDate, endDate);
@@ -81,7 +81,7 @@ function entryDateFor(t, entryBasis) {
   return t.disclosureDate || null; // disclosure (default)
 }
 
-function buildPlans(theirs, { startDate, endDate, exitRule, stopLossPct, takeProfitPct, entryBasis = 'disclosure' }) {
+export function buildPlans(theirs, { startDate, endDate, exitRule, stopLossPct, takeProfitPct, entryBasis = 'disclosure' }) {
   // The window is always a disclosure-date range (what a live copier could
   // have known about), so all entry bases compare the same set of trades.
   const buys = theirs.filter(
@@ -150,8 +150,12 @@ export async function runEntryBasisComparison(opts) {
  * "who is actually worth copying?" Shares one historical fetch and the
  * module-level bars cache across all politicians.
  */
-export async function runCongressLeaderboard({ startDate, endDate, notionalPerTrade, exitRule = 'hold_90', minTrades = 3, entryBasis = 'disclosure' }) {
-  const all = await getHistoricalTrades(startDate, endDate);
+/**
+ * Rank politicians by return over a disclosure-date window, given an already
+ * fetched trade array. No fetch, no persistence — reused by the leaderboard
+ * and the walk-forward engine. Returns { rows, politiciansConsidered }.
+ */
+export async function rankByReturn(all, { startDate, endDate, notionalPerTrade, exitRule = 'hold_90', minTrades = 3, entryBasis = 'disclosure' }) {
   const byPolitician = new Map();
   for (const t of all) {
     if (!t.disclosureDate) continue;
@@ -177,9 +181,16 @@ export async function runCongressLeaderboard({ startDate, endDate, notionalPerTr
     });
   }
   rows.sort((a, b) => b.returnPct - a.returnPct);
+  return { rows, politiciansConsidered: byPolitician.size };
+}
 
+export async function runCongressLeaderboard({ startDate, endDate, notionalPerTrade, exitRule = 'hold_90', minTrades = 3, entryBasis = 'disclosure' }) {
+  const all = await getHistoricalTrades(startDate, endDate);
+  const { rows, politiciansConsidered } = await rankByReturn(all, {
+    startDate, endDate, notionalPerTrade, exitRule, minTrades, entryBasis,
+  });
   const params = { startDate, endDate, notionalPerTrade, exitRule, minTrades, entryBasis };
-  const results = { leaderboard: rows, politiciansConsidered: byPolitician.size, entryBasis };
+  const results = { leaderboard: rows, politiciansConsidered, entryBasis };
   const id = insertBacktest({ kind: 'leaderboard', params, results });
   return { id, params, results };
 }

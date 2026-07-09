@@ -31,6 +31,7 @@ import { startTruthSocialPoller } from './sources/truthSocialPoller.js';
 import { ensureTickerUniverse } from './sources/tickerMeta.js';
 import { startPositionManager } from './positionManager.js';
 import { runCongressBacktest, runCongressLeaderboard, runEntryBasisComparison, listPoliticians, ENTRY_BASES } from './backtest/congressBacktest.js';
+import { runWalkForward } from './backtest/walkForward.js';
 import { runTweetBacktest } from './backtest/tweetBacktest.js';
 import { getAttribution } from './attribution.js';
 import { log } from './logger.js';
@@ -277,6 +278,42 @@ app.post('/api/backtests/congress-leaderboard', async (req, res) => {
     );
   } catch (err) {
     log.error('server', `Leaderboard backtest failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/backtests/walk-forward', async (req, res) => {
+  try {
+    const { startDate, endDate, notionalPerTrade, folds, topN, exitRule, minTrades } = req.body;
+    if (!startDate || !endDate || !notionalPerTrade) {
+      return res.status(400).json({ error: 'startDate, endDate, notionalPerTrade required' });
+    }
+    const foldCount = folds == null ? 4 : Number(folds);
+    const topCount = topN == null ? 5 : Number(topN);
+    const minTradeCount = minTrades == null ? 3 : Number(minTrades);
+    if (!Number.isFinite(foldCount) || foldCount < 2) {
+      return res.status(400).json({ error: 'folds must be at least 2' });
+    }
+    if (!Number.isFinite(topCount) || topCount < 1) {
+      return res.status(400).json({ error: 'topN must be at least 1' });
+    }
+    if (!Number.isFinite(minTradeCount) || minTradeCount < 1) {
+      return res.status(400).json({ error: 'minTrades must be at least 1' });
+    }
+    res.json(
+      await runWalkForward({
+        startDate,
+        endDate,
+        notionalPerTrade: Number(notionalPerTrade),
+        folds: foldCount,
+        topN: topCount,
+        exitRule,
+        minTrades: minTradeCount,
+        entryBasis: validEntryBasis(req.body.entryBasis),
+      })
+    );
+  } catch (err) {
+    log.error('server', `Walk-forward backtest failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });

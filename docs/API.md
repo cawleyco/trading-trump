@@ -149,6 +149,41 @@ Same body as `/api/backtests/congress` (no `entryBasis`). Runs the params under 
 
 Returns `results.leaderboard`: `[{ politician, trades, skipped, winRate, totalPnl, totalInvested, returnPct }]` ranked by return, plus `politiciansConsidered`.
 
+### `POST /api/backtests/walk-forward`
+
+The overfitting guard. Splits the range into `folds` windows; for each window it ranks politicians in-sample, then copies only that window's top-`topN` into the **next** window and measures out-of-sample return.
+
+```json
+{
+  "startDate": "2025-01-01", "endDate": "2025-12-31",  // required
+  "notionalPerTrade": 1000,                             // required
+  "folds": 4,                                           // default 4 (min 2)
+  "topN": 5,                                            // default 5
+  "exitRule": "hold_90",                                // default hold_90
+  "minTrades": 3,                                       // default 3
+  "entryBasis": "disclosure"                            // default disclosure
+}
+```
+
+Returns `results.foldResults` (per fold: train/test windows, top politicians, out-of-sample summary, SPY) and `results.aggregate` (combined out-of-sample `summary`, `curve`, and SPY `benchmark`). Persisted with `kind: 'walk-forward'`.
+
+### `POST /api/backtests/walk-forward`
+
+```json
+{
+  "startDate": "2025-01-01",         // required, disclosure-date range
+  "endDate": "2026-01-01",           // required
+  "notionalPerTrade": 1000,          // required
+  "folds": 4,                        // default 4, minimum 2
+  "topN": 5,                         // copy top N from each in-sample fold into the next fold
+  "exitRule": "hold_90",             // default hold_90
+  "minTrades": 3,                    // default 3
+  "entryBasis": "disclosure"         // disclosure (default) | transaction | first_seen
+}
+```
+
+Splits the range into contiguous folds, ranks politicians in each fold, then simulates copying only that fold's top-N politicians in the following out-of-sample fold. Results persist with `kind: "walk-forward"` and include `foldResults` plus `aggregate.summary`, `aggregate.curve`, and an SPY `aggregate.benchmark`.
+
 ### `POST /api/backtests/tweet`
 
 ```json

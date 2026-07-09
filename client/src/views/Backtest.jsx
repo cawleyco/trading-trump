@@ -17,6 +17,8 @@ export default function Backtest() {
   const [exitRule, setExitRule] = useState('follow')
   const [entryBasis, setEntryBasis] = useState('disclosure')
   const [minTrades, setMinTrades] = useState(3)
+  const [folds, setFolds] = useState(4)
+  const [topN, setTopN] = useState(5)
   const [compare, setCompare] = useState(null)
   // tweet form
   const [holdValue, setHoldValue] = useState(1)
@@ -54,6 +56,8 @@ export default function Backtest() {
         res = await api.runCongressBacktest({ ...body, politician, exitRule, entryBasis })
       } else if (kind === 'leaderboard') {
         res = await api.runLeaderboard({ startDate, endDate, notionalPerTrade: notional, exitRule, minTrades, entryBasis })
+      } else if (kind === 'walk-forward') {
+        res = await api.runWalkForward({ startDate, endDate, notionalPerTrade: notional, exitRule, minTrades, entryBasis, folds, topN })
       } else {
         res = await api.runTweetBacktest({
           ...body,
@@ -111,6 +115,7 @@ export default function Backtest() {
             <select value={kind} onChange={(e) => setKind(e.target.value)}>
               <option value="congress">Copy a politician</option>
               <option value="leaderboard">All-politicians leaderboard</option>
+              <option value="walk-forward">Walk-forward (overfitting guard)</option>
               <option value="tweet">Trump post sentiment</option>
             </select>
           </Field>
@@ -125,7 +130,7 @@ export default function Backtest() {
             </Field>
           )}
 
-          {(kind === 'congress' || kind === 'leaderboard') && (
+          {(kind === 'congress' || kind === 'leaderboard' || kind === 'walk-forward') && (
             <Field label="Exit rule">
               <select value={exitRule} onChange={(e) => setExitRule(e.target.value)}>
                 <option value="follow">Follow their sells</option>
@@ -136,7 +141,7 @@ export default function Backtest() {
             </Field>
           )}
 
-          {(kind === 'congress' || kind === 'leaderboard') && (
+          {(kind === 'congress' || kind === 'leaderboard' || kind === 'walk-forward') && (
             <Field label="Entry basis">
               <select value={entryBasis} onChange={(e) => setEntryBasis(e.target.value)}>
                 <option value="disclosure">Disclosure date (realistic)</option>
@@ -146,10 +151,21 @@ export default function Backtest() {
             </Field>
           )}
 
-          {kind === 'leaderboard' && (
+          {(kind === 'leaderboard' || kind === 'walk-forward') && (
             <Field label="Min trades">
               <input type="number" value={minTrades} min={1} onChange={(e) => setMinTrades(Number(e.target.value))} style={{ width: 60 }} />
             </Field>
+          )}
+
+          {kind === 'walk-forward' && (
+            <>
+              <Field label="Folds">
+                <input type="number" value={folds} min={2} max={12} onChange={(e) => setFolds(Number(e.target.value))} style={{ width: 60 }} />
+              </Field>
+              <Field label="Top N">
+                <input type="number" value={topN} min={1} max={20} onChange={(e) => setTopN(Number(e.target.value))} style={{ width: 60 }} />
+              </Field>
+            </>
           )}
 
           {kind === 'tweet' && (
@@ -182,7 +198,7 @@ export default function Backtest() {
             <input type="number" value={notional} min={1} onChange={(e) => setNotional(Number(e.target.value))} style={{ width: 90 }} />
           </Field>
 
-          {kind !== 'leaderboard' && (
+          {(kind === 'congress' || kind === 'tweet') && (
             <>
               <Field label="Stop-loss %">
                 <input type="number" value={stopLoss} min={0} placeholder="off" onChange={(e) => setStopLoss(e.target.value)} style={{ width: 65 }} />
@@ -202,7 +218,7 @@ export default function Backtest() {
             </button>
           )}
         </div>
-        {(kind === 'congress' || kind === 'leaderboard') && entryBasis === 'transaction' && (
+        {(kind === 'congress' || kind === 'leaderboard' || kind === 'walk-forward') && entryBasis === 'transaction' && (
           <p style={{ background: '#7f1d1d', borderRadius: 6, padding: '8px 12px', marginTop: 10 }}>
             ⚠️ Fantasy mode: assumes you knew on the trade date — not achievable. Upper bound only.
           </p>
@@ -218,14 +234,23 @@ export default function Backtest() {
             Backtests every politician with ≥ min trades in the period and ranks them by return. Can take a while — one price series per traded ticker.
           </p>
         )}
+        {kind === 'walk-forward' && (
+          <p style={{ color: '#a1a1aa', fontSize: '0.8em' }}>
+            Splits the range into folds, ranks politicians in each fold, then copies only that fold's top-N into the <em>next</em> fold — measuring out-of-sample return. High in-sample rank that flops out-of-sample is the overfitting tell.
+          </p>
+        )}
         {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
       </section>
 
       {compare && <CompareResults compare={compare} />}
 
-      {result && (result.results.leaderboard
-        ? <LeaderboardResults result={result} onPick={runFullFor} />
-        : <Results result={result} />)}
+      {result && (
+        result.results.kind === 'walk-forward' || result.results.foldResults
+          ? <WalkForwardResults result={result} />
+          : result.results.leaderboard
+            ? <LeaderboardResults result={result} onPick={runFullFor} />
+            : <Results result={result} />
+      )}
 
       {history.length > 0 && (
         <section style={{ ...card, marginTop: 24 }}>
@@ -259,6 +284,9 @@ function describeParams(h) {
   }
   if (h.kind === 'leaderboard') {
     return `${p.startDate}→${p.endDate}, $${p.notionalPerTrade}/trade, exit=${p.exitRule}, min ${p.minTrades} trades`
+  }
+  if (h.kind === 'walk-forward') {
+    return `${p.startDate}→${p.endDate}, ${p.folds} folds, top ${p.topN}, $${p.notionalPerTrade}/trade, exit=${p.exitRule}`
   }
   const hold = p.holdHours ? `hold ${p.holdHours}h` : `hold ${p.holdDays}d`
   return `${p.startDate}→${p.endDate}, $${p.notionalPerTrade}/trade, ${hold}, conf ≥ ${p.confidenceThreshold}${slTp}`
@@ -294,6 +322,89 @@ function LeaderboardResults({ result, onPick }) {
           ))}
         </tbody>
       </table>
+    </section>
+  )
+}
+
+function WalkForwardResults({ result }) {
+  const { foldResults, aggregate, folds, topN } = result.results
+  const agg = aggregate?.summary
+  const bench = aggregate?.benchmark
+  const curve = aggregate?.curve || []
+  const chartData = curve.map((p) => ({ date: p.date, oos: p.cumulativePnl }))
+  const benchCurve = bench?.curve || []
+  if (benchCurve.length) {
+    const lastAt = (pts, d) => {
+      const upTo = pts.filter((p) => p.date <= d)
+      return upTo.length ? upTo[upTo.length - 1].cumulativePnl : null
+    }
+    for (const row of chartData) row.spy = lastAt(benchCurve, row.date)
+  }
+
+  return (
+    <section style={{ ...card, marginTop: 24 }}>
+      <h3>Walk-forward — {folds} folds, top {topN} copied out-of-sample</h3>
+      {agg && (
+        <h4 style={{ margin: '4px 0 12px', fontWeight: 500 }}>
+          Aggregate out-of-sample:{' '}
+          <span style={{ color: agg.returnPct < 0 ? '#fca5a5' : '#86efac' }}>
+            {agg.returnPct >= 0 ? '+' : ''}{agg.returnPct}%
+          </span>
+          {bench && (
+            <span style={{ fontSize: '0.8em', color: '#a1a1aa', fontWeight: 400 }}>
+              {' '}vs SPY {bench.returnPct >= 0 ? '+' : ''}{bench.returnPct}%
+              {' '}({agg.returnPct >= bench.returnPct ? 'beat' : 'trailed'} the market)
+            </span>
+          )}
+        </h4>
+      )}
+      <p style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
+        Each fold ranks politicians in-sample, then copies only the top {topN} into the next (unseen) fold.
+        Out-of-sample return is the honest estimate; a big drop from in-sample rank is overfitting.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Fold</th><th>Train → Test window</th><th>Top politicians (in-sample)</th><th>OOS trades</th><th>OOS return</th><th>SPY</th></tr>
+        </thead>
+        <tbody>
+          {foldResults.map((f) => (
+            <tr key={f.fold}>
+              <td>{f.fold}</td>
+              <td style={{ whiteSpace: 'nowrap', fontSize: '0.85em' }}>
+                {f.trainWindow.start}→{f.trainWindow.end} <span style={{ color: '#52525b' }}>then</span> {f.testWindow.start}→{f.testWindow.end}
+              </td>
+              <td style={{ maxWidth: 260, color: '#a1a1aa', fontSize: '0.85em' }}>
+                {f.topPoliticians.length ? f.topPoliticians.join(', ') : <span style={{ color: '#52525b' }}>none qualified</span>}
+              </td>
+              <td>{f.outOfSample.totalTrades}</td>
+              <td style={{ color: f.outOfSample.returnPct < 0 ? '#fca5a5' : '#86efac' }}>
+                {f.outOfSample.returnPct >= 0 ? '+' : ''}{f.outOfSample.returnPct}%
+              </td>
+              <td style={{ color: '#a1a1aa' }}>{f.benchmark ? `${f.benchmark.returnPct >= 0 ? '+' : ''}${f.benchmark.returnPct}%` : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {chartData.length > 1 && (
+        <div style={{ height: 260, marginTop: 12 }}>
+          <ResponsiveContainer>
+            <LineChart data={chartData}>
+              <CartesianGrid stroke="#26282f" />
+              <XAxis dataKey="date" stroke="#a1a1aa" fontSize={11} />
+              <YAxis stroke="#a1a1aa" fontSize={11} tickFormatter={(v) => `$${v}`} />
+              <Tooltip
+                contentStyle={{ background: '#1f2229', border: '1px solid #3f3f46' }}
+                formatter={(v, name) => [`$${v}`, name === 'spy' ? 'SPY (same $)' : 'Out-of-sample']}
+              />
+              <Legend formatter={(v) => (v === 'spy' ? 'SPY (same $)' : 'Out-of-sample')} />
+              <ReferenceLine y={0} stroke="#52525b" />
+              <Line type="monotone" dataKey="oos" stroke="#6366f1" dot={false} strokeWidth={2} connectNulls />
+              {benchCurve.length > 0 && <Line type="monotone" dataKey="spy" stroke="#eab308" dot={false} strokeWidth={2} strokeDasharray="6 3" connectNulls />}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </section>
   )
 }

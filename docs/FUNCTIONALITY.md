@@ -127,6 +127,12 @@ Takes a list of planned trades and a fixed dollar amount per trade, fetches bars
 
 Filters historical disclosures to one politician and a **disclosure-date** range (matching what a live copier could have known), turns their purchases into entries, and applies the chosen exit rule (`follow` their later sale of the same ticker / `hold_30` / `hold_90` / `hold_to_present`), plus optional SL/TP. Data source: the local `congress_trades` **archive** first (populated by the poller + backfill), falling back to a live network fetch (cached in memory for 1 hour) only while the archive has no rows in range. Also powers the politician dropdown (`listPoliticians`) and `runCongressLeaderboard`, which backtests **every** politician with ≥ minTrades in one pass (shared caches) and ranks them by return.
 
+**Entry basis** (`entryBasis`, both single and leaderboard runs): which date becomes the entry — `disclosure` (default, realistic), `transaction` (a **fantasy upper bound** — you can't know before disclosure; results echo it and the UI banners it), or `first_seen` (when the poller actually saw it; ≈ disclosure for backfilled rows). The disclosure-date window is fixed across bases, so they compare the same trades. `runEntryBasisComparison` runs `transaction` vs `disclosure` side by side — the return gap *is* the cost of the disclosure lag.
+
+### `walkForward.js`
+
+The overfitting guard. `runWalkForward` splits the range into `folds` contiguous windows; for each window it ranks politicians in-sample (reusing `rankByReturn`), copies only that window's **top-N** into the *next* window, and measures out-of-sample return. It reports per-fold results plus a combined out-of-sample curve and SPY benchmark, persisted as `kind: 'walk-forward'`. A politician who ranks high in-sample and flops out-of-sample is noise, not edge.
+
 ### `tweetBacktest.js`
 
 Merges the public archive of Trump's posts (~15 MB JSON, cached 1 hour) with **posts the bot's own poller has collected** (the archive lags — results include its coverage dates and warn when your range falls outside), samples up to `maxPosts` **evenly across the range**, classifies them with the **same** Claude classifier used live, and simulates every above-threshold ticker (daily `holdDays` or intraday `holdHours`, optional SL/TP). Results include every post's classification with per-ticker confidences and whether it traded — so "no trades" is always explainable — plus scanned/classified/no-impact/below-threshold counts.
@@ -153,7 +159,7 @@ SQLite (`trading.db`, WAL mode). Tables:
 | `congress_trades` | Full-row archive of every disclosed trade the poller/backfill has seen: parties, dates, parsed amount band (`amount_min/max/mid`), source + filing URL, and (later phases) quality/identity fields. The substrate for scoring, profiles, and archive-backed backtests |
 | `ticker_meta` | Ticker → company name, SEC CIK, SIC code, and coarse sector; populated from SEC EDGAR, refreshed weekly |
 | `review_queue` | Low-confidence filings (parse confidence &lt; 0.8) held for human review, with reason and approved/rejected status |
-| `backtests` | Saved backtest params + results (congress / tweet / leaderboard) |
+| `backtests` | Saved backtest params + results (congress / tweet / leaderboard / walk-forward) |
 
 Schema migrations (adding fund columns etc.) run automatically and idempotently at startup — v1 databases upgrade in place, existing rows attributed to fund `default`.
 
