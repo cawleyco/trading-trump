@@ -232,7 +232,7 @@ function AttributionChart({ attribution }) {
   )
 }
 
-export function SignalTable({ signals }) {
+export function SignalTable({ signals, onAudit }) {
   if (signals.length === 0) return <p style={{ color: '#a1a1aa' }}>No signals yet</p>
   return (
     <table>
@@ -240,6 +240,7 @@ export function SignalTable({ signals }) {
         <tr>
           <th>Time</th><th>Source</th><th>Ticker</th><th>Dir</th><th>Conf</th>
           <th>Relevance</th><th>Fund</th><th>Decision</th><th>Order</th><th>Why</th>
+          {onAudit && <th></th>}
         </tr>
       </thead>
       <tbody>
@@ -271,6 +272,11 @@ export function SignalTable({ signals }) {
                   <div style={{ marginTop: 4, color: '#93c5fd', fontSize: '0.9em' }}>{s.crossSignal.note}</div>
                 )}
               </td>
+              {onAudit && (
+                <td>
+                  <button onClick={() => onAudit(s)} style={{ whiteSpace: 'nowrap' }}>Audit</button>
+                </td>
+              )}
             </tr>
           )
         })}

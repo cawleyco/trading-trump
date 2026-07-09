@@ -8,6 +8,8 @@ async function req(path, options) {
 export const api = {
   status: () => req('/api/status'),
   signals: (limit = 100) => req(`/api/signals?limit=${limit}`),
+  auditSignal: (signalId) => req(`/api/audit/signal/${encodeURIComponent(signalId)}`),
+  auditOrder: (orderId) => req(`/api/audit/order/${encodeURIComponent(orderId)}`),
   attribution: () => req('/api/attribution'),
   halt: (reason, fund) =>
     req('/api/halt', {

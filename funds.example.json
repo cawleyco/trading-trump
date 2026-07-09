@@ -12,7 +12,13 @@
       "maxOpenPositions": 10,
       "maxTotalExposureUsd": 1000,
       "maxDailyLossUsd": 50,
-      "maxDailyLossPct": 2
+      "maxDailyLossPct": 2,
+      "maxSectorExposurePct": 25,
+      "minAvgDollarVolume": 10000000,
+      "cooldownMinutes": 60,
+      "maxTradesPerDay": 5,
+      "blockOptions": true,
+      "minCopyScoreAuto": 75
     },
     "sentimentConfidenceThreshold": 0.8,
     "autoExit": { "stopLossPct": 8, "takeProfitPct": 20, "maxHoldDays": 60 }
@@ -30,7 +36,13 @@
       "maxOpenPositions": 5,
       "maxTotalExposureUsd": 250,
       "maxDailyLossUsd": 25,
-      "maxDailyLossPct": 1
+      "maxDailyLossPct": 1,
+      "maxSectorExposurePct": 20,
+      "minAvgDollarVolume": 25000000,
+      "cooldownMinutes": 120,
+      "maxTradesPerDay": 3,
+      "blockOptions": true,
+      "minCopyScoreAuto": 85
     },
     "autoExit": { "stopLossPct": 8, "takeProfitPct": 20, "maxHoldDays": 60 }
   }

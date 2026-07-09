@@ -77,6 +77,17 @@ These `.env` values are the **defaults for every fund**; any fund can override a
 | `MAX_DAILY_LOSS_USD` | `50` | Per-fund circuit breaker: trips when the fund's daily loss (vs. its equity at day start, US/Eastern) exceeds this… |
 | `MAX_DAILY_LOSS_PCT` | `2` | …or this % of day-start equity, whichever comes first. Tripping cancels that fund's open orders, blocks its trading, and requires manual reset from the dashboard. Other funds are unaffected. |
 
+Additional optional keys can be set per fund inside `funds.json`'s `risk` block. Omitted keys are skipped, except `blockOptions`, which defaults to `true` for archived Congress option trades:
+
+| `funds.json` risk key | Meaning |
+|---|---|
+| `maxSectorExposurePct` | Buy guard: same-sector position value after the trade divided by equity must stay under this %. Requires `ticker_meta` sector data; missing sector data skips the check. |
+| `minAvgDollarVolume` | Buy guard: rejects tickers whose 20-day average dollar volume is below this value. |
+| `cooldownMinutes` | Rejects if this fund already has a simulated/submitted/filled order for the same ticker inside the window. |
+| `maxTradesPerDay` | Rejects when this fund has already reached that many approved orders for the current US/Eastern day. |
+| `blockOptions` | Defaults to `true`; rejects signals linked to an archived Congress trade marked `is_option`. Set `false` to allow them. |
+| `minCopyScoreAuto` | For strategy `action.mode: "auto"` only, rejects signals below this copy score. |
+
 Sell-signal sizing is special: a sell closes up to the whole existing position (never more than you hold, and never opens a short). Auto-exit sells always close the full position.
 
 ## Signal thresholds

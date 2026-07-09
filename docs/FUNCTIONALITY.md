@@ -38,10 +38,13 @@ For each target fund, `processSignal` runs these checks **in order**; the first 
 5. **Tradable?** — the ticker must exist and be tradable on Alpaca (filters foreign listings, OTC, delisted symbols that appear in disclosures).
 6. **Sell without position?** — sells only ever close existing long positions. **The bot never shorts.**
 7. **Exposure caps** (buys only) — the fund's max open positions and max total dollar exposure.
-8. **Position sizing** — the smaller of the fund's dollar cap and %-of-equity cap. Sells close up to the full position; auto-exit sells always close the whole position.
-9. **Dry-run gate** — if `TRADING_MODE` is not `live`, the order is recorded as `simulated` and nothing is sent. This is the last line before real money moves.
+8. **Optional guardrails** — per-fund `risk` keys in `funds.json`: sector exposure cap, minimum average dollar volume, same-ticker cooldown, max approved orders per ET day, option blocking, unresolved review-queue blocking for auto strategies, and minimum copy score for auto strategies. Missing optional keys are skipped, except `blockOptions` defaults to `true`.
+9. **Position sizing** — the smaller of the fund's dollar cap and %-of-equity cap. Sells close up to the full position; auto-exit sells always close the whole position.
+10. **Dry-run gate** — if `TRADING_MODE` is not `live`, the order is recorded as `simulated` and nothing is sent. This is the last line before real money moves.
 
 Approved live orders are submitted as **notional market orders** (dollar amount, fractional shares, day time-in-force) through that fund's own Alpaca connection, and fire a notification.
+
+Every decision stores the ordered check list as JSON (`checks` on `decisions`), so the Signal Log audit view can show which rules passed, skipped, or rejected a signal.
 
 `refreshAllFundsPnl()` also runs every 60 seconds independently, so a breaker can trip between signals. Each fund's daily baseline is its account equity at the first observation of each US/Eastern calendar day.
 
@@ -190,7 +193,7 @@ SQLite (`trading.db`, WAL mode). Tables:
 | Table | Contents |
 |---|---|
 | `signals` | Every signal from any source, with rationale and raw source payload |
-| `decisions` | The risk manager's verdict **per signal per fund**: approved/rejected, reason, computed size |
+| `decisions` | The risk manager's verdict **per signal per fund**: approved/rejected, reason, computed size, and full ordered check results |
 | `orders` | Orders per approved decision, tagged with their fund: Alpaca order ID, status (`simulated`/`submitted`/`filled`/`canceled`/`rejected`/`error`) |
 | `fills` | Fill events from the per-fund websockets: quantity, average price |
 | `daily_pnl` | One row per US/Eastern trading day **per fund**: day P&L and the equity baseline |

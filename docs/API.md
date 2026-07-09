@@ -46,7 +46,15 @@ Body: `{ "fund": "name" }` resets that fund's kill-switch events; omit `fund` to
 
 ### `GET /api/signals?limit=100`
 
-The audit log, newest first: each signal joined with its per-fund decisions and orders — a signal routed to N funds appears as N rows, each with a `fund` field. `limit` defaults to 100 (Signal Log view uses 500). Sentiment rows include parsed `sentimentClassification` (`relevanceType`, `marketRelevance`, ticker calls, sectors) and any attached `crossSignal` corroboration.
+The audit log, newest first: each signal joined with its per-fund decisions and orders — a signal routed to N funds appears as N rows, each with a `fund` field. `limit` defaults to 100 (Signal Log view uses 500). Rows include `decision_id`, `order_id`, and `checks` (`[{ "check": "tradable", "pass": true, "detail": "..." }]`) when present. Sentiment rows include parsed `sentimentClassification` (`relevanceType`, `marketRelevance`, ticker calls, sectors) and any attached `crossSignal` corroboration.
+
+### `GET /api/audit/signal/:signalId`
+
+Returns the full audit chain for one signal: archived source trade and quality flags when linked, copy score, strategy match, approval record, signal, every per-fund decision with check results, orders, and fills.
+
+### `GET /api/audit/order/:orderId`
+
+Same audit document, looked up by local numeric order id or Alpaca order id.
 
 ### `POST /api/test-signal`
 

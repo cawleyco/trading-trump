@@ -8,6 +8,8 @@ import {
   getSeenPost,
   getDailyPnl,
   getActiveKillSwitchEvent,
+  getAuditChainByOrderId,
+  getAuditChainBySignalId,
   recordKillSwitchTrip,
   resetKillSwitch,
   listBacktests,
@@ -158,6 +160,19 @@ app.get('/api/status', async (req, res) => {
 // ---------- signals / decisions log ----------
 app.get('/api/signals', (req, res) => {
   res.json(listSignalsWithDecisions(Number(req.query.limit) || 100));
+});
+
+app.get('/api/audit/signal/:signalId', (req, res) => {
+  if (!/^\d+$/.test(req.params.signalId)) return res.status(400).json({ error: 'numeric signal id required' });
+  const audit = getAuditChainBySignalId(Number(req.params.signalId));
+  if (!audit) return res.status(404).json({ error: 'signal not found' });
+  res.json(audit);
+});
+
+app.get('/api/audit/order/:orderId', (req, res) => {
+  const audit = getAuditChainByOrderId(req.params.orderId);
+  if (!audit) return res.status(404).json({ error: 'order not found' });
+  res.json(audit);
 });
 
 // ---------- kill switches (per fund; omit fund = all) ----------

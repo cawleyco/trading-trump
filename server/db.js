@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS decisions (
   approved INTEGER NOT NULL,
   reason TEXT NOT NULL,
   notional_usd REAL,
+  checks TEXT,                       -- JSON [{check, pass, detail}]
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -576,6 +577,10 @@ for (const table of ['decisions', 'orders', 'kill_switch_events']) {
   }
 }
 
+if (!hasColumn('decisions', 'checks')) {
+  db.exec(`ALTER TABLE decisions ADD COLUMN checks TEXT`);
+}
+
 for (const col of ['text', 'created_at', 'classification']) {
   if (!hasColumn('seen_posts', col)) {
     db.exec(`ALTER TABLE seen_posts ADD COLUMN ${col} TEXT`);
@@ -848,6 +853,35 @@ export function isTradeInPendingReview(tradeKey) {
   return !!db.prepare(`SELECT 1 FROM review_queue WHERE trade_key = ? AND status = 'pending'`).get(tradeKey);
 }
 
+export function countRecentOrders({ fund, ticker, since }) {
+  if (!fund || !ticker || !since) return 0;
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n
+       FROM orders
+       WHERE fund = ?
+         AND ticker = ?
+         AND submitted_at >= ?
+         AND status IN ('simulated', 'submitted', 'filled')`
+    )
+    .get(fund, String(ticker).toUpperCase(), since);
+  return Number(row?.n ?? 0);
+}
+
+export function countOrdersForFundSince({ fund, since }) {
+  if (!fund || !since) return 0;
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n
+       FROM orders
+       WHERE fund = ?
+         AND submitted_at >= ?
+         AND status IN ('simulated', 'submitted', 'filled')`
+    )
+    .get(fund, since);
+  return Number(row?.n ?? 0);
+}
+
 export function insertSignal({ source, ticker, direction, confidence, rationale, rawReference }) {
   const res = db
     .prepare(
@@ -859,12 +893,12 @@ export function insertSignal({ source, ticker, direction, confidence, rationale,
   return res.lastInsertRowid;
 }
 
-export function insertDecision({ signalId, fund, approved, reason, notionalUsd }) {
+export function insertDecision({ signalId, fund, approved, reason, notionalUsd, checks = [] }) {
   const res = db
     .prepare(
-      `INSERT INTO decisions (signal_id, fund, approved, reason, notional_usd) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO decisions (signal_id, fund, approved, reason, notional_usd, checks) VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(signalId, fund || 'default', approved ? 1 : 0, reason, notionalUsd ?? null);
+    .run(signalId, fund || 'default', approved ? 1 : 0, reason, notionalUsd ?? null, JSON.stringify(checks ?? []));
   return res.lastInsertRowid;
 }
 
@@ -1273,6 +1307,11 @@ export function upsertTradeScore({ tradeKey, score, confidence, recommendation, 
 
 export function getTradeScore(tradeKey) {
   return parseTradeScoreRow(db.prepare(`SELECT * FROM trade_scores WHERE trade_key = ?`).get(tradeKey));
+}
+
+export function getTickerMeta(ticker) {
+  if (!ticker) return null;
+  return db.prepare(`SELECT * FROM ticker_meta WHERE ticker = ?`).get(String(ticker).toUpperCase()) || null;
 }
 
 function parseThesisCardRow(row) {
@@ -1696,12 +1735,103 @@ export function getBacktest(id) {
   return { ...row, params: JSON.parse(row.params), results: JSON.parse(row.results) };
 }
 
+function parseSignalRow(row) {
+  if (!row) return null;
+  const rawReference = jsonOrNull(row.raw_reference);
+  return {
+    ...row,
+    rawReference,
+    sentimentClassification: row.source === 'sentiment' ? rawReference?.classification ?? null : null,
+    crossSignal: row.source === 'sentiment' ? rawReference?.crossSignal ?? null : null,
+  };
+}
+
+function parseDecisionRow(row) {
+  if (!row) return null;
+  return { ...row, approved: !!row.approved, checks: jsonOrNull(row.checks) ?? [] };
+}
+
+function parseCongressTradeRow(row) {
+  if (!row) return null;
+  return { ...row, raw: jsonOrNull(row.raw) };
+}
+
+function auditForSignalId(signalId) {
+  const signal = parseSignalRow(db.prepare(`SELECT * FROM signals WHERE id = ?`).get(signalId));
+  if (!signal) return null;
+  const tradeKey = signal.rawReference?.tradeKey ?? signal.rawReference?.trade_key ?? null;
+  const strategyId = signal.rawReference?.strategy?.id ?? null;
+  const sourceTrade = tradeKey
+    ? parseCongressTradeRow(db.prepare(`SELECT * FROM congress_trades WHERE trade_key = ?`).get(tradeKey))
+    : null;
+  const score = tradeKey ? getTradeScore(tradeKey) : null;
+  const strategyMatch = strategyId || tradeKey
+    ? db.prepare(
+      `SELECT sm.*, s.name AS strategy_name, s.definition AS strategy_definition
+       FROM strategy_matches sm
+       LEFT JOIN strategies s ON s.id = sm.strategy_id
+       WHERE (? IS NULL OR sm.signal_id = ?)
+          OR (? IS NOT NULL AND sm.trade_key = ? AND sm.strategy_id = ?)
+       ORDER BY sm.id DESC LIMIT 1`
+    ).get(signal.id, signal.id, strategyId, tradeKey, strategyId)
+    : null;
+  const approval = strategyId && tradeKey
+    ? parseApprovalRow(db.prepare(
+      `SELECT pa.*, s.name AS strategy_name
+       FROM pending_approvals pa
+       LEFT JOIN strategies s ON s.id = pa.strategy_id
+       WHERE pa.trade_key = ? AND pa.strategy_id = ?
+       ORDER BY pa.id DESC LIMIT 1`
+    ).get(tradeKey, strategyId))
+    : null;
+  const decisions = db.prepare(`SELECT * FROM decisions WHERE signal_id = ? ORDER BY id ASC`).all(signal.id)
+    .map((decisionRow) => {
+      const decision = parseDecisionRow(decisionRow);
+      const orders = db.prepare(`SELECT * FROM orders WHERE decision_id = ? ORDER BY id ASC`).all(decision.id)
+        .map((order) => ({
+          ...order,
+          fills: db.prepare(
+            `SELECT * FROM fills
+             WHERE order_id = ? OR (alpaca_order_id IS NOT NULL AND alpaca_order_id = ?)
+             ORDER BY id ASC`
+          ).all(order.id, order.alpaca_order_id),
+        }));
+      return { ...decision, orders };
+    });
+  return {
+    signal,
+    sourceTrade,
+    qualityFlags: sourceTrade?.raw?._qualityFlags ?? [],
+    score,
+    strategyMatch: strategyMatch
+      ? { ...strategyMatch, failed_filters: jsonOrNull(strategyMatch.failed_filters) ?? [], strategy_definition: jsonOrNull(strategyMatch.strategy_definition) }
+      : null,
+    approval,
+    decisions,
+  };
+}
+
+export function getAuditChainBySignalId(signalId) {
+  return auditForSignalId(Number(signalId));
+}
+
+export function getAuditChainByOrderId(orderId) {
+  const row = db.prepare(
+    `SELECT d.signal_id
+     FROM orders o
+     JOIN decisions d ON d.id = o.decision_id
+     WHERE o.id = ? OR o.alpaca_order_id = ?
+     ORDER BY o.id DESC LIMIT 1`
+  ).get(orderId, String(orderId));
+  return row ? auditForSignalId(row.signal_id) : null;
+}
+
 export function listSignalsWithDecisions(limit = 100) {
   // One row per (signal, fund decision); a signal routed to N funds shows N rows.
   return db
     .prepare(
-      `SELECT s.*, d.fund, d.approved, d.reason AS decision_reason, d.notional_usd,
-              o.status AS order_status, o.alpaca_order_id
+      `SELECT s.*, d.id AS decision_id, d.fund, d.approved, d.reason AS decision_reason,
+              d.notional_usd, d.checks, o.id AS order_id, o.status AS order_status, o.alpaca_order_id
        FROM signals s
        LEFT JOIN decisions d ON d.signal_id = s.id
        LEFT JOIN orders o ON o.decision_id = d.id
@@ -1709,13 +1839,8 @@ export function listSignalsWithDecisions(limit = 100) {
     )
     .all(limit)
     .map((row) => {
-      const rawReference = jsonOrNull(row.raw_reference);
-      return {
-        ...row,
-        rawReference,
-        sentimentClassification: row.source === 'sentiment' ? rawReference?.classification ?? null : null,
-        crossSignal: row.source === 'sentiment' ? rawReference?.crossSignal ?? null : null,
-      };
+      const parsed = parseSignalRow(row);
+      return { ...parsed, approved: row.approved == null ? null : !!row.approved, checks: jsonOrNull(row.checks) ?? [] };
     });
 }
 
