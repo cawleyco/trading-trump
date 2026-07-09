@@ -35,7 +35,7 @@ export default function Backtest() {
   useEffect(() => {
     api.politicians().then((p) => {
       setPoliticians(p)
-      if (p.length && !politician) setPolitician(p[0].name)
+      if (p.length) setPolitician((current) => current || p[0].name)
     }).catch((e) => setError(`Could not load politician list: ${e.message}`))
     api.backtests().then(setHistory).catch(() => {})
   }, [])

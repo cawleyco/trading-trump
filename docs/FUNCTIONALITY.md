@@ -87,6 +87,10 @@ Any trade archived below **0.8** parse confidence is queued in `review_queue` at
 
 Pure lag math: `disclosureLagDays` (trade → disclosure), `publishLagDays` (trade → when we first saw it), `ageDays` (since first seen), and `freshnessScore` — 0–100, 100 within 5 days of the trade decaying linearly to 0 at 60 days (falling back to the disclosure date when the transaction date is missing). `filingSpeedLeaderboard()` aggregates the archive into per-politician median disclosure lag and % filed within 15/30/45 days (`GET /api/intel/filing-speed`), rendered as a sortable table on the dashboard. `GET /api/intel/drift/:tradeKey` answers "has this already moved?" using the cached market-data helpers.
 
+### Politician alpha profiles (`server/intel/politicianStats.js`)
+
+`buildPoliticianStats` (pure, with injected price/sector lookups) turns a member's archived **buys** (options and parse-confidence &lt; 0.8 excluded) into a tear-sheet row: entry at the disclosure-date close, forward returns at +7/30/90/180 days, win rates, average amount, median disclosure lag, per-sector 30-day returns, ticker concentration (HHI), and a recent (last-12-month) average. `refreshAllPoliticianStats` computes every politician then assigns `edge_score` — the percentile rank of `avg_return_90d` among members with ≥10 measurable 90-day buys; fewer than that leaves `edge_score` **null** (unknown, not average), so "proven good", "proven bad", and "not enough data" stay distinct. Rows persist in `politician_stats`. It runs nightly at 06:00 ET (`node-cron`) and on demand via `POST /api/intel/refresh-stats`; `GET /api/intel/politicians` lists the rows and `GET /api/intel/politicians/:name` returns one profile plus recent trades. Returns rely on the shared `marketData` cache, so a full refresh can take minutes.
+
 ## Signal sources
 
 ### Congress (`server/sources/congressPoller.js` + `congressData.js` + `senateEfd.js`)
@@ -159,10 +163,11 @@ SQLite (`trading.db`, WAL mode). Tables:
 | `congress_trades` | Full-row archive of every disclosed trade the poller/backfill has seen: parties, dates, parsed amount band (`amount_min/max/mid`), source + filing URL, and (later phases) quality/identity fields. The substrate for scoring, profiles, and archive-backed backtests |
 | `ticker_meta` | Ticker → company name, SEC CIK, SIC code, and coarse sector; populated from SEC EDGAR, refreshed weekly |
 | `review_queue` | Low-confidence filings (parse confidence &lt; 0.8) held for human review, with reason and approved/rejected status |
+| `politician_stats` | Per-politician tear-sheet: forward returns by horizon, win rates, sector breakdown, concentration, and `edge_score`; refreshed nightly |
 | `backtests` | Saved backtest params + results (congress / tweet / leaderboard / walk-forward) |
 
 Schema migrations (adding fund columns etc.) run automatically and idempotently at startup — v1 databases upgrade in place, existing rows attributed to fund `default`.
 
 ## Logging (`server/logger.js`)
 
-Structured JSON lines to stdout (`ts`, `level`, `component`, `message`, plus context like `signalId`). The database is the durable audit trail; the log is the operational play-by-play. Grep-friendly: `component` is one of `server`, `risk`, `alpaca`, `congress`, `truth-social`, `sentiment`, `senate-efd`, `backtest`, `auto-exit`, `notify`, `market-data`, `ticker-meta`. Per-fund lines are prefixed `[fund-name]`.
+Structured JSON lines to stdout (`ts`, `level`, `component`, `message`, plus context like `signalId`). The database is the durable audit trail; the log is the operational play-by-play. Grep-friendly: `component` is one of `server`, `risk`, `alpaca`, `congress`, `truth-social`, `sentiment`, `senate-efd`, `backtest`, `auto-exit`, `notify`, `market-data`, `ticker-meta`, `politician-stats`. Per-fund lines are prefixed `[fund-name]`.

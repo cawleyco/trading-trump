@@ -94,6 +94,38 @@ Per-politician disclosure-speed stats over the archive, fastest median first. `m
     "pctWithin15": 71.4, "pctWithin30": 100, "pctWithin45": 100 } ]
 ```
 
+### `GET /api/intel/politicians?limit=500`
+
+Persisted politician alpha stats, sorted by known `edge_score` first. Run `POST /api/intel/refresh-stats` to populate or refresh the table.
+
+```json
+[
+  {
+    "politician": "Jane Doe",
+    "as_of": "2026-07-09",
+    "trade_count": 42,
+    "buy_count": 30,
+    "median_disclosure_lag": 18,
+    "win_rate_30d": 56.7,
+    "avg_return_90d": 4.2,
+    "best_hold_window": "90d",
+    "edge_score": 74.5
+  }
+]
+```
+
+### `GET /api/intel/politicians/:name`
+
+Full stats row plus the politician's 50 most recent archived trades. `:name` must be URL-encoded.
+
+### `POST /api/intel/refresh-stats`
+
+Recomputes all politician stats from `congress_trades`, using cached market-data helpers where possible. This can take minutes on a large archive and is also scheduled daily at 06:00 America/New_York.
+
+```json
+{ "refreshed": 120, "asOf": "2026-07-09" }
+```
+
 ### `GET /api/intel/drift/:tradeKey`
 
 "Has this trade already moved?" — percent price change since the transaction and disclosure dates for the trade's ticker. The `tradeKey` (which contains `|` and spaces) must be **URL-encoded**. Either field is `null` when price data is unavailable; 404 if the key is unknown.

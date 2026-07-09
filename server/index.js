@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import cron from 'node-cron';
 import { config, enabledFunds } from './config.js';
 import {
   listSignalsWithDecisions,
@@ -15,6 +16,7 @@ import {
   getCongressTradeByKey,
 } from './db.js';
 import { filingSpeedLeaderboard } from './intel/freshnessReports.js';
+import { getStatsProfile, listStats, refreshAllPoliticianStats } from './intel/politicianStats.js';
 import { driftSincePct } from './marketData.js';
 import { fundClients, getFundClient } from './alpacaClient.js';
 import {
@@ -163,6 +165,25 @@ app.post('/api/review-queue/:id/resolve', (req, res) => {
 app.get('/api/intel/filing-speed', (req, res) => {
   const minTrades = Number(req.query.minTrades) || 3;
   res.json(filingSpeedLeaderboard({ minTrades }));
+});
+
+app.get('/api/intel/politicians', (req, res) => {
+  res.json(listStats(Number(req.query.limit) || 500));
+});
+
+app.get('/api/intel/politicians/:name', (req, res) => {
+  const profile = getStatsProfile(req.params.name);
+  if (!profile) return res.status(404).json({ error: 'unknown politician stats; run refresh first' });
+  res.json(profile);
+});
+
+app.post('/api/intel/refresh-stats', async (req, res) => {
+  try {
+    res.json(await refreshAllPoliticianStats());
+  } catch (err) {
+    log.error('server', `Politician stats refresh failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // tradeKey contains "|" and spaces — clients must URL-encode it.
@@ -369,6 +390,16 @@ app.listen(config.port, '127.0.0.1', () => {
 
   // SEC ticker universe (name/CIK/sector lookups) — background, best-effort
   ensureTickerUniverse();
+
+  cron.schedule(
+    '0 6 * * *',
+    () => {
+      refreshAllPoliticianStats().catch((err) =>
+        log.error('server', `Scheduled politician stats refresh failed: ${err.message}`)
+      );
+    },
+    { timezone: 'America/New_York' }
+  );
 
   // Refresh every fund's P&L / circuit breaker every minute
   setInterval(() => {

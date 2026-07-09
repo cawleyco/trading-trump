@@ -129,6 +129,28 @@ CREATE TABLE IF NOT EXISTS review_queue (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_rq_status ON review_queue(status);
+
+CREATE TABLE IF NOT EXISTS politician_stats (
+  politician TEXT PRIMARY KEY,
+  as_of TEXT NOT NULL,
+  trade_count INTEGER,
+  buy_count INTEGER,
+  sell_count INTEGER,
+  median_disclosure_lag REAL,
+  avg_amount_mid REAL,
+  win_rate_30d REAL,
+  win_rate_90d REAL,
+  avg_return_7d REAL,
+  avg_return_30d REAL,
+  avg_return_90d REAL,
+  avg_return_180d REAL,
+  best_hold_window TEXT,
+  sector_returns TEXT,
+  concentration_hhi REAL,
+  recent_avg_return_30d REAL,
+  edge_score REAL,
+  stats TEXT
+);
 `);
 
 // --- migrations for databases created before multi-fund support ---
@@ -318,6 +340,72 @@ export function listCongressTrades({ politician, ticker, since, until, limit } =
     ` ORDER BY disclosure_date DESC, id DESC`;
   if (limit) { sql += ` LIMIT ?`; params.push(limit); }
   return db.prepare(sql).all(...params);
+}
+
+export function listArchivePoliticians() {
+  return db
+    .prepare(`SELECT DISTINCT politician FROM congress_trades WHERE politician IS NOT NULL ORDER BY politician`)
+    .all()
+    .map((r) => r.politician);
+}
+
+export function upsertPoliticianStats(row) {
+  db.prepare(
+    `INSERT INTO politician_stats (
+       politician, as_of, trade_count, buy_count, sell_count, median_disclosure_lag,
+       avg_amount_mid, win_rate_30d, win_rate_90d, avg_return_7d, avg_return_30d,
+       avg_return_90d, avg_return_180d, best_hold_window, sector_returns,
+       concentration_hhi, recent_avg_return_30d, edge_score, stats
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(politician) DO UPDATE SET
+       as_of = excluded.as_of,
+       trade_count = excluded.trade_count,
+       buy_count = excluded.buy_count,
+       sell_count = excluded.sell_count,
+       median_disclosure_lag = excluded.median_disclosure_lag,
+       avg_amount_mid = excluded.avg_amount_mid,
+       win_rate_30d = excluded.win_rate_30d,
+       win_rate_90d = excluded.win_rate_90d,
+       avg_return_7d = excluded.avg_return_7d,
+       avg_return_30d = excluded.avg_return_30d,
+       avg_return_90d = excluded.avg_return_90d,
+       avg_return_180d = excluded.avg_return_180d,
+       best_hold_window = excluded.best_hold_window,
+       sector_returns = excluded.sector_returns,
+       concentration_hhi = excluded.concentration_hhi,
+       recent_avg_return_30d = excluded.recent_avg_return_30d,
+       edge_score = excluded.edge_score,
+       stats = excluded.stats`
+  ).run(
+    row.politician, row.as_of, row.trade_count, row.buy_count, row.sell_count,
+    row.median_disclosure_lag, row.avg_amount_mid, row.win_rate_30d, row.win_rate_90d,
+    row.avg_return_7d, row.avg_return_30d, row.avg_return_90d, row.avg_return_180d,
+    row.best_hold_window, JSON.stringify(row.sector_returns ?? {}),
+    row.concentration_hhi, row.recent_avg_return_30d, row.edge_score,
+    JSON.stringify(row.stats ?? {})
+  );
+}
+
+function parsePoliticianStatsRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    sector_returns: row.sector_returns ? JSON.parse(row.sector_returns) : {},
+    stats: row.stats ? JSON.parse(row.stats) : {},
+  };
+}
+
+export function listPoliticianStats({ limit = 500 } = {}) {
+  return db
+    .prepare(`SELECT * FROM politician_stats ORDER BY edge_score IS NULL, edge_score DESC, trade_count DESC LIMIT ?`)
+    .all(limit)
+    .map(parsePoliticianStatsRow);
+}
+
+export function getPoliticianStats(politician) {
+  return parsePoliticianStatsRow(
+    db.prepare(`SELECT * FROM politician_stats WHERE politician = ?`).get(politician)
+  );
 }
 
 /**
