@@ -121,6 +121,7 @@ Takes a list of planned trades and a fixed dollar amount per trade, fetches bars
 - **SPY benchmark**: the same dollar amounts deployed into SPY on the same entry/exit dates, returned as a parallel curve + return % — the "should I have just bought the index?" baseline.
 - `direction: 'sell'` trades are simulated as short P&L (price down = profit) — a "what if I'd acted on the bearish call" measure, even though the live bot never shorts.
 - Trades with no price data (delisted tickers, dates outside data coverage) are reported as **skipped with a reason** and excluded from totals — never silently filled in.
+- **Trading costs** (optional, all default zero so old backtests stay comparable): `slippageBps` worsens every entry and exit fill (mirrored for shorts); `feePerTradeUsd` is a flat per-round-trip cost; `autoSlippage` instead picks a slippage tier per trade from the ticker's average dollar volume (≥$50M → 5bps, $10–50M → 15, $1–10M → 40, &lt;$1M → 100) and records it on the trade row. The cost math (`applyCosts`, `slippageTierBps`) is pure and unit-tested; the SPY benchmark stays cost-free as a clean baseline.
 
 ### `congressBacktest.js`
 
