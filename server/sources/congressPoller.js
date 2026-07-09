@@ -1,10 +1,11 @@
 import cron from 'node-cron';
 import { config } from '../config.js';
-import { hasSeenCongressTrade, markCongressTradeSeen } from '../db.js';
+import { hasSeenCongressTrade, markCongressTradeSeen, getCongressTradeByKey } from '../db.js';
 import { makeTradeSignal } from '../signal.js';
 import { processSignal } from '../riskManager.js';
 import { scoreTrade } from '../intel/scoreRunner.js';
 import { processTradeThroughStrategies } from '../intel/strategyEngine.js';
+import { dispatchTradeScored } from '../intel/alertEngine.js';
 import { archiveTrade, fetchRecentCongressTrades, tradeKey } from './congressData.js';
 import { log } from '../logger.js';
 
@@ -52,6 +53,12 @@ export async function pollCongressTrades() {
     // On the very first poll everything is "new" — seed the seen-table without
     // trading, otherwise startup would fire a signal for every recent disclosure.
     if (firstRun) continue;
+
+    // Fire alert rules for this newly-disclosed, scored trade (deduped internally).
+    if (score) {
+      const row = getCongressTradeByKey(key);
+      if (row) dispatchTradeScored(row, score);
+    }
 
     if (config.signals.routing === 'strategies') {
       try {

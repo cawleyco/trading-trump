@@ -38,6 +38,14 @@ import {
   removeWatchlistItem,
   watchlistActivity,
   WATCHLIST_KINDS,
+  listAlertRules,
+  getAlertRule,
+  createAlertRule,
+  updateAlertRule,
+  deleteAlertRule,
+  listAlertsSent,
+  ALERT_RULE_TYPES,
+  ALERT_CHANNELS,
   listEvents,
   listRecentTradesForTickers,
   createYoutubeChannel,
@@ -80,6 +88,7 @@ import {
 import { getStatsProfile, listStats, refreshAllPoliticianStats } from './intel/politicianStats.js';
 import { rescoreRecentTrades, scoreTrade } from './intel/scoreRunner.js';
 import { getOrBuildThesisCard } from './intel/cardRunner.js';
+import { dispatchCalendarEvents } from './intel/alertEngine.js';
 import { buildCrossSignalContext } from './intel/crossSignal.js';
 import {
   approvePendingStrategySignal,
@@ -423,6 +432,40 @@ app.delete('/api/watchlist/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- alert rules + feed (Phase 11) ----------
+app.get('/api/alerts/rules', (req, res) => {
+  res.json({ rules: listAlertRules(), ruleTypes: ALERT_RULE_TYPES, channels: ALERT_CHANNELS });
+});
+
+app.post('/api/alerts/rules', (req, res) => {
+  const { ruleType, params, channel } = req.body || {};
+  if (!ALERT_RULE_TYPES.includes(ruleType)) {
+    return res.status(400).json({ error: `ruleType must be one of: ${ALERT_RULE_TYPES.join(', ')}` });
+  }
+  if (channel && !ALERT_CHANNELS.includes(channel)) {
+    return res.status(400).json({ error: `channel must be one of: ${ALERT_CHANNELS.join(', ')}` });
+  }
+  res.json(createAlertRule({ ruleType, params: params || {}, channel: channel || 'all' }));
+});
+
+app.put('/api/alerts/rules/:id', (req, res) => {
+  if (!getAlertRule(Number(req.params.id))) return res.status(404).json({ error: 'alert rule not found' });
+  const { params, channel, enabled } = req.body || {};
+  if (channel && !ALERT_CHANNELS.includes(channel)) {
+    return res.status(400).json({ error: `channel must be one of: ${ALERT_CHANNELS.join(', ')}` });
+  }
+  res.json(updateAlertRule(Number(req.params.id), { params, channel, enabled }));
+});
+
+app.delete('/api/alerts/rules/:id', (req, res) => {
+  if (!deleteAlertRule(Number(req.params.id))) return res.status(404).json({ error: 'alert rule not found' });
+  res.json({ ok: true });
+});
+
+app.get('/api/alerts/feed', (req, res) => {
+  res.json(listAlertsSent({ limit: Number(req.query.limit) || 100 }));
+});
+
 app.get('/api/intel/politicians', (req, res) => {
   res.json(listStats(Number(req.query.limit) || 500));
 });
@@ -545,10 +588,12 @@ app.get('/api/intel/events', (req, res) => {
 
 app.post('/api/intel/events/refresh', async (req, res) => {
   try {
-    res.json(await refreshPoliticalEvents({
+    const result = await refreshPoliticalEvents({
       from: req.body?.from || undefined,
       to: req.body?.to || undefined,
-    }));
+    });
+    dispatchCalendarEvents(listEvents({ limit: 300 }));
+    res.json(result);
   } catch (err) {
     log.error('server', `Political events refresh failed: ${err.message}`);
     res.status(500).json({ error: err.message });
@@ -1151,9 +1196,9 @@ app.listen(config.port, '127.0.0.1', () => {
   // SEC ticker universe (name/CIK/sector lookups) — background, best-effort
   ensureTickerUniverse();
   ensureLegislatorsAndCommittees();
-  refreshPoliticalEvents().catch((err) =>
-    log.error('server', `Startup political events refresh failed: ${err.message}`)
-  );
+  refreshPoliticalEvents()
+    .then(() => dispatchCalendarEvents(listEvents({ limit: 300 })))
+    .catch((err) => log.error('server', `Startup political events refresh failed: ${err.message}`));
 
   cron.schedule(
     '0 6 * * *',
@@ -1198,9 +1243,9 @@ app.listen(config.port, '127.0.0.1', () => {
   cron.schedule(
     '15 5 * * *',
     () => {
-      refreshPoliticalEvents().catch((err) =>
-        log.error('server', `Scheduled political events refresh failed: ${err.message}`)
-      );
+      refreshPoliticalEvents()
+        .then(() => dispatchCalendarEvents(listEvents({ limit: 300 })))
+        .catch((err) => log.error('server', `Scheduled political events refresh failed: ${err.message}`));
     },
     { timezone: 'America/New_York' }
   );

@@ -16,6 +16,7 @@ import { notify } from '../notifier.js';
 import { makeTradeSignal } from '../signal.js';
 import { processSignal } from '../riskManager.js';
 import { scoreTrade } from './scoreRunner.js';
+import { dispatchStrategyMatch } from './alertEngine.js';
 import { simulateTrades } from '../backtest/simulate.js';
 
 const FILTER_KEYS = new Set([
@@ -246,6 +247,7 @@ export async function processTradeThroughStrategies(tradeKey, opts = {}) {
     let approval = null;
 
     if (evaluation.matched) {
+      dispatchStrategyMatch(strategy, trade, score);
       const mode = inReview ? 'watch' : definition.action.mode;
       if (inReview && definition.action.mode !== 'watch') {
         outcome = 'skipped-review-queue';

@@ -582,6 +582,23 @@ CREATE TABLE IF NOT EXISTS watchlist (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE (kind, value)
 );
+
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_type TEXT NOT NULL,  -- 'high-score-trade'|'watchlist-activity'|'cluster'|'committee-relevant'|'stale-warning'|'strategy-match'|'tweet-catalyst'
+  params TEXT NOT NULL,     -- JSON e.g. {"minScore": 85}
+  channel TEXT NOT NULL DEFAULT 'all',   -- 'macos'|'discord'|'all'
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS alerts_sent (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_id INTEGER REFERENCES alert_rules(id),
+  dedup_key TEXT UNIQUE,    -- rule + subject, prevents re-alerting
+  message TEXT NOT NULL,
+  sent_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // --- migrations for databases created before multi-fund support ---
@@ -1260,6 +1277,12 @@ export function upsertGovContract(row) {
     row.action_date ?? null,
     row.source_url ?? null
   );
+}
+
+export function getTickerSector(ticker) {
+  if (!ticker) return null;
+  const row = db.prepare(`SELECT sector FROM ticker_meta WHERE ticker = ?`).get(String(ticker).toUpperCase());
+  return row?.sector ?? null;
 }
 
 export function listTradedCompanyMeta() {
@@ -2676,4 +2699,77 @@ export function watchlistActivity({ limit = 25 } = {}) {
   }
 
   return { trades, events };
+}
+
+// ---------- alert rules + sent-alert ledger (Phase 11) ----------
+export const ALERT_RULE_TYPES = [
+  'high-score-trade',
+  'watchlist-activity',
+  'cluster',
+  'committee-relevant',
+  'stale-warning',
+  'strategy-match',
+  'tweet-catalyst',
+];
+export const ALERT_CHANNELS = ['macos', 'discord', 'all'];
+
+function parseAlertRule(row) {
+  if (!row) return null;
+  return { ...row, enabled: !!row.enabled, params: jsonOrNull(row.params) ?? {} };
+}
+
+export function listAlertRules({ includeDisabled = true } = {}) {
+  const sql = `SELECT * FROM alert_rules ${includeDisabled ? '' : 'WHERE enabled = 1'} ORDER BY id ASC`;
+  return db.prepare(sql).all().map(parseAlertRule);
+}
+
+export function getAlertRule(id) {
+  return parseAlertRule(db.prepare(`SELECT * FROM alert_rules WHERE id = ?`).get(id));
+}
+
+export function createAlertRule({ ruleType, params = {}, channel = 'all', enabled = true }) {
+  const res = db.prepare(
+    `INSERT INTO alert_rules (rule_type, params, channel, enabled) VALUES (?, ?, ?, ?)`
+  ).run(ruleType, JSON.stringify(params), channel, enabled ? 1 : 0);
+  return getAlertRule(res.lastInsertRowid);
+}
+
+export function updateAlertRule(id, { params, channel, enabled } = {}) {
+  const current = getAlertRule(id);
+  if (!current) return null;
+  db.prepare(`UPDATE alert_rules SET params = ?, channel = ?, enabled = ? WHERE id = ?`).run(
+    JSON.stringify(params ?? current.params),
+    channel ?? current.channel,
+    (enabled ?? current.enabled) ? 1 : 0,
+    id
+  );
+  return getAlertRule(id);
+}
+
+export function deleteAlertRule(id) {
+  // Keep the sent-alert history but detach it so the FK doesn't block deletion.
+  const drop = db.transaction((ruleId) => {
+    db.prepare(`UPDATE alerts_sent SET rule_id = NULL WHERE rule_id = ?`).run(ruleId);
+    return db.prepare(`DELETE FROM alert_rules WHERE id = ?`).run(ruleId).changes > 0;
+  });
+  return drop(id);
+}
+
+/**
+ * Record a fired alert, deduping on dedup_key. Returns true if this alert is new
+ * (caller should notify), false if it was already sent (suppress).
+ */
+export function recordAlertSent({ ruleId, dedupKey, message }) {
+  const res = db.prepare(
+    `INSERT OR IGNORE INTO alerts_sent (rule_id, dedup_key, message) VALUES (?, ?, ?)`
+  ).run(ruleId, dedupKey, message);
+  return res.changes > 0;
+}
+
+export function listAlertsSent({ limit = 100 } = {}) {
+  return db.prepare(
+    `SELECT a.*, r.rule_type FROM alerts_sent a
+     LEFT JOIN alert_rules r ON r.id = a.rule_id
+     ORDER BY a.id DESC LIMIT ?`
+  ).all(limit);
 }

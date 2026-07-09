@@ -51,6 +51,21 @@ export const api = {
       body: JSON.stringify(body),
     }),
   removeWatchlist: (id) => req(`/api/watchlist/${id}`, { method: 'DELETE' }),
+  alertRules: () => req('/api/alerts/rules'),
+  createAlertRule: (body) =>
+    req('/api/alerts/rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  updateAlertRule: (id, body) =>
+    req(`/api/alerts/rules/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  deleteAlertRule: (id) => req(`/api/alerts/rules/${id}`, { method: 'DELETE' }),
+  alertFeed: (limit = 100) => req(`/api/alerts/feed?limit=${limit}`),
   politicianStats: (limit = 500) => req(`/api/intel/politicians?limit=${limit}`),
   politicianProfile: (name) => req(`/api/intel/politicians/${encodeURIComponent(name)}`),
   refreshPoliticianStats: () =>

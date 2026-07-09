@@ -8,6 +8,7 @@ import Calendar from './views/Calendar.jsx'
 import Strategies from './views/Strategies.jsx'
 import Approvals from './views/Approvals.jsx'
 import SignalLog from './views/SignalLog.jsx'
+import Alerts from './views/Alerts.jsx'
 import Influence from './views/Influence.jsx'
 import AppShell from './components/intel/AppShell.jsx'
 import { EmptyState, PageHeader, SectionPanel } from './components/intel/components.jsx'
@@ -25,7 +26,7 @@ const VIEWS = {
   signals: ['Signals', SignalLog],
   assets: ['Assets', AssetsPlaceholder],
   research: ['Research', ResearchPlaceholder],
-  alerts: ['Alerts', AlertsPlaceholder],
+  alerts: ['Alerts', Alerts],
   dataSources: ['Data Sources', DataSourcesPlaceholder],
   settings: ['Settings', SettingsPlaceholder],
 }
@@ -112,10 +113,6 @@ function AssetsPlaceholder() {
 
 function ResearchPlaceholder() {
   return <Placeholder title="Research" description="Saved notes, evidence trails, and analyst review queues will live here." />
-}
-
-function AlertsPlaceholder() {
-  return <Placeholder title="Alerts" description="Watchlists and manual-review alerts are staged for the terminal shell." />
 }
 
 function DataSourcesPlaceholder() {

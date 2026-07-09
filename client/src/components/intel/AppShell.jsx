@@ -36,7 +36,7 @@ const NAV_GROUPS = [
   {
     label: 'SYSTEM',
     items: [
-      { key: 'alerts', label: 'Alerts', path: '/app/alerts', icon: 'AL', enabled: false },
+      { key: 'alerts', label: 'Alerts', path: '/app/alerts', icon: 'AL' },
       { key: 'data-sources', label: 'Data Sources', path: '/app/data-sources', icon: 'DS', enabled: false },
       { key: 'settings', label: 'Settings', path: '/app/settings', icon: 'SE', enabled: false },
     ],
