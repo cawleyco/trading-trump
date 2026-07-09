@@ -28,6 +28,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
   filingSpeed: (minTrades = 3) => req(`/api/intel/filing-speed?minTrades=${minTrades}`),
+  politicianStats: (limit = 500) => req(`/api/intel/politicians?limit=${limit}`),
+  politicianProfile: (name) => req(`/api/intel/politicians/${encodeURIComponent(name)}`),
+  refreshPoliticianStats: () =>
+    req('/api/intel/refresh-stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }),
   drift: (tradeKey) => req(`/api/intel/drift/${encodeURIComponent(tradeKey)}`),
   reviewQueue: (status = 'pending') => req(`/api/review-queue?status=${status}`),
   resolveReview: (id, status) =>
