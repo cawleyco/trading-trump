@@ -61,6 +61,16 @@ Best-effort macOS Notification Center (`osascript`) and optional Discord webhook
 
 FIFO-matches sell fills against buy fills per fund+ticker and attributes each closed lot's realized P&L to the source of the **entry** signal. Served at `/api/attribution` and charted on the dashboard — the direct answer to "which strategy is making money?". Only fills are counted (dry-run simulated orders have no fills), and sells with no matched buy (positions predating the bot) are ignored.
 
+## Market data & metadata helpers
+
+### `server/marketData.js` — cached price utilities
+
+A reusable price API over the shared Alpaca client, with a 1-hour in-memory cache, used by scoring, profiles, and dashboards. `getDailyCloses(ticker, start, end)`, `priceOn(ticker, date)` (close of the first trading day ≥ date), `latestPrice(ticker)`, `driftSincePct(ticker, sinceDate)` (percent move from then to now), and `avgDollarVolume(ticker, days)` (mean close×volume — a liquidity proxy). **Every function returns `null` on missing data — a bad ticker never throws.** The math is factored into pure helpers (`_computeDrift`, `_computeAdv`, `_firstCloseOnOrAfter`) that are unit-tested offline; the Alpaca client is imported lazily so the helpers don't require broker config.
+
+### `server/sources/tickerMeta.js` — ticker → company/CIK/sector
+
+Resolves ticker symbols to company metadata using free SEC EDGAR data (no key; a contact email in the User-Agent via `SEC_CONTACT_EMAIL`). `refreshTickerUniverse()` downloads the SEC company-tickers file into the `ticker_meta` table (ticker → name/CIK); `ensureTickerUniverse()` runs it in the background at startup when the table is empty or older than 7 days. `getSectorForTicker(ticker)` fetches the company's SEC submissions once, maps its SIC code to one of ~12 coarse sectors (`server/lib/sicSectors.js`), and caches it. `resolveTicker(nameOrTicker)` is the entity-resolution entry point: a manual override map (`server/lib/tickerOverrides.js`) wins, then an exact ticker match, then a company-name `LIKE` match. Raw SEC responses are cached on disk under `data-cache/` with a TTL.
+
 ## Signal sources
 
 ### Congress (`server/sources/congressPoller.js` + `congressData.js` + `senateEfd.js`)
@@ -68,9 +78,11 @@ FIFO-matches sell fills against buy fills per fund+ticker and attributes each cl
 - Runs on `CONGRESS_POLL_CRON` (default every 20 min).
 - Data source: **Quiver Quantitative** if `QUIVER_API_KEY` is set (House + Senate); otherwise the **official Senate eFD site** (free, Senate only). The eFD scraper accepts the site's access agreement, pages through the filing index, and parses each electronic Periodic Transaction Report's HTML table. Paper (scanned-PDF) filings are skipped — they aren't machine-readable.
 - Each new, unseen trade becomes a signal: politician purchase → `buy`, sale → `sell`.
-- **Dedup**: a key of `politician|ticker|date|type|amount` in the `seen_congress_trades` table ensures each disclosed trade is considered exactly once, across restarts.
+- **Archive**: every fetched trade (seen or not) is upserted into the `congress_trades` table *before* the dedup check — the full-row historical archive that scoring, profiles, and the backtester read from. `archiveTrade()` (in `congressData.js`) parses the amount band (`server/lib/amountRange.js` → `amount_min/max/mid`) and tags the source. Idempotent by `trade_key`.
+- **Dedup**: a key of `politician|ticker|date|type|amount` in the `seen_congress_trades` table ensures each disclosed trade is *traded* exactly once, across restarts. (The archive and the dedup set use the same key but serve different purposes — the archive keeps everything, dedup gates signal creation.)
 - **Staleness guard**: disclosures older than `CONGRESS_MAX_DISCLOSURE_AGE_DAYS` are skipped.
 - **First-run seeding**: the first poll after startup only marks trades as seen, it does not trade them.
+- **Backfill**: `npm run backfill [-- --start YYYY-MM-DD --end YYYY-MM-DD]` (`scripts/backfill-congress.js`) populates the archive from historical disclosures (default: 3 years back). Idempotent — re-runs insert 0 new rows. Backfilled rows set `first_seen_at` to the disclosure date as a best-available publish-time estimate; live-poller rows carry a true `first_seen_at`.
 
 ### Trump sentiment (`server/sources/truthSocialPoller.js` + `truthSocialData.js` + `sentiment/classifier.js`)
 
@@ -96,7 +108,7 @@ Takes a list of planned trades and a fixed dollar amount per trade, fetches bars
 
 ### `congressBacktest.js`
 
-Filters historical disclosures to one politician and a **disclosure-date** range (matching what a live copier could have known), turns their purchases into entries, and applies the chosen exit rule (`follow` their later sale of the same ticker / `hold_30` / `hold_90` / `hold_to_present`), plus optional SL/TP. Historical data is cached in memory for 1 hour. Also powers the politician dropdown (`listPoliticians`) and `runCongressLeaderboard`, which backtests **every** politician with ≥ minTrades in one pass (shared caches) and ranks them by return.
+Filters historical disclosures to one politician and a **disclosure-date** range (matching what a live copier could have known), turns their purchases into entries, and applies the chosen exit rule (`follow` their later sale of the same ticker / `hold_30` / `hold_90` / `hold_to_present`), plus optional SL/TP. Data source: the local `congress_trades` **archive** first (populated by the poller + backfill), falling back to a live network fetch (cached in memory for 1 hour) only while the archive has no rows in range. Also powers the politician dropdown (`listPoliticians`) and `runCongressLeaderboard`, which backtests **every** politician with ≥ minTrades in one pass (shared caches) and ranks them by return.
 
 ### `tweetBacktest.js`
 
@@ -121,10 +133,12 @@ SQLite (`trading.db`, WAL mode). Tables:
 | `daily_pnl` | One row per US/Eastern trading day **per fund**: day P&L and the equity baseline |
 | `kill_switch_events` | Every circuit-breaker trip and manual halt per fund, with reason, trip time, and reset time |
 | `seen_congress_trades` / `seen_posts` | Dedup state so nothing is traded twice; `seen_posts` also keeps post text + timestamp to extend backtest coverage |
+| `congress_trades` | Full-row archive of every disclosed trade the poller/backfill has seen: parties, dates, parsed amount band (`amount_min/max/mid`), source + filing URL, and (later phases) quality/identity fields. The substrate for scoring, profiles, and archive-backed backtests |
+| `ticker_meta` | Ticker → company name, SEC CIK, SIC code, and coarse sector; populated from SEC EDGAR, refreshed weekly |
 | `backtests` | Saved backtest params + results (congress / tweet / leaderboard) |
 
 Schema migrations (adding fund columns etc.) run automatically and idempotently at startup — v1 databases upgrade in place, existing rows attributed to fund `default`.
 
 ## Logging (`server/logger.js`)
 
-Structured JSON lines to stdout (`ts`, `level`, `component`, `message`, plus context like `signalId`). The database is the durable audit trail; the log is the operational play-by-play. Grep-friendly: `component` is one of `server`, `risk`, `alpaca`, `congress`, `truth-social`, `sentiment`, `senate-efd`, `backtest`, `auto-exit`, `notify`. Per-fund lines are prefixed `[fund-name]`.
+Structured JSON lines to stdout (`ts`, `level`, `component`, `message`, plus context like `signalId`). The database is the durable audit trail; the log is the operational play-by-play. Grep-friendly: `component` is one of `server`, `risk`, `alpaca`, `congress`, `truth-social`, `sentiment`, `senate-efd`, `backtest`, `auto-exit`, `notify`, `market-data`, `ticker-meta`. Per-fund lines are prefixed `[fund-name]`.

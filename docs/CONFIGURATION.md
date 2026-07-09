@@ -60,6 +60,7 @@ The combinations (per fund):
 | `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` | **Yes** (startup fails without them) | Orders, account/positions, market clock, historical price bars |
 | `ANTHROPIC_API_KEY` | No | Claude sentiment classification. If empty, the sentiment source logs a warning and never emits signals; tweet backtests produce zero trades. |
 | `QUIVER_API_KEY` | No | Congress trade data (House + Senate, fast). If empty, the bot scrapes the official Senate eFD site instead (free, Senate only, slower for historical ranges). |
+| `SEC_CONTACT_EMAIL` | No | Contact email included in the User-Agent of SEC EDGAR requests (ticker → company/CIK/sector metadata). SEC asks automated clients to identify themselves; the data is free and needs no key. |
 
 ## Risk limits (the safety rails)
 
@@ -110,7 +111,8 @@ Sell-signal sizing is special: a sell closes up to the whole existing position (
 
 | Path | What it is |
 |---|---|
-| `trading.db` (+ `-wal`, `-shm`) | SQLite database: all signals, per-fund decisions/orders/fills, P&L history, kill-switch events, dedup state (including collected post texts), saved backtests. Git-ignored. Schema migrations run automatically at startup. |
+| `trading.db` (+ `-wal`, `-shm`) | SQLite database: all signals, per-fund decisions/orders/fills, P&L history, kill-switch events, dedup state (including collected post texts), saved backtests, the congress-trade archive, and ticker metadata. Git-ignored. Schema migrations run automatically at startup. |
+| `data-cache/` | On-disk cache of slow-changing raw third-party responses (currently the SEC ticker universe and per-company submissions), each with a TTL. Git-ignored; safe to delete (it refetches). |
 | `HALT` | If this file exists in the project root, **all funds** stop trading (global manual override). Git-ignored. |
 | `.env` | Your secrets. Git-ignored. Never commit it; never paste it into chats or issues. |
 | `funds.json` | Fund definitions (references `.env` var names, no secrets — but git-ignored anyway). |
