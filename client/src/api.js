@@ -27,6 +27,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  reviewQueue: (status = 'pending') => req(`/api/review-queue?status=${status}`),
+  resolveReview: (id, status) =>
+    req(`/api/review-queue/${id}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    }),
   politicians: () => req('/api/politicians'),
   backtests: () => req('/api/backtests'),
   backtest: (id) => req(`/api/backtests/${id}`),

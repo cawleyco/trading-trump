@@ -66,6 +66,25 @@ Realized P&L per fund per signal source, FIFO-matched from fills:
   "totalClosedLots": 12 }
 ```
 
+## Intelligence layer
+
+### `GET /api/review-queue?status=pending`
+
+Low-quality filings held for human review (parse confidence &lt; 0.8), newest first, each joined with its archived trade and the raw filing JSON. `status` is `pending` (default), `approved`, or `rejected`.
+
+```json
+[ { "id": 3, "trade_key": "Jane Doe|ABC|2026-06-01|buy|N/A",
+    "reason": "parse_confidence 0.5 < 0.8 (no-amount, unresolved-ticker)",
+    "status": "pending", "politician": "Jane Doe", "ticker": "ABC", "type": "buy",
+    "parse_confidence": 0.5, "source": "senate-efd",
+    "source_url": "https://efdsearch.senate.gov/search/view/ptr/…/",
+    "raw": { "…": "the original filing row + _qualityFlags" } } ]
+```
+
+### `POST /api/review-queue/:id/resolve`
+
+Body: `{ "status": "approved" | "rejected" }`. Marks a pending item resolved. Returns `{ "id", "status" }`, or 404 if no pending item has that id. (Resolution is currently advisory metadata; the auto-trade/strategy gating it feeds is enforced in later phases.)
+
 ## Backtesting
 
 ### `GET /api/politicians`

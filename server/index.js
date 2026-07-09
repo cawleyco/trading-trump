@@ -10,6 +10,8 @@ import {
   resetKillSwitch,
   listBacktests,
   getBacktest,
+  listReviewQueue,
+  resolveReviewItem,
 } from './db.js';
 import { fundClients, getFundClient } from './alpacaClient.js';
 import {
@@ -129,6 +131,28 @@ app.post('/api/test-signal', async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+});
+
+// ---------- data-quality review queue ----------
+app.get('/api/review-queue', (req, res) => {
+  const status = req.query.status || 'pending';
+  const rows = listReviewQueue(status).map((r) => {
+    let raw = null;
+    try { raw = r.raw ? JSON.parse(r.raw) : null; } catch { /* leave null */ }
+    return { ...r, raw };
+  });
+  res.json(rows);
+});
+
+app.post('/api/review-queue/:id/resolve', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });
+  const status = req.body?.status;
+  if (!['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'status must be "approved" or "rejected"' });
+  }
+  const ok = resolveReviewItem(Number(req.params.id), status);
+  if (!ok) return res.status(404).json({ error: 'no pending review item with that id' });
+  res.json({ id: Number(req.params.id), status });
 });
 
 // ---------- P&L attribution ----------

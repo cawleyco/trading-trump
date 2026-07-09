@@ -119,6 +119,16 @@ CREATE TABLE IF NOT EXISTS ticker_meta (
   sector TEXT,           -- coarse bucket from server/lib/sicSectors.js
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS review_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  trade_key TEXT NOT NULL REFERENCES congress_trades(trade_key),
+  reason TEXT NOT NULL,             -- e.g. 'parse_confidence 0.5 < 0.8'
+  status TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'approved' | 'rejected'
+  resolved_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_rq_status ON review_queue(status);
 `);
 
 // --- migrations for databases created before multi-fund support ---
@@ -308,6 +318,45 @@ export function listCongressTrades({ politician, ticker, since, until, limit } =
     ` ORDER BY disclosure_date DESC, id DESC`;
   if (limit) { sql += ` LIMIT ?`; params.push(limit); }
   return db.prepare(sql).all(...params);
+}
+
+/**
+ * Queue a trade for human review (idempotent — skips if a pending row for the
+ * same trade_key already exists). Returns true if a new row was inserted.
+ */
+export function enqueueReview({ tradeKey, reason }) {
+  const existing = db
+    .prepare(`SELECT 1 FROM review_queue WHERE trade_key = ? AND status = 'pending'`)
+    .get(tradeKey);
+  if (existing) return false;
+  db.prepare(`INSERT INTO review_queue (trade_key, reason) VALUES (?, ?)`).run(tradeKey, reason);
+  return true;
+}
+
+/** Review-queue items joined with their archived trade (raw filing + source URL). */
+export function listReviewQueue(status = 'pending', limit = 200) {
+  return db
+    .prepare(
+      `SELECT rq.id, rq.trade_key, rq.reason, rq.status, rq.resolved_at, rq.created_at,
+              ct.politician, ct.ticker, ct.type, ct.transaction_date, ct.disclosure_date,
+              ct.amount_range, ct.parse_confidence, ct.is_option, ct.owner,
+              ct.source, ct.source_url, ct.raw
+       FROM review_queue rq
+       JOIN congress_trades ct ON ct.trade_key = rq.trade_key
+       ${status ? 'WHERE rq.status = ?' : ''}
+       ORDER BY rq.id DESC LIMIT ?`
+    )
+    .all(...(status ? [status, limit] : [limit]));
+}
+
+export function resolveReviewItem(id, status) {
+  const res = db
+    .prepare(
+      `UPDATE review_queue SET status = ?, resolved_at = datetime('now')
+       WHERE id = ? AND status = 'pending'`
+    )
+    .run(status, id);
+  return res.changes > 0;
 }
 
 export function hasSeenCongressTrade(tradeKey) {

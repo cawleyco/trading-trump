@@ -5,7 +5,11 @@ import { fetchSenateTrades } from './senateEfd.js';
 import { parseAmountRange } from '../lib/amountRange.js';
 import { assessTrade } from '../lib/filingQuality.js';
 import { resolveTicker } from './tickerMeta.js';
-import { upsertCongressTrade, findAmendableTradeKey } from '../db.js';
+import { upsertCongressTrade, findAmendableTradeKey, enqueueReview } from '../db.js';
+
+// Trades below this parse confidence are queued for human review and (later
+// phases) barred from auto-trading / strategy auto modes.
+export const REVIEW_CONFIDENCE_THRESHOLD = 0.8;
 
 // Normalized congress trade shape used by both the live poller and the backtester:
 // { politician, ticker, type: 'buy'|'sell', transactionDate, disclosureDate, amountRange, raw }
@@ -114,7 +118,7 @@ export function archiveTrade(trade, { firstSeenAt = null } = {}) {
     });
   }
 
-  return upsertCongressTrade({
+  const result = upsertCongressTrade({
     tradeKey: key,
     politician: trade.politician,
     ticker: trade.ticker,
@@ -136,4 +140,15 @@ export function archiveTrade(trade, { firstSeenAt = null } = {}) {
     sourceUrl: raw.url ?? null,
     raw: { ...raw, _qualityFlags: quality.flags },
   });
+
+  // Low-confidence filings are queued for human review at ingest.
+  if (result.isNew && quality.parseConfidence < REVIEW_CONFIDENCE_THRESHOLD) {
+    enqueueReview({
+      tradeKey: key,
+      reason: `parse_confidence ${quality.parseConfidence} < ${REVIEW_CONFIDENCE_THRESHOLD}` +
+        (quality.flags.length ? ` (${quality.flags.join(', ')})` : ''),
+    });
+  }
+
+  return result;
 }
