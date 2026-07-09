@@ -7,6 +7,7 @@ import {
   EmptyState,
   LoadingSkeleton,
 } from '../components/intel/components.jsx'
+import { WatchButton } from '../components/intel/Watchlist.jsx'
 
 const TABS = [
   { key: 'most-active', label: 'Most active' },
@@ -75,7 +76,7 @@ export default function Intel() {
 
 function TabBody({ tab, data }) {
   if (tab === 'most-active') return <MostActive rows={data} />
-  if (tab === 'sector-heatmap') return <Heatmap matrix={data} valueKey="net" rowLabel="Sector" formatCol={weekLabel} legend="Net buys − sells" />
+  if (tab === 'sector-heatmap') return <Heatmap matrix={data} valueKey="net" rowLabel="Sector" rowKind="sector" formatCol={weekLabel} legend="Net buys − sells" />
   if (tab === 'committee-heatmap') return <Heatmap matrix={data} valueKey="trades" rowLabel="Committee" formatCol={(c) => c} legend="Trade count" diverging={false} />
   if (tab === 'exposed-stocks') return <ExposedStocks rows={data} />
   if (tab === 'disclosure-quality') return <DisclosureQuality rows={data} />
@@ -105,6 +106,7 @@ function MostActive({ rows }) {
         { key: 'netSentiment', label: 'Net', numeric: true, render: (r) => <span style={{ color: netColor(r.netSentiment) }}>{r.netSentiment > 0 ? `+${r.netSentiment}` : r.netSentiment}</span> },
         { key: 'politicianCount', label: 'Politicians', numeric: true },
         { key: 'avgScore', label: 'Avg score', numeric: true, render: (r) => (r.avgScore == null ? '-' : num(r.avgScore, 1)) },
+        { key: 'watch', label: '', render: (r) => <WatchButton kind="ticker" value={r.ticker} /> },
       ]}
       rows={rows}
     />
@@ -126,6 +128,7 @@ function ExposedStocks({ rows }) {
         { key: 'lobbyingCount', label: 'Lobbying', numeric: true },
         { key: 'contractCount', label: 'Contracts', numeric: true },
         { key: 'avgScore', label: 'Avg score', numeric: true, render: (r) => (r.avgScore == null ? '-' : num(r.avgScore, 1)) },
+        { key: 'watch', label: '', render: (r) => <WatchButton kind="ticker" value={r.ticker} /> },
       ]}
       rows={rows}
     />
@@ -199,7 +202,7 @@ function CopyPerformance({ data }) {
 
 // --- heatmap ---
 
-function Heatmap({ matrix, valueKey, rowLabel, formatCol, legend, diverging = true }) {
+function Heatmap({ matrix, valueKey, rowLabel, rowKind, formatCol, legend, diverging = true }) {
   if (!matrix?.rows?.length || !matrix?.cols?.length) {
     return <EmptyState title="No heatmap data" body="Not enough classified trades to build this grid." />
   }
@@ -225,7 +228,14 @@ function Heatmap({ matrix, valueKey, rowLabel, formatCol, legend, diverging = tr
           <tbody>
             {matrix.rows.map((r) => (
               <tr key={r}>
-                <td>{r}</td>
+                <td>
+                  {rowKind ? (
+                    <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                      {r}
+                      <WatchButton kind={rowKind} value={r} />
+                    </span>
+                  ) : r}
+                </td>
                 {matrix.cols.map((c) => {
                   const cell = matrix.cells[r]?.[c]
                   const v = cell ? cell[valueKey] : null

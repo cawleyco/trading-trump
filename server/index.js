@@ -33,6 +33,11 @@ import {
   getTradeGraphContext,
   getPoliticianGraphContext,
   listTradesWithScores,
+  listWatchlist,
+  addWatchlistItem,
+  removeWatchlistItem,
+  watchlistActivity,
+  WATCHLIST_KINDS,
   listEvents,
   listRecentTradesForTickers,
   createYoutubeChannel,
@@ -390,6 +395,32 @@ app.get('/api/intel/agg/disclosure-quality', (req, res) => {
 
 app.get('/api/intel/agg/copy-performance', (req, res) => {
   res.json(copyPerformance({ limit: Number(req.query.limit) || 10 }));
+});
+
+// ---------- watchlists (Phase 11) ----------
+app.get('/api/watchlist', (req, res) => {
+  res.json(listWatchlist({ kind: req.query.kind || undefined }));
+});
+
+app.get('/api/watchlist/activity', (req, res) => {
+  res.json(watchlistActivity({ limit: Number(req.query.limit) || 25 }));
+});
+
+app.post('/api/watchlist', (req, res) => {
+  const { kind, value, note } = req.body || {};
+  if (!WATCHLIST_KINDS.includes(kind)) {
+    return res.status(400).json({ error: `kind must be one of: ${WATCHLIST_KINDS.join(', ')}` });
+  }
+  if (!value || !String(value).trim()) {
+    return res.status(400).json({ error: 'value is required' });
+  }
+  res.json(addWatchlistItem({ kind, value, note }));
+});
+
+app.delete('/api/watchlist/:id', (req, res) => {
+  const removed = removeWatchlistItem(Number(req.params.id));
+  if (!removed) return res.status(404).json({ error: 'watchlist item not found' });
+  res.json({ ok: true });
 });
 
 app.get('/api/intel/politicians', (req, res) => {

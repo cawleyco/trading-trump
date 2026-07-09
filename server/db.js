@@ -573,6 +573,15 @@ CREATE TABLE IF NOT EXISTS market_candles (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(asset_id, interval, candle_time, source)
 );
+
+CREATE TABLE IF NOT EXISTS watchlist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,       -- 'ticker' | 'politician' | 'sector' | 'committee'
+  value TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (kind, value)
+);
 `);
 
 // --- migrations for databases created before multi-fund support ---
@@ -2576,4 +2585,95 @@ export function getYoutubeDashboardStats() {
        GROUP BY a.id ORDER BY mentions DESC LIMIT 10`
     ).all(),
   };
+}
+
+// ---------- watchlists (Phase 11) ----------
+export const WATCHLIST_KINDS = ['ticker', 'politician', 'sector', 'committee'];
+
+function normalizeWatchValue(kind, value) {
+  const v = String(value ?? '').trim();
+  return kind === 'ticker' ? v.toUpperCase() : v;
+}
+
+export function listWatchlist({ kind } = {}) {
+  if (kind) {
+    return db.prepare(`SELECT * FROM watchlist WHERE kind = ? ORDER BY created_at DESC, id DESC`).all(kind);
+  }
+  return db.prepare(`SELECT * FROM watchlist ORDER BY created_at DESC, id DESC`).all();
+}
+
+export function addWatchlistItem({ kind, value, note = null }) {
+  const cleanValue = normalizeWatchValue(kind, value);
+  db.prepare(
+    `INSERT INTO watchlist (kind, value, note) VALUES (?, ?, ?)
+     ON CONFLICT (kind, value) DO UPDATE SET note = excluded.note`
+  ).run(kind, cleanValue, note || null);
+  return db.prepare(`SELECT * FROM watchlist WHERE kind = ? AND value = ?`).get(kind, cleanValue);
+}
+
+export function removeWatchlistItem(id) {
+  const res = db.prepare(`DELETE FROM watchlist WHERE id = ?`).run(id);
+  return res.changes > 0;
+}
+
+/**
+ * Latest archive activity touching watched entities: recent Congress trades whose
+ * ticker/politician/sector is watched, plus recent events whose sector or committee
+ * is watched. Each row is tagged with the watch (kind/value) that matched.
+ */
+export function watchlistActivity({ limit = 25 } = {}) {
+  const watched = listWatchlist();
+  const tickers = new Set(watched.filter((w) => w.kind === 'ticker').map((w) => w.value));
+  const politicians = new Set(watched.filter((w) => w.kind === 'politician').map((w) => w.value));
+  const sectors = new Set(watched.filter((w) => w.kind === 'sector').map((w) => w.value));
+  const committees = new Set(watched.filter((w) => w.kind === 'committee').map((w) => w.value));
+
+  let trades = [];
+  if (tickers.size || politicians.size || sectors.size) {
+    const clauses = [];
+    const params = [];
+    if (tickers.size) {
+      clauses.push(`ct.ticker IN (${[...tickers].map(() => '?').join(', ')})`);
+      params.push(...tickers);
+    }
+    if (politicians.size) {
+      clauses.push(`ct.politician IN (${[...politicians].map(() => '?').join(', ')})`);
+      params.push(...politicians);
+    }
+    if (sectors.size) {
+      clauses.push(`tm.sector IN (${[...sectors].map(() => '?').join(', ')})`);
+      params.push(...sectors);
+    }
+    trades = db.prepare(
+      `SELECT ct.trade_key, ct.politician, ct.ticker, ct.type, ct.amount_range,
+              ct.disclosure_date, tm.sector
+       FROM congress_trades ct
+       LEFT JOIN ticker_meta tm ON tm.ticker = ct.ticker
+       WHERE ${clauses.join(' OR ')}
+       ORDER BY ct.disclosure_date DESC, ct.id DESC
+       LIMIT ?`
+    ).all(...params, limit).map((row) => {
+      const matched = [];
+      if (tickers.has(row.ticker)) matched.push({ kind: 'ticker', value: row.ticker });
+      if (politicians.has(row.politician)) matched.push({ kind: 'politician', value: row.politician });
+      if (row.sector && sectors.has(row.sector)) matched.push({ kind: 'sector', value: row.sector });
+      return { ...row, matched };
+    });
+  }
+
+  let events = [];
+  if (sectors.size || committees.size) {
+    events = listEvents({ limit: 200 })
+      .map((ev) => {
+        const matched = [];
+        for (const s of ev.sectors || []) if (sectors.has(s)) matched.push({ kind: 'sector', value: s });
+        if (ev.committee_id && committees.has(ev.committee_id)) matched.push({ kind: 'committee', value: ev.committee_id });
+        return { ...ev, matched };
+      })
+      .filter((ev) => ev.matched.length)
+      .sort((a, b) => String(b.event_date).localeCompare(String(a.event_date)))
+      .slice(0, limit);
+  }
+
+  return { trades, events };
 }

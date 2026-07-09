@@ -42,6 +42,15 @@ export const api = {
   aggExposedStocks: (days = 180, limit = 25) => req(`/api/intel/agg/exposed-stocks?days=${days}&limit=${limit}`),
   aggDisclosureQuality: (minTrades = 3) => req(`/api/intel/agg/disclosure-quality?minTrades=${minTrades}`),
   aggCopyPerformance: (limit = 10) => req(`/api/intel/agg/copy-performance?limit=${limit}`),
+  watchlist: (kind) => req(`/api/watchlist${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
+  watchlistActivity: (limit = 25) => req(`/api/watchlist/activity?limit=${limit}`),
+  addWatchlist: (body) =>
+    req('/api/watchlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  removeWatchlist: (id) => req(`/api/watchlist/${id}`, { method: 'DELETE' }),
   politicianStats: (limit = 500) => req(`/api/intel/politicians?limit=${limit}`),
   politicianProfile: (name) => req(`/api/intel/politicians/${encodeURIComponent(name)}`),
   refreshPoliticianStats: () =>

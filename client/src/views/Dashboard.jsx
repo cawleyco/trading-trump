@@ -10,6 +10,7 @@ import {
   SignalCard,
 } from '../components/intel/components.jsx'
 import { normalizeSignal } from '../components/intel/signalUtils.js'
+import { WatchlistPanel } from '../components/intel/Watchlist.jsx'
 
 const LINE_COLORS = ['#6366f1', '#22c55e', '#eab308', '#ec4899', '#06b6d4', '#f97316']
 
@@ -111,6 +112,8 @@ export default function Dashboard() {
         </div>
 
         <div>
+          <WatchlistPanel />
+
           <SectionPanel title="Risk Warnings" description="Risk is first-class. Avoid and review states stay visible.">
             <div className="intel-signal-list">
               {signals.filter((s) => s.approved === false || s.order_status === 'rejected').slice(0, 4).map((signal) => {

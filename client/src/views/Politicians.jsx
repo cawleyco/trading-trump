@@ -4,6 +4,7 @@ import {
 } from 'recharts'
 import { api } from '../api.js'
 import { DossierHeader, PageHeader, SectionPanel } from '../components/intel/components.jsx'
+import { WatchButton } from '../components/intel/Watchlist.jsx'
 
 export default function Politicians() {
   const [rows, setRows] = useState([])
@@ -157,6 +158,7 @@ function StatsTable({ rows, selected, onSelect, sortKey, asc, sortBy }) {
           {th('avg_return_90d', '90d avg')}
           {th('median_disclosure_lag', 'Median lag')}
           {th('concentration_hhi', 'HHI')}
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -176,6 +178,7 @@ function StatsTable({ rows, selected, onSelect, sortKey, asc, sortBy }) {
             <td style={{ color: colorFor(r.avg_return_90d) }}>{pct(r.avg_return_90d, true)}</td>
             <td>{r.median_disclosure_lag == null ? '—' : `${r.median_disclosure_lag}d`}</td>
             <td>{r.concentration_hhi == null ? '—' : r.concentration_hhi}</td>
+            <td><WatchButton kind="politician" value={r.politician} /></td>
           </tr>
         ))}
       </tbody>

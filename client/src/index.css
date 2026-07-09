@@ -606,6 +606,17 @@ pre {
   background: rgba(66, 214, 197, 0.08);
 }
 
+.intel-watch-btn {
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.intel-watch-btn:hover { border-color: var(--color-accent-secondary); color: var(--color-text-primary); }
+.intel-watch-btn.is-done { border-color: var(--color-accent-secondary); color: var(--color-accent-secondary); cursor: default; }
+
 .intel-evidence {
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
