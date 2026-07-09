@@ -4,6 +4,7 @@ import { hasSeenCongressTrade, markCongressTradeSeen } from '../db.js';
 import { makeTradeSignal } from '../signal.js';
 import { processSignal } from '../riskManager.js';
 import { scoreTrade } from '../intel/scoreRunner.js';
+import { processTradeThroughStrategies } from '../intel/strategyEngine.js';
 import { archiveTrade, fetchRecentCongressTrades, tradeKey } from './congressData.js';
 import { log } from '../logger.js';
 
@@ -51,6 +52,17 @@ export async function pollCongressTrades() {
     // On the very first poll everything is "new" — seed the seen-table without
     // trading, otherwise startup would fire a signal for every recent disclosure.
     if (firstRun) continue;
+
+    if (config.signals.routing === 'strategies') {
+      try {
+        const results = await processTradeThroughStrategies(key, { score });
+        const matched = results.filter((r) => r.matched).length;
+        log.info('congress', `Strategy routing ${key}: ${matched}/${results.length} strategies matched`);
+      } catch (err) {
+        log.error('congress', `Strategy routing failed for ${key}: ${err.message}`);
+      }
+      continue;
+    }
 
     const disclosureAge = trade.disclosureDate
       ? Date.now() - new Date(trade.disclosureDate).getTime()

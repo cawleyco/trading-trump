@@ -251,6 +251,40 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 
+CREATE TABLE IF NOT EXISTS strategies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  definition TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS strategy_matches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  strategy_id INTEGER NOT NULL REFERENCES strategies(id),
+  trade_key TEXT NOT NULL,
+  matched INTEGER NOT NULL,
+  failed_filters TEXT,
+  outcome TEXT,
+  signal_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_strategy_matches_strategy ON strategy_matches(strategy_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_strategy_matches_trade ON strategy_matches(trade_key);
+
+CREATE TABLE IF NOT EXISTS pending_approvals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  strategy_id INTEGER REFERENCES strategies(id),
+  trade_key TEXT NOT NULL,
+  proposed TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  expires_at TEXT NOT NULL,
+  resolved_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pending_approvals_status ON pending_approvals(status, expires_at);
+
 CREATE TABLE IF NOT EXISTS app_modules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   key TEXT UNIQUE NOT NULL,
@@ -569,6 +603,249 @@ if (!hasColumn('daily_pnl', 'fund')) {
       SELECT trade_date, 'default', realized_pnl, unrealized_pnl, equity_open, updated_at FROM daily_pnl_v1;
     DROP TABLE daily_pnl_v1;
   `);
+}
+
+const SEED_STRATEGIES = [
+  {
+    name: 'Fresh high-conviction buys',
+    enabled: 0,
+    definition: {
+      source: 'congress',
+      filters: {
+        direction: 'buy',
+        minCopyScore: 80,
+        minConfidence: null,
+        maxDisclosureLagDays: 10,
+        maxDriftPct: null,
+        minClusterCount: null,
+        minRelevanceScore: null,
+        politicians: [],
+        excludePoliticians: [],
+        sectors: [],
+        excludeWarnings: [],
+        minAmountMid: null,
+        minEdgeScore: null,
+      },
+      action: { mode: 'manual', fund: 'paper', notionalUsd: 500 },
+    },
+  },
+  {
+    name: 'Committee edge',
+    enabled: 0,
+    definition: {
+      source: 'congress',
+      filters: {
+        direction: null,
+        minCopyScore: 65,
+        minConfidence: null,
+        maxDisclosureLagDays: null,
+        maxDriftPct: null,
+        minClusterCount: null,
+        minRelevanceScore: 50,
+        politicians: [],
+        excludePoliticians: [],
+        sectors: [],
+        excludeWarnings: [],
+        minAmountMid: null,
+        minEdgeScore: null,
+      },
+      action: { mode: 'watch', fund: 'paper', notionalUsd: 500 },
+    },
+  },
+  {
+    name: 'Cluster accumulation',
+    enabled: 0,
+    definition: {
+      source: 'congress',
+      filters: {
+        direction: 'buy',
+        minCopyScore: null,
+        minConfidence: null,
+        maxDisclosureLagDays: null,
+        maxDriftPct: null,
+        minClusterCount: 3,
+        minRelevanceScore: null,
+        politicians: [],
+        excludePoliticians: [],
+        sectors: [],
+        excludeWarnings: [],
+        minAmountMid: null,
+        minEdgeScore: null,
+      },
+      action: { mode: 'watch', fund: 'paper', notionalUsd: 500 },
+    },
+  },
+];
+
+function parseStrategyRow(row) {
+  if (!row) return null;
+  return { ...row, enabled: !!row.enabled, definition: jsonOrNull(row.definition) };
+}
+
+function parseStrategyMatchRow(row) {
+  if (!row) return null;
+  return { ...row, matched: !!row.matched, failed_filters: jsonOrNull(row.failed_filters) ?? [] };
+}
+
+function parseApprovalRow(row) {
+  if (!row) return null;
+  return { ...row, proposed: jsonOrNull(row.proposed) ?? {} };
+}
+
+function seedStrategiesIfEmpty() {
+  const row = db.prepare(`SELECT COUNT(*) AS count FROM strategies`).get();
+  if (Number(row?.count ?? 0) > 0) return;
+  const insert = db.prepare(`INSERT INTO strategies (name, enabled, definition) VALUES (?, ?, ?)`);
+  for (const strategy of SEED_STRATEGIES) {
+    insert.run(strategy.name, strategy.enabled, JSON.stringify(strategy.definition));
+  }
+}
+
+seedStrategiesIfEmpty();
+
+export function listStrategies({ includeDisabled = true } = {}) {
+  return db
+    .prepare(`SELECT * FROM strategies ${includeDisabled ? '' : 'WHERE enabled = 1'} ORDER BY id ASC`)
+    .all()
+    .map(parseStrategyRow);
+}
+
+export function getStrategy(id) {
+  return parseStrategyRow(db.prepare(`SELECT * FROM strategies WHERE id = ?`).get(id));
+}
+
+export function createStrategy({ name, enabled = true, definition }) {
+  const res = db
+    .prepare(`INSERT INTO strategies (name, enabled, definition) VALUES (?, ?, ?)`)
+    .run(name, enabled ? 1 : 0, JSON.stringify(definition));
+  return getStrategy(res.lastInsertRowid);
+}
+
+export function updateStrategy(id, { name, enabled, definition }) {
+  const current = getStrategy(id);
+  if (!current) return null;
+  db.prepare(
+    `UPDATE strategies
+     SET name = ?, enabled = ?, definition = ?, updated_at = datetime('now')
+     WHERE id = ?`
+  ).run(
+    name ?? current.name,
+    enabled == null ? (current.enabled ? 1 : 0) : (enabled ? 1 : 0),
+    JSON.stringify(definition ?? current.definition),
+    id
+  );
+  return getStrategy(id);
+}
+
+export function deleteStrategy(id) {
+  const res = db.prepare(`DELETE FROM strategies WHERE id = ?`).run(id);
+  return res.changes > 0;
+}
+
+export function recordStrategyMatch({ strategyId, tradeKey, matched, failedFilters = [], outcome = null, signalId = null }) {
+  const res = db
+    .prepare(
+      `INSERT INTO strategy_matches (strategy_id, trade_key, matched, failed_filters, outcome, signal_id)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(strategyId, tradeKey, matched ? 1 : 0, JSON.stringify(failedFilters), outcome, signalId ?? null);
+  return res.lastInsertRowid;
+}
+
+export function updateStrategyMatchOutcome(id, { outcome, signalId = null }) {
+  db.prepare(`UPDATE strategy_matches SET outcome = ?, signal_id = ? WHERE id = ?`).run(outcome, signalId, id);
+}
+
+export function listStrategyMatches({ strategyId, tradeKey, limit = 100 } = {}) {
+  const where = [];
+  const params = [];
+  if (strategyId) { where.push('sm.strategy_id = ?'); params.push(strategyId); }
+  if (tradeKey) { where.push('sm.trade_key = ?'); params.push(tradeKey); }
+  params.push(limit);
+  return db
+    .prepare(
+      `SELECT sm.*, s.name AS strategy_name,
+              ct.politician, ct.ticker, ct.type, ct.disclosure_date
+       FROM strategy_matches sm
+       JOIN strategies s ON s.id = sm.strategy_id
+       LEFT JOIN congress_trades ct ON ct.trade_key = sm.trade_key
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+       ORDER BY sm.id DESC LIMIT ?`
+    )
+    .all(...params)
+    .map(parseStrategyMatchRow);
+}
+
+export function createPendingApproval({ strategyId, tradeKey, proposed, ttlHours }) {
+  const existing = db
+    .prepare(`SELECT * FROM pending_approvals WHERE strategy_id = ? AND trade_key = ? AND status = 'pending'`)
+    .get(strategyId, tradeKey);
+  if (existing) return parseApprovalRow(existing);
+  const res = db
+    .prepare(
+      `INSERT INTO pending_approvals (strategy_id, trade_key, proposed, expires_at)
+       VALUES (?, ?, ?, datetime('now', ?))`
+    )
+    .run(strategyId, tradeKey, JSON.stringify(proposed), `+${ttlHours} hours`);
+  return getPendingApproval(res.lastInsertRowid);
+}
+
+export function listPendingApprovals(status = 'pending', limit = 100) {
+  return db
+    .prepare(
+      `SELECT pa.*, s.name AS strategy_name,
+              ct.politician, ct.ticker, ct.type, ct.transaction_date, ct.disclosure_date,
+              ct.amount_range, ts.score, ts.confidence, ts.recommendation
+       FROM pending_approvals pa
+       LEFT JOIN strategies s ON s.id = pa.strategy_id
+       LEFT JOIN congress_trades ct ON ct.trade_key = pa.trade_key
+       LEFT JOIN trade_scores ts ON ts.trade_key = pa.trade_key
+       ${status ? 'WHERE pa.status = ?' : ''}
+       ORDER BY pa.id DESC LIMIT ?`
+    )
+    .all(...(status ? [status, limit] : [limit]))
+    .map(parseApprovalRow);
+}
+
+export function getPendingApproval(id) {
+  return parseApprovalRow(
+    db
+      .prepare(
+        `SELECT pa.*, s.name AS strategy_name, s.definition,
+                ct.politician, ct.ticker, ct.type, ct.transaction_date, ct.disclosure_date,
+                ct.amount_range, ts.score, ts.confidence, ts.recommendation
+         FROM pending_approvals pa
+         LEFT JOIN strategies s ON s.id = pa.strategy_id
+         LEFT JOIN congress_trades ct ON ct.trade_key = pa.trade_key
+         LEFT JOIN trade_scores ts ON ts.trade_key = pa.trade_key
+         WHERE pa.id = ?`
+      )
+      .get(id)
+  );
+}
+
+export function resolvePendingApproval(id, status) {
+  const res = db
+    .prepare(
+      `UPDATE pending_approvals SET status = ?, resolved_at = datetime('now')
+       WHERE id = ? AND status = 'pending'`
+    )
+    .run(status, id);
+  return res.changes > 0;
+}
+
+export function expirePendingApprovals() {
+  const res = db
+    .prepare(
+      `UPDATE pending_approvals SET status = 'expired', resolved_at = datetime('now')
+       WHERE status = 'pending' AND expires_at <= datetime('now')`
+    )
+    .run();
+  return res.changes;
+}
+
+export function isTradeInPendingReview(tradeKey) {
+  return !!db.prepare(`SELECT 1 FROM review_queue WHERE trade_key = ? AND status = 'pending'`).get(tradeKey);
 }
 
 export function insertSignal({ source, ticker, direction, confidence, rationale, rawReference }) {

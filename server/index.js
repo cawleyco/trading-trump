@@ -15,6 +15,15 @@ import {
   listReviewQueue,
   resolveReviewItem,
   getCongressTradeByKey,
+  listStrategies,
+  getStrategy,
+  createStrategy,
+  updateStrategy,
+  deleteStrategy,
+  listStrategyMatches,
+  listPendingApprovals,
+  getPendingApproval,
+  resolvePendingApproval,
   getTradeGraphContext,
   getPoliticianGraphContext,
   listTradesWithScores,
@@ -53,6 +62,11 @@ import { getStatsProfile, listStats, refreshAllPoliticianStats } from './intel/p
 import { rescoreRecentTrades, scoreTrade } from './intel/scoreRunner.js';
 import { getOrBuildThesisCard } from './intel/cardRunner.js';
 import { buildCrossSignalContext } from './intel/crossSignal.js';
+import {
+  approvePendingStrategySignal,
+  runStrategyBacktest,
+  validateStrategyDefinition,
+} from './intel/strategyEngine.js';
 import { driftSincePct } from './marketData.js';
 import { fundClients, getFundClient } from './alpacaClient.js';
 import {
@@ -211,6 +225,113 @@ app.post('/api/review-queue/:id/resolve', (req, res) => {
   const ok = resolveReviewItem(Number(req.params.id), status);
   if (!ok) return res.status(404).json({ error: 'no pending review item with that id' });
   res.json({ id: Number(req.params.id), status });
+});
+
+// ---------- strategy builder + manual approvals ----------
+app.get('/api/strategies', (req, res) => {
+  const rows = listStrategies({ includeDisabled: req.query.enabled !== 'true' })
+    .map((strategy) => ({
+      ...strategy,
+      matches: listStrategyMatches({ strategyId: strategy.id, limit: 20 }),
+    }));
+  res.json(rows);
+});
+
+app.post('/api/strategies', (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    const definition = validateStrategyDefinition(req.body?.definition);
+    res.status(201).json(createStrategy({ name, enabled: req.body?.enabled !== false, definition }));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/strategies/:id', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });
+  try {
+    const patch = {};
+    if (req.body?.name != null) {
+      patch.name = String(req.body.name || '').trim();
+      if (!patch.name) return res.status(400).json({ error: 'name cannot be empty' });
+    }
+    if (req.body?.enabled != null) patch.enabled = !!req.body.enabled;
+    if (req.body?.definition != null) patch.definition = validateStrategyDefinition(req.body.definition);
+    const updated = updateStrategy(Number(req.params.id), patch);
+    if (!updated) return res.status(404).json({ error: 'strategy not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/strategies/:id', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });
+  if (!deleteStrategy(Number(req.params.id))) return res.status(404).json({ error: 'strategy not found' });
+  res.json({ deleted: Number(req.params.id) });
+});
+
+app.get('/api/strategies/:id/matches', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });
+  if (!getStrategy(Number(req.params.id))) return res.status(404).json({ error: 'strategy not found' });
+  res.json(listStrategyMatches({ strategyId: Number(req.params.id), limit: Number(req.query.limit) || 100 }));
+});
+
+app.post('/api/strategies/:id/backtest', async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });
+  try {
+    const { startDate, endDate, notionalPerTrade, exitRule, stopLossPct, takeProfitPct } = req.body || {};
+    if (!startDate || !endDate || !notionalPerTrade) {
+      return res.status(400).json({ error: 'startDate, endDate, notionalPerTrade required' });
+    }
+    res.json(await runStrategyBacktest(Number(req.params.id), {
+      startDate,
+      endDate,
+      notionalPerTrade: Number(notionalPerTrade),
+      exitRule,
+      stopLossPct: pct(stopLossPct, 'stopLossPct'),
+      takeProfitPct: pct(takeProfitPct, 'takeProfitPct'),
+    }));
+  } catch (err) {
+    log.error('server', `Strategy backtest failed: ${err.message}`);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/approvals', async (req, res) => {
+  const status = req.query.status || 'pending';
+  const rows = listPendingApprovals(status, Number(req.query.limit) || 100);
+  const withCards = await Promise.all(rows.map(async (row) => {
+    try {
+      return { ...row, thesis: await getOrBuildThesisCard(row.trade_key) };
+    } catch {
+      return { ...row, thesis: null };
+    }
+  }));
+  res.json(withCards);
+});
+
+app.post('/api/approvals/:id/approve', async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });
+  try {
+    const approval = getPendingApproval(Number(req.params.id));
+    if (!approval || approval.status !== 'pending') return res.status(404).json({ error: 'pending approval not found' });
+    const thesis = await getOrBuildThesisCard(approval.trade_key).catch(() => null);
+    const result = await approvePendingStrategySignal(approval, { thesisCard: thesis });
+    resolvePendingApproval(approval.id, 'approved');
+    res.json({ id: approval.id, status: 'approved', ...result });
+  } catch (err) {
+    log.error('server', `Approval failed: ${err.message}`);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/approvals/:id/reject', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'numeric id required' });
+  const ok = resolvePendingApproval(Number(req.params.id), 'rejected');
+  if (!ok) return res.status(404).json({ error: 'pending approval not found' });
+  res.json({ id: Number(req.params.id), status: 'rejected' });
 });
 
 // ---------- intelligence: freshness reports ----------

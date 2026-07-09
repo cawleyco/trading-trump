@@ -78,6 +78,33 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     }),
+  strategies: () => req('/api/strategies'),
+  createStrategy: (body) =>
+    req('/api/strategies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  updateStrategy: (id, body) =>
+    req(`/api/strategies/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  deleteStrategy: (id) =>
+    req(`/api/strategies/${id}`, { method: 'DELETE' }),
+  strategyMatches: (id) => req(`/api/strategies/${id}/matches`),
+  runStrategyBacktest: (id, body) =>
+    req(`/api/strategies/${id}/backtest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  approvals: (status = 'pending') => req(`/api/approvals?status=${status}`),
+  approveStrategy: (id) =>
+    req(`/api/approvals/${id}/approve`, { method: 'POST' }),
+  rejectStrategy: (id) =>
+    req(`/api/approvals/${id}/reject`, { method: 'POST' }),
   politicians: () => req('/api/politicians'),
   backtests: () => req('/api/backtests'),
   backtest: (id) => req(`/api/backtests/${id}`),

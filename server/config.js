@@ -25,6 +25,10 @@ const TRADING_MODE = process.env.TRADING_MODE || 'dry_run';
 if (!['dry_run', 'live'].includes(TRADING_MODE)) {
   throw new Error(`TRADING_MODE must be "dry_run" or "live", got "${TRADING_MODE}"`);
 }
+const SIGNAL_ROUTING = process.env.SIGNAL_ROUTING || 'legacy';
+if (!['legacy', 'strategies'].includes(SIGNAL_ROUTING)) {
+  throw new Error(`SIGNAL_ROUTING must be "legacy" or "strategies", got "${SIGNAL_ROUTING}"`);
+}
 
 export const config = {
   tradingMode: TRADING_MODE,
@@ -63,6 +67,8 @@ export const config = {
     congressMaxDisclosureAgeDays: num('CONGRESS_MAX_DISCLOSURE_AGE_DAYS', 3),
     congressMinCopyScore: num('CONGRESS_MIN_COPY_SCORE', null),
     sentimentMaxPostAgeMinutes: num('SENTIMENT_MAX_POST_AGE_MINUTES', 15),
+    routing: SIGNAL_ROUTING,
+    approvalTtlHours: num('APPROVAL_TTL_HOURS', 24),
   },
 
   influence: {

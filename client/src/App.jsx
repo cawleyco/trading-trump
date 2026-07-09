@@ -4,6 +4,8 @@ import Backtest from './views/Backtest.jsx'
 import Politicians from './views/Politicians.jsx'
 import Trades from './views/Trades.jsx'
 import Calendar from './views/Calendar.jsx'
+import Strategies from './views/Strategies.jsx'
+import Approvals from './views/Approvals.jsx'
 import SignalLog from './views/SignalLog.jsx'
 import Influence from './views/Influence.jsx'
 import StatusBar from './components/StatusBar.jsx'
@@ -12,6 +14,8 @@ const VIEWS = {
   dashboard: ['Dashboard', Dashboard],
   trades: ['Trades', Trades],
   calendar: ['Calendar', Calendar],
+  strategies: ['Strategies', Strategies],
+  approvals: ['Approvals', Approvals],
   backtest: ['Backtesting', Backtest],
   politicians: ['Politicians', Politicians],
   influence: ['Influence Signals', Influence],
@@ -22,6 +26,8 @@ const VIEW_PATHS = {
   dashboard: '/',
   trades: '/app/trades',
   calendar: '/app/calendar',
+  strategies: '/app/strategies',
+  approvals: '/app/approvals',
   backtest: '/app/backtests',
   politicians: '/app/politicians',
   influence: '/app/influence/youtube',
@@ -32,6 +38,8 @@ function viewFromPath(path) {
   if (path.startsWith('/app/influence')) return 'influence'
   if (path.startsWith('/app/trades')) return 'trades'
   if (path.startsWith('/app/calendar')) return 'calendar'
+  if (path.startsWith('/app/strategies')) return 'strategies'
+  if (path.startsWith('/app/approvals')) return 'approvals'
   if (path.startsWith('/app/backtests')) return 'backtest'
   if (path.startsWith('/app/politicians')) return 'politicians'
   if (path.startsWith('/app/signals')) return 'log'
