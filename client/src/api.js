@@ -27,6 +27,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  filingSpeed: (minTrades = 3) => req(`/api/intel/filing-speed?minTrades=${minTrades}`),
+  drift: (tradeKey) => req(`/api/intel/drift/${encodeURIComponent(tradeKey)}`),
   reviewQueue: (status = 'pending') => req(`/api/review-queue?status=${status}`),
   resolveReview: (id, status) =>
     req(`/api/review-queue/${id}/resolve`, {

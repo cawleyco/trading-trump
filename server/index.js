@@ -12,7 +12,10 @@ import {
   getBacktest,
   listReviewQueue,
   resolveReviewItem,
+  getCongressTradeByKey,
 } from './db.js';
+import { filingSpeedLeaderboard } from './intel/freshnessReports.js';
+import { driftSincePct } from './marketData.js';
 import { fundClients, getFundClient } from './alpacaClient.js';
 import {
   isFundHalted,
@@ -153,6 +156,27 @@ app.post('/api/review-queue/:id/resolve', (req, res) => {
   const ok = resolveReviewItem(Number(req.params.id), status);
   if (!ok) return res.status(404).json({ error: 'no pending review item with that id' });
   res.json({ id: Number(req.params.id), status });
+});
+
+// ---------- intelligence: freshness reports ----------
+app.get('/api/intel/filing-speed', (req, res) => {
+  const minTrades = Number(req.query.minTrades) || 3;
+  res.json(filingSpeedLeaderboard({ minTrades }));
+});
+
+// tradeKey contains "|" and spaces — clients must URL-encode it.
+app.get('/api/intel/drift/:tradeKey', async (req, res) => {
+  const trade = getCongressTradeByKey(req.params.tradeKey);
+  if (!trade) return res.status(404).json({ error: 'unknown trade key' });
+  try {
+    const [sinceTransactionPct, sinceDisclosurePct] = await Promise.all([
+      driftSincePct(trade.ticker, trade.transaction_date),
+      driftSincePct(trade.ticker, trade.disclosure_date),
+    ]);
+    res.json({ ticker: trade.ticker, sinceTransactionPct, sinceDisclosurePct });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---------- P&L attribution ----------

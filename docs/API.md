@@ -85,6 +85,23 @@ Low-quality filings held for human review (parse confidence &lt; 0.8), newest fi
 
 Body: `{ "status": "approved" | "rejected" }`. Marks a pending item resolved. Returns `{ "id", "status" }`, or 404 if no pending item has that id. (Resolution is currently advisory metadata; the auto-trade/strategy gating it feeds is enforced in later phases.)
 
+### `GET /api/intel/filing-speed?minTrades=3`
+
+Per-politician disclosure-speed stats over the archive, fastest median first. `minTrades` (default 3) drops thinly-traded members.
+
+```json
+[ { "politician": "Sheldon Whitehouse", "tradeCount": 7, "medianLagDays": 13,
+    "pctWithin15": 71.4, "pctWithin30": 100, "pctWithin45": 100 } ]
+```
+
+### `GET /api/intel/drift/:tradeKey`
+
+"Has this trade already moved?" — percent price change since the transaction and disclosure dates for the trade's ticker. The `tradeKey` (which contains `|` and spaces) must be **URL-encoded**. Either field is `null` when price data is unavailable; 404 if the key is unknown.
+
+```json
+{ "ticker": "NVDA", "sinceTransactionPct": 3.1, "sinceDisclosurePct": 1.2 }
+```
+
 ## Backtesting
 
 ### `GET /api/politicians`

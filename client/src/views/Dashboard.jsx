@@ -10,6 +10,7 @@ export default function Dashboard() {
   const [status, setStatus] = useState(null)
   const [signals, setSignals] = useState([])
   const [attribution, setAttribution] = useState(null)
+  const [filingSpeed, setFilingSpeed] = useState([])
   const [selectedFund, setSelectedFund] = useState(null)
   const [testTicker, setTestTicker] = useState('AAPL')
   const [testResult, setTestResult] = useState(null)
@@ -18,6 +19,7 @@ export default function Dashboard() {
     api.status().then(setStatus).catch(() => {})
     api.signals(15).then(setSignals).catch(() => {})
     api.attribution().then(setAttribution).catch(() => {})
+    api.filingSpeed().then(setFilingSpeed).catch(() => {})
   }
 
   useEffect(() => {
@@ -120,11 +122,66 @@ export default function Dashboard() {
 
       <AttributionChart attribution={attribution} />
 
+      <FilingSpeedTable rows={filingSpeed} />
+
       <section style={{ ...card, marginTop: 24, maxWidth: 'none' }}>
         <h3>Recent Signals</h3>
         <SignalTable signals={signals} />
       </section>
     </div>
+  )
+}
+
+function FilingSpeedTable({ rows }) {
+  const [sortKey, setSortKey] = useState('medianLagDays')
+  const [asc, setAsc] = useState(true)
+  if (!rows || rows.length === 0) return null
+
+  const sorted = [...rows].sort((a, b) => {
+    const d = a[sortKey] < b[sortKey] ? -1 : a[sortKey] > b[sortKey] ? 1 : 0
+    return asc ? d : -d
+  })
+  const sortBy = (key) => {
+    if (key === sortKey) setAsc(!asc)
+    else { setSortKey(key); setAsc(key === 'politician') }
+  }
+  const th = (key, label) => (
+    <th onClick={() => sortBy(key)} style={{ cursor: 'pointer', userSelect: 'none' }}>
+      {label}{sortKey === key ? (asc ? ' ▲' : ' ▼') : ''}
+    </th>
+  )
+
+  return (
+    <section style={{ ...card, marginTop: 24, maxWidth: 'none' }}>
+      <h3>Filing speed by politician</h3>
+      <p style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
+        How quickly each member discloses. Faster filers give copyable signals a shorter head start to erode.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            {th('politician', 'Politician')}
+            {th('tradeCount', 'Trades')}
+            {th('medianLagDays', 'Median lag (d)')}
+            {th('pctWithin15', '≤15d')}
+            {th('pctWithin30', '≤30d')}
+            {th('pctWithin45', '≤45d')}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r) => (
+            <tr key={r.politician}>
+              <td>{r.politician}</td>
+              <td>{r.tradeCount}</td>
+              <td>{r.medianLagDays}</td>
+              <td>{r.pctWithin15}%</td>
+              <td>{r.pctWithin30}%</td>
+              <td>{r.pctWithin45}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   )
 }
 

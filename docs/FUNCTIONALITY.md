@@ -71,6 +71,22 @@ A reusable price API over the shared Alpaca client, with a 1-hour in-memory cach
 
 Resolves ticker symbols to company metadata using free SEC EDGAR data (no key; a contact email in the User-Agent via `SEC_CONTACT_EMAIL`). `refreshTickerUniverse()` downloads the SEC company-tickers file into the `ticker_meta` table (ticker → name/CIK); `ensureTickerUniverse()` runs it in the background at startup when the table is empty or older than 7 days. `getSectorForTicker(ticker)` fetches the company's SEC submissions once, maps its SIC code to one of ~12 coarse sectors (`server/lib/sicSectors.js`), and caches it. `resolveTicker(nameOrTicker)` is the entity-resolution entry point: a manual override map (`server/lib/tickerOverrides.js`) wins, then an exact ticker match, then a company-name `LIKE` match. Raw SEC responses are cached on disk under `data-cache/` with a TTL.
 
+## Intelligence layer (`server/intel/`, `server/lib/filingQuality.js`)
+
+Deterministic, mostly-pure modules layered on the trade archive. Everything under `server/intel/` is I/O-free where possible (callers inject data) so it's unit-testable offline.
+
+### Data quality (`server/lib/filingQuality.js`)
+
+`assessTrade(trade, { resolveTicker })` scores how much to trust a filing. It starts at parse confidence 1.0 and subtracts for each detected problem, recording a flag: missing transaction date (−0.3), unparseable amount band (−0.2), a ticker that won't resolve (−0.3), an option mention with no extractable strike/expiry (−0.2), and a disclosure dated before the transaction (−0.4). It also detects options (type/strike/expiry → `is_option` + `option_detail`) and normalizes the filing's owner to self/spouse/dependent. `archiveTrade()` runs this on every ingested row, storing the confidence, owner, and option fields as columns and the flags inside `raw._qualityFlags`; it also links amended eFD filings to the original via `amendment_of`.
+
+### Human-review queue
+
+Any trade archived below **0.8** parse confidence is queued in `review_queue` at ingest (idempotently) and is intended to be barred from auto-trading / strategy auto modes (enforced in later phases). `GET /api/review-queue` lists pending items joined with the raw filing and its source URL; `POST /api/review-queue/:id/resolve` marks one approved/rejected. The Signal Log view surfaces pending items with an inline filing dump and approve/reject buttons.
+
+### Freshness (`server/intel/freshness.js`, `freshnessReports.js`)
+
+Pure lag math: `disclosureLagDays` (trade → disclosure), `publishLagDays` (trade → when we first saw it), `ageDays` (since first seen), and `freshnessScore` — 0–100, 100 within 5 days of the trade decaying linearly to 0 at 60 days (falling back to the disclosure date when the transaction date is missing). `filingSpeedLeaderboard()` aggregates the archive into per-politician median disclosure lag and % filed within 15/30/45 days (`GET /api/intel/filing-speed`), rendered as a sortable table on the dashboard. `GET /api/intel/drift/:tradeKey` answers "has this already moved?" using the cached market-data helpers.
+
 ## Signal sources
 
 ### Congress (`server/sources/congressPoller.js` + `congressData.js` + `senateEfd.js`)
@@ -135,6 +151,7 @@ SQLite (`trading.db`, WAL mode). Tables:
 | `seen_congress_trades` / `seen_posts` | Dedup state so nothing is traded twice; `seen_posts` also keeps post text + timestamp to extend backtest coverage |
 | `congress_trades` | Full-row archive of every disclosed trade the poller/backfill has seen: parties, dates, parsed amount band (`amount_min/max/mid`), source + filing URL, and (later phases) quality/identity fields. The substrate for scoring, profiles, and archive-backed backtests |
 | `ticker_meta` | Ticker → company name, SEC CIK, SIC code, and coarse sector; populated from SEC EDGAR, refreshed weekly |
+| `review_queue` | Low-confidence filings (parse confidence &lt; 0.8) held for human review, with reason and approved/rejected status |
 | `backtests` | Saved backtest params + results (congress / tweet / leaderboard) |
 
 Schema migrations (adding fund columns etc.) run automatically and idempotently at startup — v1 databases upgrade in place, existing rows attributed to fund `default`.
