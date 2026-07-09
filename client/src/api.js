@@ -36,6 +36,12 @@ export const api = {
       body: JSON.stringify(body),
     }),
   filingSpeed: (minTrades = 3) => req(`/api/intel/filing-speed?minTrades=${minTrades}`),
+  aggMostActive: (days = 30, limit = 25) => req(`/api/intel/agg/most-active?days=${days}&limit=${limit}`),
+  aggSectorHeatmap: (days = 90) => req(`/api/intel/agg/sector-heatmap?days=${days}`),
+  aggCommitteeHeatmap: (days = 180) => req(`/api/intel/agg/committee-heatmap?days=${days}`),
+  aggExposedStocks: (days = 180, limit = 25) => req(`/api/intel/agg/exposed-stocks?days=${days}&limit=${limit}`),
+  aggDisclosureQuality: (minTrades = 3) => req(`/api/intel/agg/disclosure-quality?minTrades=${minTrades}`),
+  aggCopyPerformance: (limit = 10) => req(`/api/intel/agg/copy-performance?limit=${limit}`),
   politicianStats: (limit = 500) => req(`/api/intel/politicians?limit=${limit}`),
   politicianProfile: (name) => req(`/api/intel/politicians/${encodeURIComponent(name)}`),
   refreshPoliticianStats: () =>

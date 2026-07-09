@@ -3,6 +3,7 @@ import Dashboard from './views/Dashboard.jsx'
 import Backtest from './views/Backtest.jsx'
 import Politicians from './views/Politicians.jsx'
 import Trades from './views/Trades.jsx'
+import Intel from './views/Intel.jsx'
 import Calendar from './views/Calendar.jsx'
 import Strategies from './views/Strategies.jsx'
 import Approvals from './views/Approvals.jsx'
@@ -14,6 +15,7 @@ import { EmptyState, PageHeader, SectionPanel } from './components/intel/compone
 const VIEWS = {
   overview: ['Overview', Dashboard],
   trades: ['Trades', Trades],
+  intel: ['Intel', Intel],
   calendar: ['Calendar', Calendar],
   strategies: ['Strategies', Strategies],
   approvals: ['Approvals', Approvals],
@@ -31,6 +33,7 @@ const VIEWS = {
 const VIEW_PATHS = {
   overview: '/app/overview',
   trades: '/app/trades',
+  intel: '/app/intel',
   calendar: '/app/calendar',
   strategies: '/app/strategies',
   approvals: '/app/approvals',
@@ -50,6 +53,7 @@ function viewFromPath(path) {
   if (path.startsWith('/app/influence/politicians') || path.startsWith('/app/politicians')) return 'politicians'
   if (path.startsWith('/app/influence')) return 'influence'
   if (path.startsWith('/app/trades')) return 'trades'
+  if (path.startsWith('/app/intel')) return 'intel'
   if (path.startsWith('/app/calendar')) return 'calendar'
   if (path.startsWith('/app/strategies')) return 'strategies'
   if (path.startsWith('/app/approvals')) return 'approvals'

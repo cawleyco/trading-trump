@@ -581,6 +581,31 @@ pre {
 .intel-table .is-numeric { text-align: right; }
 .intel-table .is-mono { font-family: var(--font-mono); }
 
+.intel-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0;
+}
+
+.intel-tab {
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.intel-tab:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
+
+.intel-tab.is-active {
+  border-color: var(--color-accent-secondary);
+  color: var(--color-text-primary);
+  background: rgba(66, 214, 197, 0.08);
+}
+
 .intel-evidence {
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);

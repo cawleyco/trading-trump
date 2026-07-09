@@ -64,6 +64,14 @@ import {
   getCreatorAlpha,
 } from './db.js';
 import { filingSpeedLeaderboard } from './intel/freshnessReports.js';
+import {
+  mostActive,
+  sectorHeatmap,
+  committeeHeatmap,
+  exposedStocks,
+  disclosureQuality,
+  copyPerformance,
+} from './intel/aggregates.js';
 import { getStatsProfile, listStats, refreshAllPoliticianStats } from './intel/politicianStats.js';
 import { rescoreRecentTrades, scoreTrade } from './intel/scoreRunner.js';
 import { getOrBuildThesisCard } from './intel/cardRunner.js';
@@ -357,6 +365,31 @@ app.post('/api/approvals/:id/reject', (req, res) => {
 app.get('/api/intel/filing-speed', (req, res) => {
   const minTrades = Number(req.query.minTrades) || 3;
   res.json(filingSpeedLeaderboard({ minTrades }));
+});
+
+// ---------- intelligence: aggregate dashboards (Phase 11) ----------
+app.get('/api/intel/agg/most-active', (req, res) => {
+  res.json(mostActive({ days: Number(req.query.days) || 30, limit: Number(req.query.limit) || 25 }));
+});
+
+app.get('/api/intel/agg/sector-heatmap', (req, res) => {
+  res.json(sectorHeatmap({ days: Number(req.query.days) || 90 }));
+});
+
+app.get('/api/intel/agg/committee-heatmap', (req, res) => {
+  res.json(committeeHeatmap({ days: Number(req.query.days) || 180 }));
+});
+
+app.get('/api/intel/agg/exposed-stocks', (req, res) => {
+  res.json(exposedStocks({ days: Number(req.query.days) || 180, limit: Number(req.query.limit) || 25 }));
+});
+
+app.get('/api/intel/agg/disclosure-quality', (req, res) => {
+  res.json(disclosureQuality({ minTrades: Number(req.query.minTrades) || 3 }));
+});
+
+app.get('/api/intel/agg/copy-performance', (req, res) => {
+  res.json(copyPerformance({ limit: Number(req.query.limit) || 10 }));
 });
 
 app.get('/api/intel/politicians', (req, res) => {

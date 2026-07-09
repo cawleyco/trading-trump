@@ -5,6 +5,7 @@ const NAV_GROUPS = [
     label: 'INTELLIGENCE',
     items: [
       { key: 'overview', label: 'Overview', path: '/app/overview', icon: 'OV' },
+      { key: 'intel', label: 'Intel', path: '/app/intel', icon: 'IN' },
       { key: 'signals', label: 'Signals', path: '/app/signals', icon: 'SG' },
       {
         key: 'influence',
