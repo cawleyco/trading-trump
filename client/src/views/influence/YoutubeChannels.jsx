@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
-import { card, muted, navigate } from './ui.js'
+import { muted, navigate } from './ui.js'
+import { SectionPanel } from '../../components/intel/components.jsx'
 
 export default function YoutubeChannels() {
   const [channels, setChannels] = useState([])
@@ -42,9 +43,7 @@ export default function YoutubeChannels() {
 
   return (
     <div>
-      <section style={card}>
-        <h3>Add YouTube Channel</h3>
-        <p style={muted}>Manual channel data works without a YouTube key. Enable API resolve/sync when `YOUTUBE_API_KEY` is configured.</p>
+      <SectionPanel title="Add YouTube Channel" description="Manual channel data works without a YouTube key. Enable API resolve/sync when `YOUTUBE_API_KEY` is configured.">
         <form onSubmit={submit} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <Field label={resolveWithApi ? 'Channel URL, handle, or ID' : 'YouTube channel ID'}>
             <input value={form.youtube_channel_id} onChange={(e) => setForm({ ...form, youtube_channel_id: e.target.value })} style={{ width: 220 }} />
@@ -79,10 +78,9 @@ export default function YoutubeChannels() {
           <button disabled={busy === 'save'}>{busy === 'save' ? 'Saving…' : 'Add channel'}</button>
         </form>
         {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
-      </section>
+      </SectionPanel>
 
-      <section style={card}>
-        <h3>Channels</h3>
+      <SectionPanel title="Creator Dossier Index" description="Creator alpha, sample size, and pump-risk determine whether a channel is useful or merely noisy.">
         {channels.length === 0 ? <p style={muted}>No channels tracked yet.</p> : (
           <table>
             <thead>
@@ -100,7 +98,7 @@ export default function YoutubeChannels() {
                   <td>{c.tracking_enabled ? 'yes' : 'no'}</td>
                   <td>{c.videos_analyzed ?? 0}</td>
                   <td>{c.mentions_detected ?? 0}</td>
-                  <td>{formatPct(c.alpha_score)}</td>
+                  <td style={{ fontFamily: 'var(--font-mono)' }}>{formatPct(c.alpha_score)}</td>
                   <td>{formatRate(c.win_rate_30d)}</td>
                   <td>{formatPct(c.pump_risk_score)}</td>
                   <td>{c.last_synced_at || '—'}</td>
@@ -115,7 +113,7 @@ export default function YoutubeChannels() {
             </tbody>
           </table>
         )}
-      </section>
+      </SectionPanel>
     </div>
   )
 }

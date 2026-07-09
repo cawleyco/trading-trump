@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../../api.js'
 import { PumpRiskBadge } from './InfluenceLayout.jsx'
 import { card, muted, navigate } from './ui.js'
+import { DossierHeader, SectionPanel } from '../../components/intel/components.jsx'
 
 export default function YoutubeChannelProfile({ channelId }) {
   const [channel, setChannel] = useState(null)
@@ -30,29 +31,35 @@ export default function YoutubeChannelProfile({ channelId }) {
   }
 
   if (error) return <section style={card}><p style={{ color: '#fca5a5' }}>{error}</p></section>
-  if (!channel) return <p>Loading channel…</p>
+  if (!channel) return <p className="intel-muted">Loading channel...</p>
   const alpha = channel.alpha?.[0]
 
   return (
     <div>
-      <section style={card}>
-        <button onClick={() => navigate('/app/influence/youtube/channels')} style={{ marginBottom: 10 }}>Back to channels</button>
-        <h3>{channel.title}</h3>
-        <p style={muted}>{channel.description || 'No description stored.'}</p>
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-          <Metric label="Subscribers" value={channel.subscriber_count ?? '—'} />
-          <Metric label="Videos analyzed" value={videos.length} />
-          <Metric label="Mentions" value={mentions.length} />
-          <Metric label="Alpha score" value={alpha?.alpha_score == null ? '—' : alpha.alpha_score.toFixed(0)} />
-          <Metric label="Profile" value={alpha?.label || 'Insufficient Data'} />
-        </div>
+      <button onClick={() => navigate('/app/influence/youtube/channels')} style={{ marginBottom: 10 }}>Back to channels</button>
+      <DossierHeader
+        entityType="creator"
+        name={channel.title}
+        subtitle={channel.description || 'No description stored.'}
+        badges={[
+          { label: channel.category || 'CREATOR', tone: 'info' },
+          { label: alpha?.label || 'INSUFFICIENT DATA', tone: alpha?.alpha_score >= 70 ? 'good' : 'warning' },
+        ]}
+        stats={[
+          { label: 'Subscribers', value: channel.subscriber_count ?? '-' },
+          { label: 'Videos analyzed', value: videos.length },
+          { label: 'Mentions', value: mentions.length },
+          { label: 'Alpha score', value: alpha?.alpha_score == null ? '-' : alpha.alpha_score.toFixed(0) },
+          { label: 'Pump risk', value: alpha?.pump_risk_score == null ? '-' : alpha.pump_risk_score.toFixed(0) },
+        ]}
+      />
+      <SectionPanel title="Creator Alpha" description="Strong mention. Weak history still requires manual review.">
         <button onClick={recalc} disabled={busy === 'alpha'} style={{ marginTop: 12 }}>
-          {busy === 'alpha' ? 'Recalculating…' : 'Recalculate creator alpha'}
+          {busy === 'alpha' ? 'Recalculating...' : 'Recalculate creator alpha'}
         </button>
-      </section>
+      </SectionPanel>
 
-      <section style={card}>
-        <h3>Recent Videos</h3>
+      <SectionPanel title="Recent Videos" description="Transcript status determines whether mentions can be audited.">
         {videos.length === 0 ? <p style={muted}>No videos synced yet.</p> : (
           <table>
             <thead><tr><th>Published</th><th>Title</th><th>Transcript</th><th>Analysis</th><th></th></tr></thead>
@@ -69,10 +76,9 @@ export default function YoutubeChannelProfile({ channelId }) {
             </tbody>
           </table>
         )}
-      </section>
+      </SectionPanel>
 
-      <section style={card}>
-        <h3>Mention History</h3>
+      <SectionPanel title="Mention History" description="Detected asset mentions with quality, direction, and pump-risk context.">
         {mentions.length === 0 ? <p style={muted}>No detected mentions yet.</p> : (
           <table>
             <thead><tr><th>Asset</th><th>Direction</th><th>Quality</th><th>Pump risk</th><th>Summary</th></tr></thead>
@@ -89,11 +95,7 @@ export default function YoutubeChannelProfile({ channelId }) {
             </tbody>
           </table>
         )}
-      </section>
+      </SectionPanel>
     </div>
   )
-}
-
-function Metric({ label, value }) {
-  return <div><div style={{ ...muted, fontSize: '0.8em' }}>{label}</div><div style={{ fontSize: '1.25em' }}>{value}</div></div>
 }

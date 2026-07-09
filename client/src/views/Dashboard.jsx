@@ -3,6 +3,13 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts'
 import { api } from '../api.js'
+import {
+  MetricCard,
+  PageHeader,
+  SectionPanel,
+  SignalCard,
+} from '../components/intel/components.jsx'
+import { normalizeSignal } from '../components/intel/signalUtils.js'
 
 const LINE_COLORS = ['#6366f1', '#22c55e', '#eab308', '#ec4899', '#06b6d4', '#f97316']
 
@@ -28,7 +35,7 @@ export default function Dashboard() {
     return () => clearInterval(t)
   }, [])
 
-  if (!status) return <p>Loading…</p>
+  if (!status) return <p className="intel-muted">Loading intelligence terminal...</p>
 
   const fund = status.funds.find((f) => f.name === selectedFund) || status.funds[0]
 
@@ -44,14 +51,27 @@ export default function Dashboard() {
 
   return (
     <div>
+      <PageHeader
+        eyebrow="Overview"
+        title="Public Influence Intelligence Terminal"
+        description="Track public signals, inspect the evidence, and separate copyable edge from noisy attention."
+        meta={`Mode: ${status.tradingMode} · ${status.funds.length} fund${status.funds.length === 1 ? '' : 's'} monitored · Signal detected, edge not guaranteed`}
+        actions={(
+          <>
+            <button onClick={refresh}>Refresh</button>
+            <button onClick={() => window.history.pushState({}, '', '/app/signals') || window.dispatchEvent(new PopStateEvent('popstate'))}>Explore signals</button>
+          </>
+        )}
+      />
+
       {status.funds.length > 1 && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-          <span style={{ color: '#a1a1aa', fontSize: '0.85em' }}>Fund:</span>
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85em' }}>Fund:</span>
           {status.funds.map((f) => (
             <button
               key={f.name}
               onClick={() => setSelectedFund(f.name)}
-              style={f.name === fund.name ? { borderColor: '#6366f1', background: '#26283a' } : {}}
+              style={f.name === fund.name ? { borderColor: 'var(--color-accent-primary)', background: 'rgba(245, 177, 76, 0.09)' } : {}}
             >
               {f.name}
             </button>
@@ -59,11 +79,53 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-        <section style={card}>
-          <h3>Open Positions — {fund.name}</h3>
+      <div className="intel-grid" style={{ marginBottom: 16 }}>
+        <MetricCard label="Open positions" value={fund.positions.length} helper={fund.name} tone="info" />
+        <MetricCard label="Recent signals" value={signals.length} helper="Latest normalized feed sample" />
+        <MetricCard label="Data sources" value={fund.sources.length} helper={fund.sources.join(' + ')} />
+        <MetricCard
+          label="Account mode"
+          value={fund.paper ? 'PAPER' : status.tradingMode.toUpperCase()}
+          helper={fund.halted ? 'Manual review active' : 'Risk checks online'}
+          tone={fund.halted ? 'bad' : 'warning'}
+        />
+      </div>
+
+      <div className="intel-dashboard-grid">
+        <div>
+          <SectionPanel title={`Top Signal Feed - ${fund.name}`} description="Suggested actions are evidence prompts, not guaranteed trades.">
+            {signals.length === 0 ? (
+              <p className="intel-muted">No signals yet. Edge not confirmed.</p>
+            ) : (
+              <div className="intel-signal-list">
+                {signals.slice(0, 5).map((signal) => {
+                  const normalized = normalizeSignal(signal)
+                  return <SignalCard key={`${signal.id}-${signal.fund || ''}`} {...normalized} />
+                })}
+              </div>
+            )}
+          </SectionPanel>
+
+          <AttributionChart attribution={attribution} />
+          <FilingSpeedTable rows={filingSpeed} />
+        </div>
+
+        <div>
+          <SectionPanel title="Risk Warnings" description="Risk is first-class. Avoid and review states stay visible.">
+            <div className="intel-signal-list">
+              {signals.filter((s) => s.approved === false || s.order_status === 'rejected').slice(0, 4).map((signal) => {
+                const normalized = normalizeSignal(signal)
+                return <SignalCard key={`risk-${signal.id}-${signal.fund || ''}`} {...normalized} action="avoid" riskScore={82} />
+              })}
+              {signals.filter((s) => s.approved === false || s.order_status === 'rejected').length === 0 && (
+                <p className="intel-muted">No elevated avoid warnings in the current sample.</p>
+              )}
+            </div>
+          </SectionPanel>
+
+          <SectionPanel title="Open Positions" description={`Current exposure for ${fund.name}.`}>
           {fund.positions.length === 0 ? (
-            <p style={{ color: '#a1a1aa' }}>No open positions</p>
+            <p className="intel-muted">No open positions</p>
           ) : (
             <table>
               <thead>
@@ -72,10 +134,10 @@ export default function Dashboard() {
               <tbody>
                 {fund.positions.map((p) => (
                   <tr key={p.symbol}>
-                    <td>{p.symbol}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{p.symbol}</td>
                     <td>{p.qty}</td>
                     <td>${p.marketValue.toFixed(2)}</td>
-                    <td style={{ color: p.unrealizedPl < 0 ? '#fca5a5' : '#86efac' }}>
+                    <td style={{ color: p.unrealizedPl < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)', fontFamily: 'var(--font-mono)' }}>
                       {p.unrealizedPl >= 0 ? '+' : ''}{p.unrealizedPl.toFixed(2)}
                     </td>
                   </tr>
@@ -83,10 +145,9 @@ export default function Dashboard() {
               </tbody>
             </table>
           )}
-        </section>
+          </SectionPanel>
 
-        <section style={card}>
-          <h3>Limits — {fund.name}</h3>
+          <SectionPanel title="Risk Limits" description={`Configured guardrails for ${fund.name}.`}>
           <table>
             <tbody>
               <tr><td>Max per trade</td><td>${fund.risk.maxTradeNotionalUsd} / {fund.risk.maxTradePctEquity}% equity</td></tr>
@@ -101,33 +162,21 @@ export default function Dashboard() {
               <tr><td>Account</td><td>{fund.paper ? 'paper' : 'LIVE'} ({status.tradingMode})</td></tr>
             </tbody>
           </table>
-        </section>
+          </SectionPanel>
 
-        <section style={card}>
-          <h3>Pipeline Test</h3>
-          <p style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
-            Fire a manual signal at fund "{fund.name}" through the full risk pipeline (respects current mode).
-          </p>
+          <SectionPanel title="Pipeline Test" description={`Fire a manual signal at fund "${fund.name}" through the risk pipeline.`}>
           <div style={{ display: 'flex', gap: 8 }}>
             <input value={testTicker} onChange={(e) => setTestTicker(e.target.value.toUpperCase())} style={{ width: 90 }} />
-            <button onClick={fireTestSignal}>Send test buy signal</button>
+            <button onClick={fireTestSignal}>Send test signal</button>
           </div>
           {testResult && (
             <pre style={{ fontSize: '0.75em', background: '#16181d', padding: 10, borderRadius: 6, overflow: 'auto' }}>
               {JSON.stringify(testResult, null, 2)}
             </pre>
           )}
-        </section>
+          </SectionPanel>
+        </div>
       </div>
-
-      <AttributionChart attribution={attribution} />
-
-      <FilingSpeedTable rows={filingSpeed} />
-
-      <section style={{ ...card, marginTop: 24, maxWidth: 'none' }}>
-        <h3>Recent Signals</h3>
-        <SignalTable signals={signals} />
-      </section>
     </div>
   )
 }
@@ -152,11 +201,7 @@ function FilingSpeedTable({ rows }) {
   )
 
   return (
-    <section style={{ ...card, marginTop: 24, maxWidth: 'none' }}>
-      <h3>Filing speed by politician</h3>
-      <p style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
-        How quickly each member discloses. Faster filers give copyable signals a shorter head start to erode.
-      </p>
+    <SectionPanel title="Filing Speed by Politician" description="How quickly each member discloses. Disclosure lag reduces actionability.">
       <table>
         <thead>
           <tr>
@@ -181,7 +226,7 @@ function FilingSpeedTable({ rows }) {
           ))}
         </tbody>
       </table>
-    </section>
+    </SectionPanel>
   )
 }
 
@@ -199,21 +244,19 @@ function AttributionChart({ attribution }) {
     return row
   })
   return (
-    <section style={{ ...card, marginTop: 24, maxWidth: 'none' }}>
-      <h3>Realized P&L by source</h3>
-      <p style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
-        Cumulative realized P&L from closed positions, attributed to the signal source that opened them
-        ({attribution.totalClosedLots} closed lots).
-      </p>
+    <SectionPanel
+      title="Realized P&L by Source"
+      description={`Cumulative realized P&L from closed positions attributed to the opening signal source (${attribution.totalClosedLots} closed lots).`}
+    >
       <div style={{ height: 240 }}>
         <ResponsiveContainer>
           <LineChart data={data}>
-            <CartesianGrid stroke="#26282f" />
-            <XAxis dataKey="week" stroke="#a1a1aa" fontSize={11} />
-            <YAxis stroke="#a1a1aa" fontSize={11} tickFormatter={(v) => `$${v}`} />
-            <Tooltip contentStyle={{ background: '#1f2229', border: '1px solid #3f3f46' }} />
+            <CartesianGrid stroke="var(--color-border-subtle)" />
+            <XAxis dataKey="week" stroke="var(--color-text-muted)" fontSize={11} />
+            <YAxis stroke="var(--color-text-muted)" fontSize={11} tickFormatter={(v) => `$${v}`} />
+            <Tooltip contentStyle={{ background: '#111821', border: '1px solid #344255' }} />
             <Legend />
-            <ReferenceLine y={0} stroke="#52525b" />
+            <ReferenceLine y={0} stroke="var(--color-border-strong)" />
             {attribution.series.map((s, i) => (
               <Line
                 key={`${s.fund}/${s.source}`}
@@ -228,7 +271,7 @@ function AttributionChart({ attribution }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-    </section>
+    </SectionPanel>
   )
 }
 
@@ -283,13 +326,4 @@ export function SignalTable({ signals, onAudit }) {
       </tbody>
     </table>
   )
-}
-
-const card = {
-  background: '#16181d',
-  border: '1px solid #26282f',
-  borderRadius: 10,
-  padding: '16px 20px',
-  flex: 1,
-  minWidth: 300,
 }

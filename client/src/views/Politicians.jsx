@@ -3,6 +3,7 @@ import {
   Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { api } from '../api.js'
+import { DossierHeader, PageHeader, SectionPanel } from '../components/intel/components.jsx'
 
 export default function Politicians() {
   const [rows, setRows] = useState([])
@@ -80,30 +81,38 @@ export default function Politicians() {
     else { setSortKey(key); setAsc(defaultAsc) }
   }
 
-  if (loading) return <p>Loading politician stats…</p>
+  if (loading) return <p className="intel-muted">Loading politician dossiers...</p>
 
   return (
     <div>
-      <section style={card}>
+      <PageHeader
+        eyebrow="Influence / Politicians"
+        title="Politician Dossiers"
+        description="Historical disclosure-entry returns, disclosure lag, concentration, and edge scoring for measurable public trades."
+        meta="Neutral coverage · disclosure lag reduces actionability"
+        actions={(
+          <>
+            <button onClick={refreshStats} disabled={refreshing}>
+              {refreshing ? 'Refreshing...' : 'Refresh stats'}
+            </button>
+            <button onClick={refreshGraph} disabled={refreshing}>
+              {refreshing ? 'Refreshing...' : 'Refresh graph'}
+            </button>
+          </>
+        )}
+      />
+      <SectionPanel>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div>
             <h3 style={{ marginTop: 0 }}>Politician Alpha Profiles</h3>
-            <p style={{ color: '#a1a1aa', fontSize: '0.9em', margin: 0 }}>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9em', margin: 0 }}>
               Historical disclosure-entry returns, disclosure lag, concentration, and an edge score for members with enough measurable buys.
             </p>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={refreshStats} disabled={refreshing}>
-              {refreshing ? 'Refreshing…' : 'Refresh stats'}
-            </button>
-            <button onClick={refreshGraph} disabled={refreshing}>
-              {refreshing ? 'Refreshing…' : 'Refresh graph'}
-            </button>
           </div>
         </div>
         {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
         {rows.length === 0 ? (
-          <p style={{ color: '#a1a1aa' }}>No stats yet. Run a refresh after the congress archive has trades.</p>
+          <p className="intel-muted">No stats yet. Run a refresh after the congress archive has trades.</p>
         ) : (
           <>
             <div style={{ margin: '16px 0 10px' }}>
@@ -124,7 +133,7 @@ export default function Politicians() {
             />
           </>
         )}
-      </section>
+      </SectionPanel>
 
       {profile && <ProfileTearSheet profile={profile} graph={graph} />}
     </div>
@@ -157,7 +166,7 @@ function StatsTable({ rows, selected, onSelect, sortKey, asc, sortBy }) {
             onClick={() => onSelect(r.politician)}
             style={{
               cursor: 'pointer',
-              background: r.politician === selected ? '#26283a' : undefined,
+              background: r.politician === selected ? 'rgba(245, 177, 76, 0.09)' : undefined,
             }}
           >
             <td>{r.politician}</td>
@@ -189,21 +198,22 @@ function ProfileTearSheet({ profile, graph }) {
   ]
 
   return (
-    <section style={{ ...card, marginTop: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h3 style={{ margin: 0 }}>{profile.politician}</h3>
-          <p style={{ color: '#a1a1aa', marginTop: 4 }}>
-            As of {profile.as_of}. Best hold window: {profile.best_hold_window || 'unknown'}.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-          <Metric label="Edge score" value={profile.edge_score == null ? 'Unknown' : profile.edge_score} />
-          <Metric label="30d win rate" value={pct(profile.win_rate_30d)} />
-          <Metric label="90d avg return" value={pct(profile.avg_return_90d, true)} color={colorFor(profile.avg_return_90d)} />
-          <Metric label="Measured buys" value={profile.stats?.measured_buys ?? 0} />
-        </div>
-      </div>
+    <section style={{ marginTop: 24 }}>
+      <DossierHeader
+        entityType="politician"
+        name={profile.politician}
+        subtitle={`As of ${profile.as_of}. Best hold window: ${profile.best_hold_window || 'unknown'}.`}
+        badges={[
+          { label: profile.edge_score == null ? 'INSUFFICIENT DATA' : 'EDGE SCORED', tone: profile.edge_score == null ? 'neutral' : 'info' },
+          { label: 'NEUTRAL COVERAGE', tone: 'neutral' },
+        ]}
+        stats={[
+          { label: 'Edge score', value: profile.edge_score == null ? 'Unknown' : profile.edge_score },
+          { label: '30D win rate', value: pct(profile.win_rate_30d) },
+          { label: '90D avg return', value: pct(profile.avg_return_90d, true) },
+          { label: 'Measured buys', value: profile.stats?.measured_buys ?? 0 },
+        ]}
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18, marginTop: 18 }}>
         <ChartCard title="Returns by horizon">
@@ -334,15 +344,6 @@ function RecentTrades({ trades }) {
   )
 }
 
-function Metric({ label, value, color }) {
-  return (
-    <div>
-      <div style={{ color: '#a1a1aa', fontSize: '0.75em' }}>{label}</div>
-      <div style={{ fontSize: '1.4em', color }}>{value}</div>
-    </div>
-  )
-}
-
 function pct(value, signed = false) {
   if (value == null) return '—'
   return `${signed && value > 0 ? '+' : ''}${value}%`
@@ -354,10 +355,3 @@ function colorFor(value) {
 }
 
 const tooltipStyle = { background: '#1f2229', border: '1px solid #3f3f46' }
-
-const card = {
-  background: '#16181d',
-  border: '1px solid #26282f',
-  borderRadius: 10,
-  padding: '16px 20px',
-}

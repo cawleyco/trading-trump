@@ -16,19 +16,19 @@ export default function StatusBar() {
   }, [])
 
   if (error) {
-    return <div style={bar('#7f1d1d')}>Cannot reach bot server: {error}</div>
+    return <div style={bar('rgba(224, 90, 90, 0.16)')}>Cannot reach bot server: {error}</div>
   }
-  if (!status) return <div style={bar('#1f2229')}>Loading status…</div>
+  if (!status) return <div style={bar('var(--color-bg-elevated)')}>Loading status...</div>
 
   const live = status.tradingMode === 'live'
 
   return (
     <div style={{ marginTop: 16 }}>
-      <div style={{ ...bar(live ? '#713f12' : '#14532d'), marginTop: 0 }}>
-        <strong>{live ? '🔴 LIVE MODE' : '🟢 DRY RUN'}</strong>
-        {status.globallyHalted && <strong style={{ color: '#fca5a5' }}> — GLOBAL HALT FILE PRESENT</strong>}
+      <div style={{ ...bar(live ? 'rgba(249, 115, 22, 0.14)' : 'rgba(56, 193, 114, 0.12)'), marginTop: 0 }}>
+        <strong>{live ? 'LIVE MODE' : 'DRY RUN'}</strong>
+        {status.globallyHalted && <strong style={{ color: 'var(--color-bearish)' }}> - GLOBAL HALT FILE PRESENT</strong>}
         <span style={{ flex: 1 }} />
-        <span style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
+        <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85em' }}>
           {status.funds.length} fund{status.funds.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -52,29 +52,35 @@ function FundChip({ fund, live, onChange }) {
   }
 
   const dayPnl = fund.dailyPnl ? fund.dailyPnl.realized_pnl + fund.dailyPnl.unrealized_pnl : 0
-  const bg = fund.halted ? '#7f1d1d' : fund.error ? '#78350f' : !fund.paper && live ? '#713f12' : '#1f2229'
+  const bg = fund.halted
+    ? 'rgba(224, 90, 90, 0.16)'
+    : fund.error
+      ? 'rgba(245, 177, 76, 0.14)'
+      : !fund.paper && live
+        ? 'rgba(249, 115, 22, 0.14)'
+        : 'var(--color-bg-panel)'
 
   return (
     <div style={{
-      background: bg, border: '1px solid #3f3f46', borderRadius: 8,
+      background: bg, border: '1px solid var(--color-border-subtle)', borderRadius: 8,
       padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 340,
     }}>
       <div>
         <div style={{ fontWeight: 600 }}>
-          {fund.halted ? '⛔' : fund.paper ? '🧪' : '💵'} {fund.name}
-          <span style={{ color: '#a1a1aa', fontWeight: 400, fontSize: '0.8em' }}>
+          {fund.halted ? 'HALTED' : fund.paper ? 'PAPER' : 'LIVE'} {fund.name}
+          <span style={{ color: 'var(--color-text-muted)', fontWeight: 400, fontSize: '0.8em' }}>
             {' '}· {fund.paper ? 'paper' : 'LIVE'} · {fund.sources.join('+')}
           </span>
         </div>
-        <div style={{ fontSize: '0.8em', color: '#a1a1aa' }}>
+        <div style={{ fontSize: '0.8em', color: 'var(--color-text-muted)' }}>
           {fund.error
-            ? `⚠ ${fund.error}`
+            ? `Warning: ${fund.error}`
             : fund.halted
               ? fund.haltReason
               : <>
                   Equity ${fund.equity?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                   {' · '}
-                  <span style={{ color: dayPnl < 0 ? '#fca5a5' : '#86efac' }}>
+                  <span style={{ color: dayPnl < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)' }}>
                     day {dayPnl >= 0 ? '+' : ''}{dayPnl.toFixed(2)}
                   </span>
                   {' · '}{fund.positions.length} positions
@@ -84,7 +90,7 @@ function FundChip({ fund, live, onChange }) {
       <span style={{ flex: 1 }} />
       {fund.halted
         ? <button onClick={onResume}>Reset & Resume</button>
-        : <button onClick={onHalt} style={{ background: '#7f1d1d', borderColor: '#b91c1c' }}>KILL</button>}
+        : <button onClick={onHalt} style={{ background: 'rgba(224, 90, 90, 0.18)', borderColor: 'var(--color-bearish)' }}>Halt</button>}
     </div>
   )
 }
@@ -95,6 +101,7 @@ function bar(bg) {
     alignItems: 'center',
     gap: 4,
     background: bg,
+    border: '1px solid var(--color-border-subtle)',
     borderRadius: 8,
     padding: '10px 16px',
     marginTop: 16,

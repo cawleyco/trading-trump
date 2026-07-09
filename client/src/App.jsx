@@ -8,10 +8,11 @@ import Strategies from './views/Strategies.jsx'
 import Approvals from './views/Approvals.jsx'
 import SignalLog from './views/SignalLog.jsx'
 import Influence from './views/Influence.jsx'
-import StatusBar from './components/StatusBar.jsx'
+import AppShell from './components/intel/AppShell.jsx'
+import { EmptyState, PageHeader, SectionPanel } from './components/intel/components.jsx'
 
 const VIEWS = {
-  dashboard: ['Dashboard', Dashboard],
+  overview: ['Overview', Dashboard],
   trades: ['Trades', Trades],
   calendar: ['Calendar', Calendar],
   strategies: ['Strategies', Strategies],
@@ -19,31 +20,47 @@ const VIEWS = {
   backtest: ['Backtesting', Backtest],
   politicians: ['Politicians', Politicians],
   influence: ['Influence Signals', Influence],
-  log: ['Signal Log', SignalLog],
+  signals: ['Signals', SignalLog],
+  assets: ['Assets', AssetsPlaceholder],
+  research: ['Research', ResearchPlaceholder],
+  alerts: ['Alerts', AlertsPlaceholder],
+  dataSources: ['Data Sources', DataSourcesPlaceholder],
+  settings: ['Settings', SettingsPlaceholder],
 }
 
 const VIEW_PATHS = {
-  dashboard: '/',
+  overview: '/app/overview',
   trades: '/app/trades',
   calendar: '/app/calendar',
   strategies: '/app/strategies',
   approvals: '/app/approvals',
   backtest: '/app/backtests',
-  politicians: '/app/politicians',
+  politicians: '/app/influence/politicians',
   influence: '/app/influence/youtube',
-  log: '/app/signals',
+  signals: '/app/signals',
+  assets: '/app/assets',
+  research: '/app/research',
+  alerts: '/app/alerts',
+  dataSources: '/app/data-sources',
+  settings: '/app/settings',
 }
 
 function viewFromPath(path) {
+  if (path === '/' || path === '/app' || path.startsWith('/app/overview')) return 'overview'
+  if (path.startsWith('/app/influence/politicians') || path.startsWith('/app/politicians')) return 'politicians'
   if (path.startsWith('/app/influence')) return 'influence'
   if (path.startsWith('/app/trades')) return 'trades'
   if (path.startsWith('/app/calendar')) return 'calendar'
   if (path.startsWith('/app/strategies')) return 'strategies'
   if (path.startsWith('/app/approvals')) return 'approvals'
   if (path.startsWith('/app/backtests')) return 'backtest'
-  if (path.startsWith('/app/politicians')) return 'politicians'
-  if (path.startsWith('/app/signals')) return 'log'
-  return 'dashboard'
+  if (path.startsWith('/app/signals')) return 'signals'
+  if (path.startsWith('/app/assets')) return 'assets'
+  if (path.startsWith('/app/research')) return 'research'
+  if (path.startsWith('/app/alerts')) return 'alerts'
+  if (path.startsWith('/app/data-sources')) return 'dataSources'
+  if (path.startsWith('/app/settings')) return 'settings'
+  return 'overview'
 }
 
 export default function App() {
@@ -57,26 +74,61 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
-  const navigate = (key) => {
-    window.history.pushState({}, '', VIEW_PATHS[key])
+  const navigate = (target) => {
+    const nextPath = VIEW_PATHS[target] || target
+    window.history.pushState({}, '', nextPath)
     setPath(window.location.pathname)
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 20px 60px' }}>
-      <StatusBar />
-      <nav style={{ display: 'flex', gap: 8, margin: '16px 0 24px' }}>
-        {Object.entries(VIEWS).map(([key, [label]]) => (
-          <button
-            key={key}
-            onClick={() => navigate(key)}
-            style={view === key ? { borderColor: '#6366f1', background: '#26283a' } : {}}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+    <AppShell path={path} onNavigate={navigate}>
       <View path={path} />
-    </div>
+    </AppShell>
+  )
+}
+
+function AssetsPlaceholder() {
+  return (
+    <>
+      <PageHeader
+        eyebrow="Asset intelligence"
+        title="Assets"
+        description="A convergence view for politician trades, creator mentions, public narratives, and risk warnings."
+        meta="Future module · data model ready for cross-source timelines"
+      />
+      <SectionPanel title="Asset Intelligence" description="Edge not confirmed until source trails and backtests are attached.">
+        <EmptyState
+          title="Asset pages are staged."
+          body="This section is reserved for cross-source asset timelines, exposure scoring, and public influence summaries."
+        />
+      </SectionPanel>
+    </>
+  )
+}
+
+function ResearchPlaceholder() {
+  return <Placeholder title="Research" description="Saved notes, evidence trails, and analyst review queues will live here." />
+}
+
+function AlertsPlaceholder() {
+  return <Placeholder title="Alerts" description="Watchlists and manual-review alerts are staged for the terminal shell." />
+}
+
+function DataSourcesPlaceholder() {
+  return <Placeholder title="Data Sources" description="Source health, sync freshness, and coverage warnings will be consolidated here." />
+}
+
+function SettingsPlaceholder() {
+  return <Placeholder title="Settings" description="Terminal preferences, source modules, and risk controls will be managed here." />
+}
+
+function Placeholder({ title, description }) {
+  return (
+    <>
+      <PageHeader eyebrow="Coming soon" title={title} description={description} meta="Visually present · module disabled" />
+      <SectionPanel>
+        <EmptyState title="Coming soon" body="Manual review recommended before enabling this module in live workflows." />
+      </SectionPanel>
+    </>
   )
 }

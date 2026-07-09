@@ -1,12 +1,12 @@
 export const card = {
-  background: '#16181d',
-  border: '1px solid #26282f',
-  borderRadius: 10,
+  background: 'var(--color-bg-panel)',
+  border: '1px solid var(--color-border-subtle)',
+  borderRadius: 'var(--radius-md)',
   padding: '16px 20px',
   marginBottom: 18,
 }
 
-export const muted = { color: '#a1a1aa' }
+export const muted = { color: 'var(--color-text-muted)' }
 
 export function navigate(path) {
   window.history.pushState({}, '', path)

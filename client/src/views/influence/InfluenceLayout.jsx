@@ -1,5 +1,6 @@
 import { influenceModules } from '../../influence/modules.js'
-import { card, muted, navigate } from './ui.js'
+import { MetricCard, PageHeader } from '../../components/intel/components.jsx'
+import { navigate } from './ui.js'
 
 export default function InfluenceLayout({ path, children }) {
   const tabs = [
@@ -12,18 +13,18 @@ export default function InfluenceLayout({ path, children }) {
   ]
   return (
     <section>
-      <div style={{ marginBottom: 18 }}>
-        <h2 style={{ marginBottom: 4 }}>Influence Signals</h2>
-        <p style={{ ...muted, marginTop: 0 }}>
-          Public figure market-intelligence modules. MVP source: {influenceModules[0].label}.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Influence / YouTube"
+        title="YouTube Influence"
+        description="Track creator mentions, sentiment, market impact, and realistic post-mention follow-through."
+        meta={`MVP source: ${influenceModules[0].label} · Pump-risk elevated signals require review`}
+      />
       <nav style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
         {tabs.map(([href, label]) => (
           <button
             key={href}
             onClick={() => navigate(href)}
-            style={path === href ? { borderColor: '#6366f1', background: '#26283a' } : {}}
+            style={path === href ? { borderColor: 'var(--color-accent-primary)', background: 'rgba(245, 177, 76, 0.09)' } : {}}
           >
             {label}
           </button>
@@ -35,13 +36,7 @@ export default function InfluenceLayout({ path, children }) {
 }
 
 export function StatCard({ label, value, hint }) {
-  return (
-    <section style={{ ...card, minWidth: 180, flex: 1 }}>
-      <div style={{ color: '#a1a1aa', fontSize: '0.8em' }}>{label}</div>
-      <div style={{ fontSize: '1.7em', marginTop: 4 }}>{value ?? '—'}</div>
-      {hint && <div style={{ ...muted, fontSize: '0.8em', marginTop: 4 }}>{hint}</div>}
-    </section>
-  )
+  return <MetricCard label={label} value={value ?? '-'} helper={hint} />
 }
 
 export function DirectionBadge({ direction }) {

@@ -1,6 +1,13 @@
 import { Fragment, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { SignalTable } from './Dashboard.jsx'
+import {
+  EvidenceDrawer,
+  PageHeader,
+  SectionPanel,
+  SignalCard,
+} from '../components/intel/components.jsx'
+import { normalizeSignal } from '../components/intel/signalUtils.js'
 
 export default function SignalLog() {
   const [signals, setSignals] = useState([])
@@ -23,14 +30,41 @@ export default function SignalLog() {
 
   return (
     <section>
+      <PageHeader
+        eyebrow="Signals"
+        title="Normalized Signal Feed"
+        description="Every signal is treated as an auditable intelligence object: action, confidence, risk, evidence, and decision trail."
+        meta={`${signals.length} signals loaded · Manual review recommended when evidence is thin`}
+      />
       <ReviewQueue />
-      <h3>Full Signal & Decision Log</h3>
-      <p style={{ color: '#a1a1aa', fontSize: '0.9em' }}>
-        Every signal the bot generated, including rejected ones, with the risk manager's reasoning.
-      </p>
+
+      <SectionPanel
+        title="Signal Cards"
+        description="Suggested actions avoid direct buy/sell language. Historical follow-through is positive only when proven by evidence."
+      >
+        {signals.length === 0 ? (
+          <p className="intel-muted">No signals yet.</p>
+        ) : (
+          <div className="intel-signal-list">
+            {signals.slice(0, 20).map((signal, i) => (
+              <SignalCard
+                key={`${signal.id}-${signal.fund ?? i}`}
+                {...normalizeSignal(signal)}
+                onOpen={() => loadAudit(signal)}
+              />
+            ))}
+          </div>
+        )}
+      </SectionPanel>
+
       {auditError && <p style={{ color: '#fca5a5' }}>{auditError}</p>}
       {audit && <AuditTimeline audit={audit} onClose={() => setAudit(null)} />}
-      <SignalTable signals={signals} onAudit={loadAudit} />
+      <SectionPanel
+        title="Full Signal and Decision Log"
+        description="Dense table view for rejected signals, risk-manager reasoning, orders, and source references."
+      >
+        <SignalTable signals={signals} onAudit={loadAudit} />
+      </SectionPanel>
     </section>
   )
 }
@@ -38,11 +72,35 @@ export default function SignalLog() {
 function AuditTimeline({ audit, onClose }) {
   const decisions = audit.decisions || []
   return (
-    <section style={card}>
+    <SectionPanel>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
         <h3>Audit Timeline - {audit.signal?.ticker} {audit.signal?.direction}</h3>
         <button onClick={onClose}>Close</button>
       </div>
+      <EvidenceDrawer
+        signalId={audit.signal?.id}
+        items={[
+          audit.sourceTrade && {
+            type: 'filing',
+            title: 'Source filing',
+            timestamp: audit.sourceTrade.disclosure_date,
+            body: `${audit.sourceTrade.politician} disclosed ${audit.sourceTrade.type} ${audit.sourceTrade.ticker}. Disclosure lag and filing quality affect actionability.`,
+            href: audit.sourceTrade.source_url,
+            confidence: audit.sourceTrade.parse_confidence,
+          },
+          audit.score && {
+            type: 'backtest',
+            title: 'Copy score',
+            body: `${audit.score.score} / 100 - ${audit.score.recommendation}. Sample size and stale-signal warnings should be reviewed.`,
+            confidence: audit.score.confidence,
+          },
+          audit.strategyMatch && {
+            type: 'risk_check',
+            title: 'Strategy approval',
+            body: `${audit.strategyMatch.strategy_name || `Strategy ${audit.strategyMatch.strategy_id}`} returned ${audit.strategyMatch.outcome}.`,
+          },
+        ].filter(Boolean)}
+      />
       <TimelineStep title="Source Trade">
         {audit.sourceTrade ? (
           <>
@@ -107,7 +165,7 @@ function AuditTimeline({ audit, onClose }) {
           </div>
         ))}
       </TimelineStep>
-    </section>
+    </SectionPanel>
   )
 }
 
@@ -145,11 +203,8 @@ function ReviewQueue() {
   if (items.length === 0) return null
 
   return (
-    <section style={card}>
+    <SectionPanel title="Data-Quality Review Queue" description="Low-confidence filings are held out of automation until an analyst reviews the evidence.">
       <h3>Data-quality review queue <span style={{ color: '#eab308' }}>({items.length} pending)</span></h3>
-      <p style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
-        Low-confidence filings (parse confidence &lt; 0.8) held out of auto-trading until reviewed.
-      </p>
       <table>
         <thead>
           <tr>
@@ -193,16 +248,8 @@ function ReviewQueue() {
           ))}
         </tbody>
       </table>
-    </section>
+    </SectionPanel>
   )
-}
-
-const card = {
-  background: '#16181d',
-  border: '1px solid #26282f',
-  borderRadius: 10,
-  padding: '16px 20px',
-  marginBottom: 24,
 }
 
 const muted = {
