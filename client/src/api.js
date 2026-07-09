@@ -1,7 +1,13 @@
 async function req(path, options) {
   const resp = await fetch(path, options)
-  const data = await resp.json()
-  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`)
+  const contentType = resp.headers.get('content-type') || ''
+  const data = contentType.includes('application/json') ? await resp.json() : await resp.text()
+  if (!resp.ok) {
+    const message = typeof data === 'object' && data?.error
+      ? data.error
+      : String(data || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+    throw new Error(message ? `HTTP ${resp.status}: ${message}` : `HTTP ${resp.status}`)
+  }
   return data
 }
 

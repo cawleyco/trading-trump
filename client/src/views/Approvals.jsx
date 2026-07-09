@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 
 export default function Approvals() {
@@ -7,12 +7,14 @@ export default function Approvals() {
   const [error, setError] = useState(null)
   const [busyId, setBusyId] = useState(null)
 
-  const load = () => {
+  const load = useCallback(() => {
     setError(null)
     api.approvals(status).then(setApprovals).catch((e) => setError(e.message))
-  }
+  }, [status])
 
-  useEffect(load, [status])
+  useEffect(() => {
+    load()
+  }, [load])
 
   const resolve = async (approval, action) => {
     setBusyId(approval.id)

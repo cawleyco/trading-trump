@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 
 const emptyDefinition = {
@@ -106,8 +106,13 @@ export default function Strategies() {
     exitRule: 'hold_90',
   })
 
-  const load = () => api.strategies().then(setStrategies).catch((e) => setError(e.message))
-  useEffect(load, [])
+  const load = useCallback(() => {
+    api.strategies().then(setStrategies).catch((e) => setError(e.message))
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   const setFilter = (key, value) => {
     setForm((current) => ({
