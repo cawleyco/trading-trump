@@ -1771,7 +1771,11 @@ export function hasSeenPost(postId) {
 
 export function markPostSeen(postId, text, createdAt, classification = null) {
   db.prepare(
-    `INSERT OR IGNORE INTO seen_posts (post_id, text, created_at, classification) VALUES (?, ?, ?, ?)`
+    `INSERT INTO seen_posts (post_id, text, created_at, classification) VALUES (?, ?, ?, ?)
+     ON CONFLICT(post_id) DO UPDATE SET
+       text = COALESCE(seen_posts.text, excluded.text),
+       created_at = COALESCE(seen_posts.created_at, excluded.created_at),
+       classification = COALESCE(seen_posts.classification, excluded.classification)`
   ).run(postId, text ?? null, createdAt ?? null, classification ? JSON.stringify(classification) : null);
 }
 

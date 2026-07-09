@@ -9,6 +9,7 @@ export default function YoutubeVideoDetail({ videoId }) {
   const [format, setFormat] = useState('plain_text')
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
 
   const refresh = useCallback(() => api.youtubeVideo(videoId).then(setVideo).catch((e) => setError(e.message)), [videoId])
   useEffect(() => { refresh() }, [refresh])
@@ -16,9 +17,11 @@ export default function YoutubeVideoDetail({ videoId }) {
   const upload = async () => {
     setBusy('upload')
     setError(null)
+    setNotice(null)
     try {
       await api.uploadYoutubeTranscript(videoId, { rawText: transcript, format })
       setTranscript('')
+      setNotice('Transcript uploaded ✓ — run "Detect mentions" next.')
       refresh()
     } catch (err) {
       setError(err.message)
@@ -29,6 +32,7 @@ export default function YoutubeVideoDetail({ videoId }) {
 
   const analyze = async () => {
     setBusy('analyze')
+    setError(null)
     try {
       await api.analyzeYoutubeVideo(videoId)
       refresh()
@@ -41,6 +45,7 @@ export default function YoutubeVideoDetail({ videoId }) {
 
   const classify = async (mentionId) => {
     setBusy(`classify-${mentionId}`)
+    setError(null)
     try {
       await api.classifyYoutubeMention(mentionId)
       refresh()
@@ -53,6 +58,7 @@ export default function YoutubeVideoDetail({ videoId }) {
 
   const signalize = async () => {
     setBusy('signals')
+    setError(null)
     try {
       await api.generateYoutubeSignals(videoId)
       refresh()
@@ -63,13 +69,14 @@ export default function YoutubeVideoDetail({ videoId }) {
     }
   }
 
-  if (error) return <section style={card}><p style={{ color: '#fca5a5' }}>{error}</p></section>
+  if (!video && error) return <section style={card}><p style={{ color: '#fca5a5' }}>{error}</p></section>
   if (!video) return <p>Loading video…</p>
 
   return (
     <div>
       <section style={card}>
         <button onClick={() => navigate('/app/influence/youtube/videos')} style={{ marginBottom: 10 }}>Back to videos</button>
+        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
         <h3>{video.title}</h3>
         <p style={muted}>{video.channel_title} · {video.published_at}</p>
         {video.thumbnail_url && <img src={video.thumbnail_url} alt="" style={{ maxWidth: 260, borderRadius: 8 }} />}
@@ -87,6 +94,7 @@ export default function YoutubeVideoDetail({ videoId }) {
       <section style={card}>
         <h3>Manual Transcript Upload</h3>
         <p style={muted}>Upload text, SRT, or VTT from an authorized/compliant source. The app does not scrape YouTube transcripts.</p>
+        {notice && <p style={{ color: '#86efac' }}>{notice}</p>}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
           <select value={format} onChange={(e) => setFormat(e.target.value)}>
             <option value="plain_text">plain text</option>
@@ -106,6 +114,7 @@ export default function YoutubeVideoDetail({ videoId }) {
         <textarea
           value={transcript}
           onChange={(e) => setTranscript(e.target.value)}
+          disabled={busy === 'upload'}
           placeholder="Paste transcript text or SRT/VTT here"
           style={{ width: '100%', minHeight: 140, background: '#1f2229', color: '#e4e4e7', border: '1px solid #3f3f46', borderRadius: 6, padding: 10 }}
         />

@@ -25,26 +25,47 @@ function positionAgeDays(fundName, ticker) {
   return (Date.now() - new Date(row.first_buy + 'Z').getTime()) / 86400_000;
 }
 
+/**
+ * Entry/current prices for an Alpaca position, or null when they can't be
+ * established. A zero/absent qty with a nonzero market_value would otherwise
+ * divide to Infinity, sail past a truthiness check, and trigger a phantom
+ * take-profit — prices must be finite and positive or the position is skipped.
+ */
+export function _positionPrices(p) {
+  const entry = Number(p.avg_entry_price);
+  const qty = Number(p.qty);
+  const current =
+    p.current_price != null ? Number(p.current_price) : qty ? Number(p.market_value) / qty : NaN;
+  if (!Number.isFinite(entry) || entry <= 0 || !Number.isFinite(current) || current <= 0) return null;
+  return { entry, current };
+}
+
+export function _exitReason({ entry, current, ageDays }, { stopLossPct, takeProfitPct, maxHoldDays }) {
+  const movePct = ((current - entry) / entry) * 100;
+  if (stopLossPct != null && movePct <= -stopLossPct) {
+    return `stop-loss: ${movePct.toFixed(1)}% ≤ -${stopLossPct}%`;
+  }
+  if (takeProfitPct != null && movePct >= takeProfitPct) {
+    return `take-profit: ${movePct.toFixed(1)}% ≥ +${takeProfitPct}%`;
+  }
+  if (maxHoldDays != null && Number.isFinite(ageDays) && ageDays > maxHoldDays) {
+    return `max hold: ${Math.floor(ageDays)}d > ${maxHoldDays}d`;
+  }
+  return null;
+}
+
 async function checkFund(fund) {
   if (isFundHalted(fund.name)) return;
-  const { stopLossPct, takeProfitPct, maxHoldDays } = fund.autoExit;
   const positions = await getFundClient(fund.name).getPositions();
 
   for (const p of positions) {
-    const entry = Number(p.avg_entry_price);
-    const current = Number(p.current_price ?? p.market_value / p.qty);
-    if (!entry || !current) continue;
+    const prices = _positionPrices(p);
+    if (!prices) continue;
+    const { entry, current } = prices;
     const movePct = ((current - entry) / entry) * 100;
     const ageDays = positionAgeDays(fund.name, p.symbol);
 
-    let reason = null;
-    if (stopLossPct != null && movePct <= -stopLossPct) {
-      reason = `stop-loss: ${movePct.toFixed(1)}% ≤ -${stopLossPct}%`;
-    } else if (takeProfitPct != null && movePct >= takeProfitPct) {
-      reason = `take-profit: ${movePct.toFixed(1)}% ≥ +${takeProfitPct}%`;
-    } else if (maxHoldDays != null && ageDays != null && ageDays > maxHoldDays) {
-      reason = `max hold: ${Math.floor(ageDays)}d > ${maxHoldDays}d`;
-    }
+    const reason = _exitReason({ entry, current, ageDays }, fund.autoExit);
     if (!reason) continue;
 
     log.info('auto-exit', `[${fund.name}] closing ${p.symbol}: ${reason}`);

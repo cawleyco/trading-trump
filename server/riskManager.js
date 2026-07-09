@@ -179,11 +179,24 @@ export async function refreshAllFundsPnl() {
   }
 }
 
+// Live dependencies for processSignalForFund, overridable in tests so the
+// order pipeline can be exercised offline against a mock broker client.
+const liveDeps = {
+  getFundClient,
+  getTradableAsset,
+  isMarketOpen,
+  refreshFundPnl,
+  avgDollarVolume,
+  get isLive() {
+    return config.isLive;
+  },
+};
+
 /**
  * Evaluate a signal for ONE fund: run every safety check, persist the
  * decision, and (if approved) submit or simulate the order.
  */
-async function processSignalForFund(signal, signalId, fund) {
+async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
   const checks = [];
   const recordCheck = (check, result) => {
     checks.push({ check, pass: !!result.pass, detail: result.detail });
@@ -219,25 +232,25 @@ async function processSignalForFund(signal, signalId, fund) {
       : { pass: true, detail: 'skipped: non-sentiment signal' });
 
     // 3. Market hours
-    const marketOpen = await isMarketOpen();
+    const marketOpen = await deps.isMarketOpen();
     recordCheck('market-open', { pass: marketOpen, detail: marketOpen ? 'market is open' : 'market is closed' });
     if (!marketOpen) return reject('market is closed');
 
     // 4. Refresh this fund's P&L and re-check the breaker with fresh numbers
-    await refreshFundPnl(fund);
+    await deps.refreshFundPnl(fund);
     const freshHaltReason = fundHaltReason(fund.name);
     recordCheck('daily-pnl-circuit-breaker', { pass: !freshHaltReason, detail: freshHaltReason || 'daily loss within limits' });
     if (freshHaltReason) return reject(freshHaltReason);
 
     // 5. Symbol tradable on Alpaca?
-    const asset = await getTradableAsset(signal.ticker);
+    const asset = await deps.getTradableAsset(signal.ticker);
     recordCheck('tradable', {
       pass: !!asset,
       detail: asset ? `ticker ${signal.ticker} is tradable on Alpaca` : `ticker ${signal.ticker} not tradable on Alpaca`,
     });
     if (!asset) return reject(`ticker ${signal.ticker} not tradable on Alpaca`);
 
-    const client = getFundClient(fund.name);
+    const client = deps.getFundClient(fund.name);
     const account = await client.getAccount();
     const equity = Number(account.equity);
     const positions = await client.getPositions();
@@ -291,7 +304,7 @@ async function processSignalForFund(signal, signalId, fund) {
       if (!sectorResult.pass && !sectorResult.skipped) return reject(sectorResult.detail);
 
       const adv = configured(riskValue(fund, 'minAvgDollarVolume'))
-        ? await avgDollarVolume(signal.ticker)
+        ? await deps.avgDollarVolume(signal.ticker)
         : null;
       const advResult = recordCheck('min-avg-dollar-volume', checkAvgDollarVolume({
         minimum: riskValue(fund, 'minAvgDollarVolume'),
@@ -373,7 +386,7 @@ async function processSignalForFund(signal, signalId, fund) {
     });
 
     // 9. Dry-run gate — the last line before real money moves
-    if (!config.isLive) {
+    if (!deps.isLive) {
       insertOrder({
         decisionId,
         fund: fund.name,
@@ -420,7 +433,7 @@ async function processSignalForFund(signal, signalId, fund) {
  * source. `onlyFund` restricts routing (used by auto-exit and test signals).
  * Returns one outcome per fund evaluated.
  */
-export async function processSignal(signal, { onlyFund } = {}) {
+export async function processSignal(signal, { onlyFund, _deps, _funds } = {}) {
   const signalId = insertSignal({
     source: signal.source,
     ticker: signal.ticker,
@@ -430,7 +443,7 @@ export async function processSignal(signal, { onlyFund } = {}) {
     rawReference: signal.rawReference,
   });
 
-  const targets = enabledFunds.filter((f) => {
+  const targets = (_funds ?? enabledFunds).filter((f) => {
     if (onlyFund) return f.name === onlyFund;
     // auto-exit signals are always fund-targeted; never fan out
     if (signal.source === 'auto-exit') return false;
@@ -449,7 +462,7 @@ export async function processSignal(signal, { onlyFund } = {}) {
 
   const outcomes = [];
   for (const fund of targets) {
-    outcomes.push(await processSignalForFund(signal, signalId, fund));
+    outcomes.push(await processSignalForFund(signal, signalId, fund, _deps ?? liveDeps));
   }
   return outcomes;
 }

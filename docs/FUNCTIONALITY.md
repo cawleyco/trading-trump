@@ -148,7 +148,7 @@ Key pieces:
 - `server/influence/transcripts.js` provides the transcript provider registry plus manual/stub providers and plain-text/SRT/VTT segmentation.
 - `server/influence/entityResolution.js` and `youtubeMentionDetection.js` detect cashtags, asset aliases, and company/token names with ambiguity filters for terms like apple/SOL.
 - `server/influence/youtubeMentionClassifier.js` classifies mentions with structured JSON and stores normalized scores plus raw model output.
-- `server/backtest/youtubeBacktest.js` calculates mention returns by horizon and creator-alpha metrics; MVP falls back to deterministic mock market data when no provider is configured.
+- `server/backtest/youtubeBacktest.js` calculates mention returns by horizon and creator-alpha metrics from real Alpaca data: minute bars price the entry and intraday (1h/6h) windows, daily closes price the longer windows, and every result carries a 30-day SPY benchmark. Off-hours mentions enter at the next day's open (intraday windows null); mentions with no price data get null returns and a `noPriceData` flag instead of synthetic prices, and creator-alpha win rates are computed only over measurable mentions.
 - `server/influence/youtubeSignals.js` converts high-quality classified mentions into research signal events with careful labels such as `watch`, `avoid`, and `manual_review`.
 
 ## Backtesting (`server/backtest/`)

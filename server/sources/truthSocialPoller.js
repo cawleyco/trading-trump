@@ -1,14 +1,29 @@
 import { config } from '../config.js';
-import { hasSeenPost, markPostSeen, updateSeenPostClassification } from '../db.js';
+import { getSeenPost, markPostSeen, updateSeenPostClassification } from '../db.js';
 import { makeTradeSignal } from '../signal.js';
 import { processSignal } from '../riskManager.js';
 import { classifyPost, isMarketRelevant } from '../sentiment/classifier.js';
 import { buildCrossSignalContext } from '../intel/crossSignal.js';
+import { dispatchPostClassified } from '../intel/alertEngine.js';
 import { fetchRecentPosts } from './truthSocialData.js';
 import { log } from '../logger.js';
 
 let firstRun = true;
 let timer = null;
+
+export function planPostClassification({ post, seenPost, firstRun: isFirstRun, now = Date.now(), maxAgeMs }) {
+  if (seenPost?.classification) {
+    return { action: 'skip', reason: 'already-classified' };
+  }
+
+  const shouldTrade = !isFirstRun;
+  const ageMs = now - new Date(post.createdAt).getTime();
+  if (shouldTrade && ageMs > maxAgeMs) {
+    return { action: 'skip', reason: 'stale', shouldTrade, ageMs };
+  }
+
+  return { action: 'classify', shouldTrade, ageMs };
+}
 
 export async function pollTruthSocial() {
   let posts;
@@ -20,24 +35,36 @@ export async function pollTruthSocial() {
   }
 
   const maxAgeMs = config.signals.sentimentMaxPostAgeMinutes * 60_000;
+  let seedClassified = 0;
 
   for (const post of posts) {
-    if (hasSeenPost(post.id)) continue;
-    markPostSeen(post.id, post.text, post.createdAt);
-
-    // Seed on first run — don't classify/trade the backlog at startup.
-    if (firstRun) continue;
-
-    const age = Date.now() - new Date(post.createdAt).getTime();
-    if (age > maxAgeMs) {
-      log.info('truth-social', `Skipping stale post ${post.id} (${Math.round(age / 60000)}m old)`);
+    let seenPost = getSeenPost(post.id);
+    if (!seenPost || !seenPost.text || !seenPost.created_at) {
+      markPostSeen(post.id, post.text, post.createdAt);
+      seenPost = getSeenPost(post.id);
+    }
+    const plan = planPostClassification({ post, seenPost, firstRun, maxAgeMs });
+    if (plan.action === 'skip') {
+      if (plan.reason === 'stale') {
+        log.info('truth-social', `Skipping stale post ${post.id} (${Math.round(plan.ageMs / 60000)}m old)`);
+      }
       continue;
     }
 
-    log.info('truth-social', `New post ${post.id}: "${post.text.slice(0, 120)}..."`);
+    log.info(
+      'truth-social',
+      `${plan.shouldTrade ? 'New' : 'Seed'} post ${post.id}: "${post.text.slice(0, 120)}..."`
+    );
     const classification = await classifyPost(post.text);
     if (!classification) continue;
     updateSeenPostClassification(post.id, classification);
+    if (!plan.shouldTrade) {
+      seedClassified += 1;
+      continue;
+    }
+
+    // Fire alert rules for freshly-classified (non-seed) posts (deduped internally).
+    dispatchPostClassified(post, classification);
 
     if (!isMarketRelevant(classification)) {
       log.info(
@@ -77,7 +104,7 @@ export async function pollTruthSocial() {
   }
 
   if (firstRun) {
-    log.info('truth-social', `First poll: seeded ${posts.length} existing posts, no trades placed`);
+    log.info('truth-social', `First poll: seeded ${posts.length} existing posts, classified ${seedClassified}, no trades placed`);
     firstRun = false;
   }
 }

@@ -38,7 +38,9 @@ export default function Dashboard() {
 
   if (!status) return <p className="intel-muted">Loading intelligence terminal...</p>
 
-  const fund = status.funds.find((f) => f.name === selectedFund) || status.funds[0]
+  const funds = status.funds ?? []
+  const fund = funds.find((f) => f.name === selectedFund) || funds[0]
+  if (!fund) return <p className="intel-muted">No funds reported by the server yet — check funds.json and the startup log.</p>
 
   const fireTestSignal = async () => {
     setTestResult(null)
@@ -56,7 +58,7 @@ export default function Dashboard() {
         eyebrow="Overview"
         title="Public Influence Intelligence Terminal"
         description="Track public signals, inspect the evidence, and separate copyable edge from noisy attention."
-        meta={`Mode: ${status.tradingMode} · ${status.funds.length} fund${status.funds.length === 1 ? '' : 's'} monitored · Signal detected, edge not guaranteed`}
+        meta={`Mode: ${status.tradingMode ?? 'unknown'} · ${funds.length} fund${funds.length === 1 ? '' : 's'} monitored · Signal detected, edge not guaranteed`}
         actions={(
           <>
             <button onClick={refresh}>Refresh</button>
@@ -65,10 +67,10 @@ export default function Dashboard() {
         )}
       />
 
-      {status.funds.length > 1 && (
+      {funds.length > 1 && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
           <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85em' }}>Fund:</span>
-          {status.funds.map((f) => (
+          {funds.map((f) => (
             <button
               key={f.name}
               onClick={() => setSelectedFund(f.name)}
@@ -81,12 +83,12 @@ export default function Dashboard() {
       )}
 
       <div className="intel-grid" style={{ marginBottom: 16 }}>
-        <MetricCard label="Open positions" value={fund.positions.length} helper={fund.name} tone="info" />
+        <MetricCard label="Open positions" value={(fund.positions ?? []).length} helper={fund.name} tone="info" />
         <MetricCard label="Recent signals" value={signals.length} helper="Latest normalized feed sample" />
-        <MetricCard label="Data sources" value={fund.sources.length} helper={fund.sources.join(' + ')} />
+        <MetricCard label="Data sources" value={(fund.sources ?? []).length} helper={(fund.sources ?? []).join(' + ')} />
         <MetricCard
           label="Account mode"
-          value={fund.paper ? 'PAPER' : status.tradingMode.toUpperCase()}
+          value={fund.paper ? 'PAPER' : (status.tradingMode ?? 'unknown').toUpperCase()}
           helper={fund.halted ? 'Manual review active' : 'Risk checks online'}
           tone={fund.halted ? 'bad' : 'warning'}
         />

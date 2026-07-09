@@ -1021,9 +1021,13 @@ app.post('/api/influence/youtube/videos/:id/analyze', async (req, res) => {
   if (id == null) return;
   const video = getYoutubeVideo(id);
   if (!video) return res.status(404).json({ error: 'video not found' });
-  const detection = detectAndStoreYoutubeMentions(video);
-  updateYoutubeVideoStatuses(id, { analysis_status: 'complete' });
-  res.json({ detection, mentions: listAssetMentions({ videoId: id, limit: 500 }) });
+  try {
+    const detection = detectAndStoreYoutubeMentions(video);
+    updateYoutubeVideoStatuses(id, { analysis_status: 'complete' });
+    res.json({ detection, mentions: listAssetMentions({ videoId: id, limit: 500 }) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.get('/api/influence/youtube/videos/:id/mentions', (req, res) => {
@@ -1033,11 +1037,11 @@ app.get('/api/influence/youtube/videos/:id/mentions', (req, res) => {
   res.json(listAssetMentions({ videoId: id, limit: Number(req.query.limit) || 500 }));
 });
 
-app.get('/api/influence/youtube/videos/:id/backtest-results', (req, res) => {
+app.get('/api/influence/youtube/videos/:id/backtest-results', async (req, res) => {
   if (!requireInfluence(req, res)) return;
   const id = numericIdParam(req, res);
   if (id == null) return;
-  res.json(runYoutubeBacktest({ name: `Video ${id} mention backtest`, videoId: id, limit: 500 }));
+  res.json(await runYoutubeBacktest({ name: `Video ${id} mention backtest`, videoId: id, limit: 500 }));
 });
 
 app.get('/api/influence/youtube/mentions', (req, res) => {
@@ -1093,11 +1097,11 @@ app.post('/api/influence/youtube/mentions/:id/reclassify', async (req, res) => {
   res.json(classification);
 });
 
-app.get('/api/influence/youtube/mentions/:id/backtest', (req, res) => {
+app.get('/api/influence/youtube/mentions/:id/backtest', async (req, res) => {
   if (!requireInfluence(req, res)) return;
   const id = numericIdParam(req, res);
   if (id == null) return;
-  res.json(runYoutubeBacktest({ name: `Mention ${id} backtest`, mentionId: id, limit: 500 }));
+  res.json(await runYoutubeBacktest({ name: `Mention ${id} backtest`, mentionId: id, limit: 500 }));
 });
 
 app.get('/api/influence/youtube/backtests', (req, res) => {
@@ -1105,10 +1109,10 @@ app.get('/api/influence/youtube/backtests', (req, res) => {
   res.json(listYoutubeBacktestRuns());
 });
 
-app.post('/api/influence/youtube/backtests', (req, res) => {
+app.post('/api/influence/youtube/backtests', async (req, res) => {
   if (!requireInfluence(req, res)) return;
   try {
-    res.json(runYoutubeBacktest(req.body || {}));
+    res.json(await runYoutubeBacktest(req.body || {}));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1123,20 +1127,20 @@ app.get('/api/influence/youtube/backtests/:id', (req, res) => {
   res.json(run);
 });
 
-app.post('/api/influence/youtube/backtests/:id/run', (req, res) => {
+app.post('/api/influence/youtube/backtests/:id/run', async (req, res) => {
   if (!requireInfluence(req, res)) return;
   const id = numericIdParam(req, res);
   if (id == null) return;
   const run = getYoutubeBacktestRun(id);
   if (!run) return res.status(404).json({ error: 'backtest not found' });
-  res.json(runYoutubeBacktest({ ...run.strategy_config, name: `${run.name} rerun` }));
+  res.json(await runYoutubeBacktest({ ...run.strategy_config, name: `${run.name} rerun` }));
 });
 
-app.post('/api/influence/youtube/channels/:id/recalculate-alpha', (req, res) => {
+app.post('/api/influence/youtube/channels/:id/recalculate-alpha', async (req, res) => {
   if (!requireInfluence(req, res)) return;
   const id = numericIdParam(req, res);
   if (id == null) return;
-  res.json(recalculateCreatorAlpha(id));
+  res.json(await recalculateCreatorAlpha(id));
 });
 
 app.post('/api/influence/youtube/videos/:id/signals', (req, res) => {

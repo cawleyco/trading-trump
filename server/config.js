@@ -1,9 +1,12 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, '..');
+
+dotenv.config({ path: path.join(projectRoot, '.env') });
 
 function required(name) {
   const v = process.env[name];
@@ -21,6 +24,38 @@ function num(name, fallback) {
   return n;
 }
 
+function checkPositive(label, v, { integer = false, max = Infinity } = {}) {
+  if (v == null) return; // unset limits stay disabled
+  if (!Number.isFinite(v) || v <= 0 || v > max || (integer && !Number.isInteger(v))) {
+    const kind = integer ? 'positive integer' : 'positive number';
+    throw new Error(`${label} must be a ${kind}${max < Infinity ? ` ≤ ${max}` : ''}, got ${v}`);
+  }
+}
+
+function checkUnitInterval(label, v) {
+  if (v == null) return;
+  if (!Number.isFinite(v) || v < 0 || v > 1) {
+    throw new Error(`${label} must be between 0 and 1, got ${v}`);
+  }
+}
+
+/** Fail fast on nonsense risk limits (negative caps, fractional position counts). */
+export function validateRiskLimits(risk, label) {
+  checkPositive(`${label}.maxTradeNotionalUsd`, risk.maxTradeNotionalUsd);
+  checkPositive(`${label}.maxTradePctEquity`, risk.maxTradePctEquity, { max: 100 });
+  checkPositive(`${label}.maxOpenPositions`, risk.maxOpenPositions, { integer: true });
+  checkPositive(`${label}.maxTotalExposureUsd`, risk.maxTotalExposureUsd);
+  checkPositive(`${label}.maxDailyLossUsd`, risk.maxDailyLossUsd);
+  checkPositive(`${label}.maxDailyLossPct`, risk.maxDailyLossPct, { max: 100 });
+}
+
+export function validateAutoExit(autoExit, label) {
+  if (!autoExit) return;
+  checkPositive(`${label}.stopLossPct`, autoExit.stopLossPct, { max: 100 });
+  checkPositive(`${label}.takeProfitPct`, autoExit.takeProfitPct);
+  checkPositive(`${label}.maxHoldDays`, autoExit.maxHoldDays);
+}
+
 const TRADING_MODE = process.env.TRADING_MODE || 'dry_run';
 if (!['dry_run', 'live'].includes(TRADING_MODE)) {
   throw new Error(`TRADING_MODE must be "dry_run" or "live", got "${TRADING_MODE}"`);
@@ -34,9 +69,9 @@ export const config = {
   tradingMode: TRADING_MODE,
   isLive: TRADING_MODE === 'live',
 
-  projectRoot: path.resolve(__dirname, '..'),
-  dbPath: path.resolve(__dirname, '..', 'trading.db'),
-  haltFilePath: path.resolve(__dirname, '..', 'HALT'),
+  projectRoot,
+  dbPath: path.join(projectRoot, 'trading.db'),
+  haltFilePath: path.join(projectRoot, 'HALT'),
 
   quiverApiKey: process.env.QUIVER_API_KEY || '',
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
@@ -45,7 +80,7 @@ export const config = {
 
   // SEC asks for a contact in the User-Agent of api requests (sec.gov/os/accessing-edgar-data)
   secContactEmail: process.env.SEC_CONTACT_EMAIL || '',
-  dataCacheDir: path.resolve(__dirname, '..', 'data-cache'),
+  dataCacheDir: path.join(projectRoot, 'data-cache'),
 
   notify: {
     macos: process.env.NOTIFY_MACOS !== 'false',
@@ -101,6 +136,10 @@ export const config = {
 
   port: num('PORT', 3000),
 };
+
+validateRiskLimits(config.risk, 'risk');
+checkUnitInterval('SENTIMENT_CONFIDENCE_THRESHOLD', config.signals.sentimentConfidenceThreshold);
+checkUnitInterval('SENTIMENT_MIN_RELEVANCE', config.signals.sentimentMinRelevance);
 
 // ---------------------------------------------------------------------------
 // Funds — each is one Alpaca account (key pair) with its own limits, signal
@@ -182,6 +221,13 @@ function loadFunds() {
       }
     }
 
+    const risk = { ...envRisk, ...(f.risk || {}) };
+    const sentimentConfidenceThreshold =
+      f.sentimentConfidenceThreshold ?? config.signals.sentimentConfidenceThreshold;
+    validateRiskLimits(risk, `funds.json "${f.name}" risk`);
+    validateAutoExit(f.autoExit, `funds.json "${f.name}" autoExit`);
+    checkUnitInterval(`funds.json "${f.name}" sentimentConfidenceThreshold`, sentimentConfidenceThreshold);
+
     return {
       name: f.name,
       keyId,
@@ -189,9 +235,8 @@ function loadFunds() {
       paper: f.paper !== false,
       enabled: f.enabled !== false,
       sources,
-      risk: { ...envRisk, ...(f.risk || {}) },
-      sentimentConfidenceThreshold:
-        f.sentimentConfidenceThreshold ?? config.signals.sentimentConfidenceThreshold,
+      risk,
+      sentimentConfidenceThreshold,
       autoExit: f.autoExit || null,
     };
   });

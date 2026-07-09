@@ -38,6 +38,9 @@ export function detectMentionsInSegments(video, segments, aliases = listAssetAli
 
 export function detectAndStoreYoutubeMentions(video) {
   const segments = listContentSegmentsForVideo(video.id);
+  if (segments.length === 0) {
+    throw new Error('transcript required before analysis');
+  }
   const detected = detectMentionsInSegments(video, segments);
   const ids = [];
   for (const mention of detected) {
