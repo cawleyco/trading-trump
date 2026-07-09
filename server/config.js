@@ -36,6 +36,7 @@ export const config = {
 
   quiverApiKey: process.env.QUIVER_API_KEY || '',
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+  youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
 
   // SEC asks for a contact in the User-Agent of api requests (sec.gov/os/accessing-edgar-data)
   secContactEmail: process.env.SEC_CONTACT_EMAIL || '',
@@ -58,7 +59,21 @@ export const config = {
   signals: {
     sentimentConfidenceThreshold: num('SENTIMENT_CONFIDENCE_THRESHOLD', 0.8),
     congressMaxDisclosureAgeDays: num('CONGRESS_MAX_DISCLOSURE_AGE_DAYS', 3),
+    congressMinCopyScore: num('CONGRESS_MIN_COPY_SCORE', null),
     sentimentMaxPostAgeMinutes: num('SENTIMENT_MAX_POST_AGE_MINUTES', 15),
+  },
+
+  influence: {
+    enabled: process.env.INFLUENCE_ENABLED !== 'false',
+    youtubeEnabled: process.env.YOUTUBE_ENABLED !== 'false',
+    manualTranscriptsEnabled: process.env.YOUTUBE_MANUAL_TRANSCRIPTS_ENABLED !== 'false',
+    creatorAuthorizedCaptionsEnabled: process.env.YOUTUBE_CREATOR_AUTHORIZED_CAPTIONS_ENABLED === 'true',
+    llmClassificationEnabled: process.env.YOUTUBE_LLM_CLASSIFICATION_ENABLED !== 'false',
+    backtestingEnabled: process.env.YOUTUBE_BACKTESTING_ENABLED !== 'false',
+    liveSignalsEnabled: process.env.YOUTUBE_LIVE_SIGNALS_ENABLED === 'true',
+    syncMaxResults: num('YOUTUBE_SYNC_MAX_RESULTS', 10),
+    pollSeconds: num('YOUTUBE_POLL_SECONDS', 1800),
+    signalQualityThreshold: num('YOUTUBE_SIGNAL_QUALITY_THRESHOLD', 70),
   },
 
   polling: {

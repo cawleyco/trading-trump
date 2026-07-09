@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { hasSeenCongressTrade, markCongressTradeSeen } from '../db.js';
 import { makeTradeSignal } from '../signal.js';
 import { processSignal } from '../riskManager.js';
+import { scoreTrade } from '../intel/scoreRunner.js';
 import { archiveTrade, fetchRecentCongressTrades, tradeKey } from './congressData.js';
 import { log } from '../logger.js';
 
@@ -36,6 +37,17 @@ export async function pollCongressTrades() {
     markCongressTradeSeen(key);
     newCount++;
 
+    let score = null;
+    try {
+      score = await scoreTrade(key);
+    } catch (err) {
+      log.warn('congress', `Failed to score trade ${key}: ${err.message}`);
+      if (config.signals.congressMinCopyScore != null) {
+        log.warn('congress', `Skipping ${key}: copy-score gate is enabled but no score could be computed`);
+        continue;
+      }
+    }
+
     // On the very first poll everything is "new" — seed the seen-table without
     // trading, otherwise startup would fire a signal for every recent disclosure.
     if (firstRun) continue;
@@ -48,6 +60,17 @@ export async function pollCongressTrades() {
       continue;
     }
 
+    if (config.signals.congressMinCopyScore != null) {
+      if (!score || score.score < config.signals.congressMinCopyScore || ['avoid', 'manual-review'].includes(score.recommendation)) {
+        log.info(
+          'congress',
+          `Skipping ${key}: copy score ${score?.score ?? 'unknown'} / ${score?.recommendation ?? 'unscored'} ` +
+            `below gate ${config.signals.congressMinCopyScore}`
+        );
+        continue;
+      }
+    }
+
     try {
       const signal = makeTradeSignal({
         source: 'congress',
@@ -55,7 +78,9 @@ export async function pollCongressTrades() {
         direction: trade.type,
         rationale: `${trade.politician} disclosed ${trade.type} of ${trade.ticker} ` +
           `(traded ${trade.transactionDate}, disclosed ${trade.disclosureDate}, range ${trade.amountRange})`,
-        rawReference: trade.raw,
+        rawReference: score
+          ? { ...trade.raw, copyScore: score.score, recommendation: score.recommendation }
+          : trade.raw,
         eventTimestamp: trade.disclosureDate,
       });
       await processSignal(signal);

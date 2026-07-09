@@ -14,9 +14,11 @@ import {
   listReviewQueue,
   resolveReviewItem,
   getCongressTradeByKey,
+  listTradesWithScores,
 } from './db.js';
 import { filingSpeedLeaderboard } from './intel/freshnessReports.js';
 import { getStatsProfile, listStats, refreshAllPoliticianStats } from './intel/politicianStats.js';
+import { rescoreRecentTrades, scoreTrade } from './intel/scoreRunner.js';
 import { driftSincePct } from './marketData.js';
 import { fundClients, getFundClient } from './alpacaClient.js';
 import {
@@ -199,6 +201,32 @@ app.get('/api/intel/drift/:tradeKey', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+app.post('/api/intel/score/:tradeKey', async (req, res) => {
+  try {
+    res.json(await scoreTrade(req.params.tradeKey, { force: req.body?.force === true }));
+  } catch (err) {
+    const status = err.message.startsWith('unknown trade key') ? 404 : 500;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+app.get('/api/intel/trades', (req, res) => {
+  const minScore = req.query.minScore == null || req.query.minScore === ''
+    ? null
+    : Number(req.query.minScore);
+  if (minScore != null && !Number.isFinite(minScore)) {
+    return res.status(400).json({ error: 'minScore must be a number' });
+  }
+  res.json(listTradesWithScores({
+    since: req.query.since || undefined,
+    minScore,
+    recommendation: req.query.recommendation || undefined,
+    politician: req.query.politician || undefined,
+    ticker: req.query.ticker || undefined,
+    limit: Number(req.query.limit) || 200,
+  }));
 });
 
 // ---------- P&L attribution ----------
@@ -396,6 +424,16 @@ app.listen(config.port, '127.0.0.1', () => {
     () => {
       refreshAllPoliticianStats().catch((err) =>
         log.error('server', `Scheduled politician stats refresh failed: ${err.message}`)
+      );
+    },
+    { timezone: 'America/New_York' }
+  );
+
+  cron.schedule(
+    '30 6 * * *',
+    () => {
+      rescoreRecentTrades({ days: 60 }).catch((err) =>
+        log.error('server', `Scheduled copy-score refresh failed: ${err.message}`)
       );
     },
     { timezone: 'America/New_York' }
