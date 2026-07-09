@@ -7,6 +7,7 @@ import { api } from '../api.js'
 export default function Politicians() {
   const [rows, setRows] = useState([])
   const [profile, setProfile] = useState(null)
+  const [graph, setGraph] = useState(null)
   const [selected, setSelected] = useState(null)
   const [query, setQuery] = useState('')
   const [sortKey, setSortKey] = useState('edge_score')
@@ -29,7 +30,9 @@ export default function Politicians() {
   useEffect(() => {
     if (!selected) return
     setProfile(null)
+    setGraph(null)
     api.politicianProfile(selected).then(setProfile).catch((e) => setError(e.message))
+    api.politicianGraph(selected).then(setGraph).catch(() => setGraph(null))
   }, [selected])
 
   const filtered = useMemo(() => {
@@ -59,6 +62,19 @@ export default function Politicians() {
     }
   }
 
+  const refreshGraph = async () => {
+    setRefreshing(true)
+    setError(null)
+    try {
+      await api.refreshGraph()
+      if (selected) setGraph(await api.politicianGraph(selected))
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   const sortBy = (key, defaultAsc = false) => {
     if (sortKey === key) setAsc(!asc)
     else { setSortKey(key); setAsc(defaultAsc) }
@@ -76,9 +92,14 @@ export default function Politicians() {
               Historical disclosure-entry returns, disclosure lag, concentration, and an edge score for members with enough measurable buys.
             </p>
           </div>
-          <button onClick={refreshStats} disabled={refreshing}>
-            {refreshing ? 'Refreshing…' : 'Refresh stats'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={refreshStats} disabled={refreshing}>
+              {refreshing ? 'Refreshing…' : 'Refresh stats'}
+            </button>
+            <button onClick={refreshGraph} disabled={refreshing}>
+              {refreshing ? 'Refreshing…' : 'Refresh graph'}
+            </button>
+          </div>
         </div>
         {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
         {rows.length === 0 ? (
@@ -105,7 +126,7 @@ export default function Politicians() {
         )}
       </section>
 
-      {profile && <ProfileTearSheet profile={profile} />}
+      {profile && <ProfileTearSheet profile={profile} graph={graph} />}
     </div>
   )
 }
@@ -153,7 +174,7 @@ function StatsTable({ rows, selected, onSelect, sortKey, asc, sortBy }) {
   )
 }
 
-function ProfileTearSheet({ profile }) {
+function ProfileTearSheet({ profile, graph }) {
   const horizonData = [
     { horizon: '7d', returnPct: profile.avg_return_7d },
     { horizon: '30d', returnPct: profile.avg_return_30d },
@@ -217,7 +238,59 @@ function ProfileTearSheet({ profile }) {
       </div>
 
       <RecentTrades trades={profile.recentTrades || []} />
+      <PoliticianConnections graph={graph} />
     </section>
+  )
+}
+
+function PoliticianConnections({ graph }) {
+  if (!graph) {
+    return (
+      <details style={{ marginTop: 18 }}>
+        <summary style={{ cursor: 'pointer' }}>Political connections</summary>
+        <p style={{ color: '#a1a1aa' }}>No graph context yet. Run graph refresh to link committees and bills.</p>
+      </details>
+    )
+  }
+  return (
+    <details style={{ marginTop: 18 }} open>
+      <summary style={{ cursor: 'pointer' }}>Political connections</summary>
+      <div style={{ display: 'grid', gap: 12, marginTop: 10 }}>
+        <MiniList
+          title="Committees"
+          rows={graph.committees || []}
+          empty="No committee memberships linked."
+          render={(c) => `${c.name}${c.role ? ` (${c.role})` : ''}${c.sectors?.length ? ` · ${c.sectors.join(', ')}` : ''}`}
+        />
+        <MiniList
+          title="Recent related bills"
+          rows={graph.bills || []}
+          empty="No recent related bills."
+          render={(b) => `${b.latest_action_date || 'unknown date'} · ${b.title || b.bill_id}`}
+          link={(b) => b.source_url}
+        />
+      </div>
+    </details>
+  )
+}
+
+function MiniList({ title, rows, empty, render, link }) {
+  const visible = rows.slice(0, 10)
+  return (
+    <div>
+      <h4 style={{ margin: '0 0 6px' }}>{title}</h4>
+      {visible.length === 0 ? (
+        <p style={{ color: '#a1a1aa', margin: 0 }}>{empty}</p>
+      ) : (
+        <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
+          {visible.map((row, i) => {
+            const href = link?.(row)
+            const text = render(row)
+            return <li key={row.committee_id || row.bill_id || i}>{href ? <a href={href} target="_blank" rel="noreferrer">{text}</a> : text}</li>
+          })}
+        </ul>
+      )}
+    </div>
   )
 }
 

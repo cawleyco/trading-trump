@@ -126,6 +126,25 @@ Recomputes all politician stats from `congress_trades`, using cached market-data
 { "refreshed": 120, "asOf": "2026-07-09" }
 ```
 
+### `POST /api/intel/refresh-graph`
+
+Refreshes the political knowledge graph: legislators/committees, recent Congress.gov bills, Senate LDA lobbying filings for traded companies, and USAspending contracts for traded companies. Missing `CONGRESS_GOV_API_KEY` skips only bill refresh; other sources remain best-effort.
+
+```json
+{ "legislators": { "politicians": 535, "committees": 300, "linkedArchiveTrades": 1240 },
+  "bills": { "stored": 40 },
+  "lobbying": { "stored": 18 },
+  "contracts": { "stored": 22 } }
+```
+
+### `GET /api/intel/graph/:tradeKey`
+
+Full graph context for an archived trade: linked politician identity, committees, related bills, lobbying filings, and contracts. The `tradeKey` must be URL-encoded.
+
+### `GET /api/intel/politicians/:name/graph`
+
+Committee memberships and recent related bills for a politician profile. `:name` may be a display name or Bioguide ID and must be URL-encoded.
+
 ### `GET /api/intel/drift/:tradeKey`
 
 "Has this trade already moved?" — percent price change since the transaction and disclosure dates for the trade's ticker. The `tradeKey` (which contains `|` and spaces) must be **URL-encoded**. Either field is `null` when price data is unavailable; 404 if the key is unknown.
@@ -141,7 +160,7 @@ Computes or refreshes the deterministic copy-worthiness score for one archived c
 ```json
 { "trade_key": "Jane Doe|NVDA|2026-06-20|buy|$50,001 - $100,000",
   "score": 82.4, "confidence": 0.85, "recommendation": "copy-candidate",
-  "factors": { "freshness": { "score": 95, "weight": 25, "hasData": true, "detail": "..." } },
+  "factors": { "freshness": { "score": 95, "weight": 20, "hasData": true, "detail": "..." } },
   "warnings": [] }
 ```
 

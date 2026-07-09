@@ -60,6 +60,7 @@ The combinations (per fund):
 | `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` | **Yes** (startup fails without them) | Orders, account/positions, market clock, historical price bars |
 | `ANTHROPIC_API_KEY` | No | Claude sentiment classification. If empty, the sentiment source logs a warning and never emits signals; tweet backtests produce zero trades. |
 | `QUIVER_API_KEY` | No | Congress trade data (House + Senate, fast). If empty, the bot scrapes the official Senate eFD site instead (free, Senate only, slower for historical ranges). |
+| `CONGRESS_GOV_API_KEY` | No | Congress.gov bill/activity refresh for the political knowledge graph. If empty, bill refresh is skipped while committees, lobbying, contracts, and scoring still degrade gracefully. |
 | `SEC_CONTACT_EMAIL` | No | Contact email included in the User-Agent of SEC EDGAR requests (ticker → company/CIK/sector metadata). SEC asks automated clients to identify themselves; the data is free and needs no key. |
 | `YOUTUBE_API_KEY` | No | Official YouTube Data API metadata only: channel metadata, uploads playlist videos, video statistics, captions availability flag, and paid-product-placement metadata. Transcript scraping is not implemented. |
 

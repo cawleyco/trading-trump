@@ -163,6 +163,71 @@ CREATE TABLE IF NOT EXISTS trade_scores (
   inputs_hash TEXT
 );
 
+CREATE TABLE IF NOT EXISTS politicians (
+  bioguide_id TEXT PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  chamber TEXT,
+  party TEXT,
+  state TEXT,
+  name_variants TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_politicians_name ON politicians(full_name);
+
+CREATE TABLE IF NOT EXISTS committees (
+  committee_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  chamber TEXT,
+  sectors TEXT
+);
+
+CREATE TABLE IF NOT EXISTS committee_memberships (
+  bioguide_id TEXT NOT NULL REFERENCES politicians(bioguide_id),
+  committee_id TEXT NOT NULL REFERENCES committees(committee_id),
+  role TEXT,
+  PRIMARY KEY (bioguide_id, committee_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cm_bioguide ON committee_memberships(bioguide_id);
+CREATE INDEX IF NOT EXISTS idx_cm_committee ON committee_memberships(committee_id);
+
+CREATE TABLE IF NOT EXISTS bills (
+  bill_id TEXT PRIMARY KEY,
+  title TEXT,
+  policy_area TEXT,
+  latest_action TEXT,
+  latest_action_date TEXT,
+  committees TEXT,
+  sectors TEXT,
+  source_url TEXT,
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_bills_latest_action ON bills(latest_action_date);
+
+CREATE TABLE IF NOT EXISTS lobbying_filings (
+  filing_id TEXT PRIMARY KEY,
+  client_name TEXT,
+  registrant_name TEXT,
+  ticker TEXT,
+  amount REAL,
+  filing_period TEXT,
+  filed_at TEXT,
+  issues TEXT,
+  source_url TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_lobbying_ticker ON lobbying_filings(ticker);
+CREATE INDEX IF NOT EXISTS idx_lobbying_filed ON lobbying_filings(filed_at);
+
+CREATE TABLE IF NOT EXISTS gov_contracts (
+  contract_id TEXT PRIMARY KEY,
+  recipient_name TEXT,
+  ticker TEXT,
+  awarding_agency TEXT,
+  amount REAL,
+  action_date TEXT,
+  source_url TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_contracts_ticker ON gov_contracts(ticker);
+CREATE INDEX IF NOT EXISTS idx_contracts_action ON gov_contracts(action_date);
+
 CREATE TABLE IF NOT EXISTS thesis_cards (
   trade_key TEXT PRIMARY KEY REFERENCES congress_trades(trade_key),
   card TEXT NOT NULL,                -- deterministic card JSON
@@ -468,6 +533,10 @@ for (const col of ['text', 'created_at']) {
   }
 }
 
+if (!hasColumn('congress_trades', 'politician_id')) {
+  db.exec(`ALTER TABLE congress_trades ADD COLUMN politician_id TEXT`);
+}
+
 if (!hasColumn('daily_pnl', 'fund')) {
   // PK is changing from (trade_date) to (trade_date, fund): rebuild the table
   db.exec(`
@@ -645,6 +714,176 @@ export function listArchivePoliticians() {
     .prepare(`SELECT DISTINCT politician FROM congress_trades WHERE politician IS NOT NULL ORDER BY politician`)
     .all()
     .map((r) => r.politician);
+}
+
+export function upsertPolitician(row) {
+  db.prepare(
+    `INSERT INTO politicians (bioguide_id, full_name, chamber, party, state, name_variants)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(bioguide_id) DO UPDATE SET
+       full_name = excluded.full_name,
+       chamber = excluded.chamber,
+       party = excluded.party,
+       state = excluded.state,
+       name_variants = excluded.name_variants`
+  ).run(
+    row.bioguide_id,
+    row.full_name,
+    row.chamber ?? null,
+    row.party ?? null,
+    row.state ?? null,
+    JSON.stringify(row.name_variants ?? [])
+  );
+}
+
+export function upsertCommittee(row) {
+  db.prepare(
+    `INSERT INTO committees (committee_id, name, chamber, sectors)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(committee_id) DO UPDATE SET
+       name = excluded.name,
+       chamber = excluded.chamber,
+       sectors = excluded.sectors`
+  ).run(row.committee_id, row.name, row.chamber ?? null, JSON.stringify(row.sectors ?? []));
+}
+
+export function replaceCommitteeMemberships(rows) {
+  const tx = db.transaction((memberships) => {
+    db.prepare(`DELETE FROM committee_memberships`).run();
+    const insert = db.prepare(
+      `INSERT OR REPLACE INTO committee_memberships (bioguide_id, committee_id, role)
+       VALUES (?, ?, ?)`
+    );
+    for (const row of memberships) {
+      insert.run(row.bioguide_id, row.committee_id, row.role ?? 'member');
+    }
+  });
+  tx(rows);
+}
+
+export function listPoliticianIdentities() {
+  return db.prepare(`SELECT * FROM politicians ORDER BY full_name`).all().map((row) => ({
+    ...row,
+    name_variants: row.name_variants ? JSON.parse(row.name_variants) : [],
+  }));
+}
+
+export function listUnlinkedArchivePoliticianNames() {
+  return db
+    .prepare(
+      `SELECT politician, COUNT(*) AS trades
+       FROM congress_trades
+       WHERE politician_id IS NULL AND politician IS NOT NULL
+       GROUP BY politician ORDER BY trades DESC, politician ASC`
+    )
+    .all();
+}
+
+export function linkArchivePoliticianName(politician, bioguideId) {
+  const res = db
+    .prepare(`UPDATE congress_trades SET politician_id = ? WHERE politician = ? AND politician_id IS NULL`)
+    .run(bioguideId, politician);
+  return res.changes;
+}
+
+export function addPoliticianNameVariant(bioguideId, variant) {
+  const row = db.prepare(`SELECT name_variants FROM politicians WHERE bioguide_id = ?`).get(bioguideId);
+  if (!row) return;
+  const variants = new Set(row.name_variants ? JSON.parse(row.name_variants) : []);
+  if (variant) variants.add(variant);
+  db.prepare(`UPDATE politicians SET name_variants = ? WHERE bioguide_id = ?`)
+    .run(JSON.stringify([...variants].sort()), bioguideId);
+}
+
+export function upsertBill(row) {
+  db.prepare(
+    `INSERT INTO bills (
+       bill_id, title, policy_area, latest_action, latest_action_date, committees,
+       sectors, source_url, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))
+     ON CONFLICT(bill_id) DO UPDATE SET
+       title = excluded.title,
+       policy_area = excluded.policy_area,
+       latest_action = excluded.latest_action,
+       latest_action_date = excluded.latest_action_date,
+       committees = excluded.committees,
+       sectors = excluded.sectors,
+       source_url = excluded.source_url,
+       updated_at = COALESCE(excluded.updated_at, datetime('now'))`
+  ).run(
+    row.bill_id,
+    row.title ?? null,
+    row.policy_area ?? null,
+    row.latest_action ?? null,
+    row.latest_action_date ?? null,
+    JSON.stringify(row.committees ?? []),
+    JSON.stringify(row.sectors ?? []),
+    row.source_url ?? null,
+    row.updated_at ?? null
+  );
+}
+
+export function upsertLobbyingFiling(row) {
+  db.prepare(
+    `INSERT INTO lobbying_filings (
+       filing_id, client_name, registrant_name, ticker, amount, filing_period,
+       filed_at, issues, source_url
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(filing_id) DO UPDATE SET
+       client_name = excluded.client_name,
+       registrant_name = excluded.registrant_name,
+       ticker = excluded.ticker,
+       amount = excluded.amount,
+       filing_period = excluded.filing_period,
+       filed_at = excluded.filed_at,
+       issues = excluded.issues,
+       source_url = excluded.source_url`
+  ).run(
+    row.filing_id,
+    row.client_name ?? null,
+    row.registrant_name ?? null,
+    row.ticker ?? null,
+    row.amount ?? null,
+    row.filing_period ?? null,
+    row.filed_at ?? null,
+    JSON.stringify(row.issues ?? []),
+    row.source_url ?? null
+  );
+}
+
+export function upsertGovContract(row) {
+  db.prepare(
+    `INSERT INTO gov_contracts (
+       contract_id, recipient_name, ticker, awarding_agency, amount, action_date, source_url
+     ) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(contract_id) DO UPDATE SET
+       recipient_name = excluded.recipient_name,
+       ticker = excluded.ticker,
+       awarding_agency = excluded.awarding_agency,
+       amount = excluded.amount,
+       action_date = excluded.action_date,
+       source_url = excluded.source_url`
+  ).run(
+    row.contract_id,
+    row.recipient_name ?? null,
+    row.ticker ?? null,
+    row.awarding_agency ?? null,
+    row.amount ?? null,
+    row.action_date ?? null,
+    row.source_url ?? null
+  );
+}
+
+export function listTradedCompanyMeta() {
+  return db
+    .prepare(
+      `SELECT DISTINCT tm.ticker, tm.company_name, tm.cik, tm.sector
+       FROM congress_trades ct
+       JOIN ticker_meta tm ON tm.ticker = ct.ticker
+       WHERE tm.company_name IS NOT NULL
+       ORDER BY tm.ticker`
+    )
+    .all();
 }
 
 export function upsertPoliticianStats(row) {
@@ -828,6 +1067,127 @@ export function listTradesWithScores({ since, minScore, recommendation, politici
     factors: row.factors ? JSON.parse(row.factors) : null,
     warnings: row.warnings ? JSON.parse(row.warnings) : [],
   }));
+}
+
+function parseCommittee(row) {
+  if (!row) return null;
+  return { ...row, sectors: jsonOrNull(row.sectors) ?? [] };
+}
+
+function parseBill(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    committees: jsonOrNull(row.committees) ?? [],
+    sectors: jsonOrNull(row.sectors) ?? [],
+  };
+}
+
+function parseLobbyingFiling(row) {
+  if (!row) return null;
+  return { ...row, issues: jsonOrNull(row.issues) ?? [] };
+}
+
+export function getTradeGraphContext(tradeKey) {
+  const trade = getCongressTradeByKey(tradeKey);
+  if (!trade) return null;
+  const politician = trade.politician_id
+    ? db.prepare(`SELECT * FROM politicians WHERE bioguide_id = ?`).get(trade.politician_id)
+    : null;
+  const committees = trade.politician_id
+    ? db
+      .prepare(
+        `SELECT c.*, cm.role
+         FROM committee_memberships cm
+         JOIN committees c ON c.committee_id = cm.committee_id
+         WHERE cm.bioguide_id = ?
+         ORDER BY c.name`
+      )
+      .all(trade.politician_id)
+      .map(parseCommittee)
+    : [];
+  const committeeIds = committees.map((c) => c.committee_id);
+  const committeeSectors = new Set(committees.flatMap((c) => c.sectors || []));
+  const tickerMeta = db.prepare(`SELECT * FROM ticker_meta WHERE ticker = ?`).get(trade.ticker) || null;
+  const tickerSector = tickerMeta?.sector ?? null;
+  const bills = db
+    .prepare(
+      `SELECT * FROM bills
+       WHERE latest_action_date >= date(COALESCE(?, 'now'), '-180 days')
+       ORDER BY latest_action_date DESC LIMIT 100`
+    )
+    .all(trade.disclosure_date || trade.transaction_date || null)
+    .map(parseBill)
+    .filter((bill) => {
+      const billCommittees = new Set(bill.committees || []);
+      const billSectors = new Set(bill.sectors || []);
+      return (
+        committeeIds.some((id) => billCommittees.has(id)) ||
+        (tickerSector && billSectors.has(tickerSector)) ||
+        [...billSectors].some((sector) => committeeSectors.has(sector))
+      );
+    });
+  const lobbyingFilings = db
+    .prepare(
+      `SELECT * FROM lobbying_filings
+       WHERE ticker = ?
+         AND filed_at >= date(COALESCE(?, 'now'), '-365 days')
+       ORDER BY filed_at DESC LIMIT 50`
+    )
+    .all(trade.ticker, trade.disclosure_date || trade.transaction_date || null)
+    .map(parseLobbyingFiling);
+  const contracts = db
+    .prepare(
+      `SELECT * FROM gov_contracts
+       WHERE ticker = ?
+         AND action_date >= date(COALESCE(?, 'now'), '-365 days')
+       ORDER BY action_date DESC LIMIT 50`
+    )
+    .all(trade.ticker, trade.disclosure_date || trade.transaction_date || null);
+  return {
+    trade,
+    politician: politician
+      ? { ...politician, name_variants: jsonOrNull(politician.name_variants) ?? [] }
+      : null,
+    tickerMeta,
+    committees,
+    bills,
+    lobbyingFilings,
+    contracts,
+  };
+}
+
+export function getPoliticianGraphContext(nameOrBioguideId) {
+  const politician =
+    db.prepare(`SELECT * FROM politicians WHERE bioguide_id = ?`).get(nameOrBioguideId) ||
+    db.prepare(`SELECT * FROM politicians WHERE full_name = ?`).get(nameOrBioguideId);
+  if (!politician) return null;
+  const committees = db
+    .prepare(
+      `SELECT c.*, cm.role
+       FROM committee_memberships cm
+       JOIN committees c ON c.committee_id = cm.committee_id
+       WHERE cm.bioguide_id = ?
+       ORDER BY c.name`
+    )
+    .all(politician.bioguide_id)
+    .map(parseCommittee);
+  const committeeIds = new Set(committees.map((c) => c.committee_id));
+  const committeeSectors = new Set(committees.flatMap((c) => c.sectors || []));
+  const bills = db
+    .prepare(`SELECT * FROM bills ORDER BY latest_action_date DESC LIMIT 200`)
+    .all()
+    .map(parseBill)
+    .filter((bill) => (
+      (bill.committees || []).some((id) => committeeIds.has(id)) ||
+      (bill.sectors || []).some((sector) => committeeSectors.has(sector))
+    ))
+    .slice(0, 50);
+  return {
+    politician: { ...politician, name_variants: jsonOrNull(politician.name_variants) ?? [] },
+    committees,
+    bills,
+  };
 }
 
 /**

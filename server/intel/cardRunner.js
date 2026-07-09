@@ -15,11 +15,13 @@ import {
 import { driftSincePct } from '../marketData.js';
 import { scoreTrade } from './scoreRunner.js';
 import { buildThesisCard, polishCard } from './thesisCard.js';
+import { computeRelevance } from './relevance.js';
 
 async function buildCardContext(trade) {
-  const [driftPct, sinceDisclosurePct] = await Promise.all([
+  const [driftPct, sinceDisclosurePct, relevance] = await Promise.all([
     driftSincePct(trade.ticker, trade.transaction_date),
     driftSincePct(trade.ticker, trade.disclosure_date),
+    computeRelevance(trade),
   ]);
   return {
     driftPct,
@@ -36,6 +38,7 @@ async function buildCardContext(trade) {
       ticker: trade.ticker,
       transactionDate: trade.transaction_date,
     }),
+    relevanceSignals: relevance.signals || [],
   };
 }
 

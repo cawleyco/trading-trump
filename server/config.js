@@ -37,6 +37,7 @@ export const config = {
   quiverApiKey: process.env.QUIVER_API_KEY || '',
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
   youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
+  congressGovApiKey: process.env.CONGRESS_GOV_API_KEY || '',
 
   // SEC asks for a contact in the User-Agent of api requests (sec.gov/os/accessing-edgar-data)
   secContactEmail: process.env.SEC_CONTACT_EMAIL || '',

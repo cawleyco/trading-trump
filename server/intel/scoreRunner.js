@@ -11,6 +11,7 @@ import {
 import { avgDollarVolume, driftSincePct } from '../marketData.js';
 import { log } from '../logger.js';
 import { computeCopyScore } from './copyScore.js';
+import { computeRelevance } from './relevance.js';
 
 function hashInputs(input) {
   return crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex');
@@ -40,9 +41,10 @@ function scorePayload(trade, ctx) {
 }
 
 async function buildScoreContext(trade, opts = {}) {
-  const [driftPct, adv] = await Promise.all([
+  const [driftPct, adv, relevance] = await Promise.all([
     opts.driftFn ? opts.driftFn(trade.ticker, trade.transaction_date) : driftSincePct(trade.ticker, trade.transaction_date),
     opts.avgDollarVolumeFn ? opts.avgDollarVolumeFn(trade.ticker) : avgDollarVolume(trade.ticker),
+    opts.relevance ?? computeRelevance(trade),
   ]);
   return {
     now: opts.now ?? todayIso(),
@@ -60,6 +62,12 @@ async function buildScoreContext(trade, opts = {}) {
       ticker: trade.ticker,
       transactionDate: trade.transaction_date,
     }),
+    relevanceScore: relevance?.score,
+    relevanceSignals: relevance?.signals ?? [],
+    relevanceContext: {
+      tickerSector: relevance?.tickerSector ?? null,
+      committeeSectors: relevance?.committeeSectors ?? [],
+    },
   };
 }
 

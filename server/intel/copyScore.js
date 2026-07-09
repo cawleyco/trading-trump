@@ -1,13 +1,13 @@
 import { freshnessScore } from './freshness.js';
 
 const WEIGHTS = {
-  freshness: 25,
+  freshness: 20,
   politicianEdge: 20,
   conviction: 15,
   alreadyMoved: 15,
+  committeeRelevance: 15,
   cluster: 10,
-  liquidity: 10,
-  committeeRelevance: 5,
+  liquidity: 5,
 };
 
 function round(value, digits = 1) {
@@ -141,11 +141,14 @@ export function computeCopyScore(trade, ctx = {}) {
   );
 
   const relevance = ctx.relevanceScore;
+  const relevanceSignals = Array.isArray(ctx.relevanceSignals) ? ctx.relevanceSignals : [];
   const committeeRelevance = factor(
     Number.isFinite(relevance) ? relevance : 50,
     WEIGHTS.committeeRelevance,
     Number.isFinite(relevance)
-      ? `Political relevance score is ${round(relevance)}.`
+      ? relevanceSignals.length
+        ? relevanceSignals.map((s) => s.text).filter(Boolean).join(' ')
+        : `Political relevance score is ${round(relevance)}.`
       : 'Committee relevance is not wired until the knowledge graph phase.',
     Number.isFinite(relevance)
   );

@@ -123,6 +123,7 @@ function TradeTable({ rows, expanded, setExpanded, scoreOne }) {
               <tr>
                 <td colSpan={10}>
                   {r.score != null && <ThesisCard tradeKey={r.trade_key} />}
+                  <ConnectionsPanel tradeKey={r.trade_key} />
                   <FactorBreakdown row={r} />
                 </td>
               </tr>
@@ -225,6 +226,84 @@ function CardSection({ title, children }) {
     <div style={{ marginBottom: 10 }}>
       <div style={{ color: '#71717a', fontSize: '0.72em', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{title}</div>
       {children}
+    </div>
+  )
+}
+
+function ConnectionsPanel({ tradeKey }) {
+  const [context, setContext] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let live = true
+    setContext(null)
+    setError(null)
+    api.tradeGraph(tradeKey)
+      .then((data) => live && setContext(data))
+      .catch((e) => live && setError(e.message))
+    return () => { live = false }
+  }, [tradeKey])
+
+  if (error) return <div style={{ ...cardBox, color: '#fca5a5' }}>Connections error: {error}</div>
+  if (!context) return <div style={{ ...cardBox, color: '#a1a1aa' }}>Loading connections…</div>
+
+  return (
+    <div style={cardBox}>
+      <CardSection title="Connections">
+        {!context.politician && <p style={{ margin: 0, color: '#a1a1aa' }}>No linked Bioguide ID yet. Run graph refresh to link the archive.</p>}
+        {context.politician && (
+          <p style={{ margin: '0 0 8px' }}>
+            {context.politician.full_name} · {context.politician.party || 'unknown party'} · {context.politician.state || 'unknown state'} · {context.politician.chamber || 'unknown chamber'}
+          </p>
+        )}
+        <ConnectionList
+          title="Committees"
+          rows={context.committees || []}
+          empty="No committee memberships linked."
+          render={(c) => `${c.name}${c.role ? ` (${c.role})` : ''}${c.sectors?.length ? ` · ${c.sectors.join(', ')}` : ''}`}
+        />
+        <ConnectionList
+          title="Bills"
+          rows={context.bills || []}
+          empty="No recent related bills."
+          render={(b) => `${b.latest_action_date || 'unknown date'} · ${b.title || b.bill_id}`}
+          link={(b) => b.source_url}
+        />
+        <ConnectionList
+          title="Lobbying"
+          rows={context.lobbyingFilings || []}
+          empty="No recent company lobbying filings."
+          render={(l) => `${l.filed_at || 'unknown date'} · ${l.client_name || l.ticker}${l.issues?.length ? ` · ${l.issues.join(', ')}` : ''}`}
+          link={(l) => l.source_url}
+        />
+        <ConnectionList
+          title="Contracts"
+          rows={context.contracts || []}
+          empty="No recent federal contracts."
+          render={(c) => `${c.action_date || 'unknown date'} · ${c.awarding_agency || 'unknown agency'}${c.amount ? ` · $${Number(c.amount).toLocaleString()}` : ''}`}
+          link={(c) => c.source_url}
+        />
+      </CardSection>
+    </div>
+  )
+}
+
+function ConnectionList({ title, rows, empty, render, link }) {
+  const visible = rows.slice(0, 5)
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ color: '#a1a1aa', fontSize: '0.84em', marginBottom: 4 }}>{title}</div>
+      {visible.length === 0 ? (
+        <p style={{ margin: 0, color: '#71717a' }}>{empty}</p>
+      ) : (
+        <ul style={bullets}>
+          {visible.map((row, i) => {
+            const href = link?.(row)
+            const text = render(row)
+            return <li key={row.committee_id || row.bill_id || row.filing_id || row.contract_id || i}>{href ? <a href={href} target="_blank" rel="noreferrer">{text}</a> : text}</li>
+          })}
+        </ul>
+      )}
     </div>
   )
 }

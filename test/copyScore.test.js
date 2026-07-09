@@ -24,6 +24,8 @@ test('computeCopyScore returns a high-confidence copy candidate from strong inpu
     avgDollarVolume: 75_000_000,
     clusterCount: 4,
     repeatBuyCount: 1,
+    relevanceScore: 70,
+    relevanceSignals: [{ text: 'Committee sector match.' }],
   })
 
   assert.equal(result.recommendation, 'copy-candidate')
@@ -41,6 +43,7 @@ test('stale and already-priced-in critical warnings force avoid', () => {
     driftPct: 22,
     avgDollarVolume: 100_000_000,
     clusterCount: 4,
+    relevanceScore: 70,
   })
 
   assert.equal(result.recommendation, 'avoid')
@@ -56,6 +59,7 @@ test('low parse confidence alone maps to manual review', () => {
     driftPct: 1,
     avgDollarVolume: 75_000_000,
     clusterCount: 4,
+    relevanceScore: 70,
   })
 
   assert.equal(result.recommendation, 'manual-review')
@@ -84,6 +88,7 @@ test('sell drift scoring mirrors buy scoring directionally', () => {
     driftPct: -6,
     avgDollarVolume: 20_000_000,
     clusterCount: 2,
+    relevanceScore: 70,
   })
 
   assert.equal(result.factors.alreadyMoved.hasData, true)
@@ -98,6 +103,7 @@ test('options trades are critical avoid warnings', () => {
     driftPct: 1,
     avgDollarVolume: 75_000_000,
     clusterCount: 4,
+    relevanceScore: 70,
   })
 
   assert.equal(result.factors.liquidity.score, 10)

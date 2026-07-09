@@ -35,6 +35,13 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     }),
+  refreshGraph: () =>
+    req('/api/intel/refresh-graph', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  tradeGraph: (tradeKey) => req(`/api/intel/graph/${encodeURIComponent(tradeKey)}`),
+  politicianGraph: (name) => req(`/api/intel/politicians/${encodeURIComponent(name)}/graph`),
   drift: (tradeKey) => req(`/api/intel/drift/${encodeURIComponent(tradeKey)}`),
   trades: (params = {}) => {
     const qs = new URLSearchParams()

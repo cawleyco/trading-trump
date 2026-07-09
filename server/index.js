@@ -14,6 +14,8 @@ import {
   listReviewQueue,
   resolveReviewItem,
   getCongressTradeByKey,
+  getTradeGraphContext,
+  getPoliticianGraphContext,
   listTradesWithScores,
   createYoutubeChannel,
   upsertYoutubeChannel,
@@ -61,6 +63,10 @@ import { notify } from './notifier.js';
 import { startCongressPoller } from './sources/congressPoller.js';
 import { startTruthSocialPoller } from './sources/truthSocialPoller.js';
 import { ensureTickerUniverse } from './sources/tickerMeta.js';
+import { ensureLegislatorsAndCommittees, refreshLegislatorsAndCommittees } from './sources/legislators.js';
+import { refreshRecentBills } from './sources/congressGov.js';
+import { refreshLobbyingFilings } from './sources/lobbying.js';
+import { refreshGovContracts } from './sources/contracts.js';
 import { startPositionManager } from './positionManager.js';
 import { runCongressBacktest, runCongressLeaderboard, runEntryBasisComparison, listPoliticians, ENTRY_BASES } from './backtest/congressBacktest.js';
 import { runWalkForward } from './backtest/walkForward.js';
@@ -225,6 +231,33 @@ app.post('/api/intel/refresh-stats', async (req, res) => {
     log.error('server', `Politician stats refresh failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
+});
+
+app.post('/api/intel/refresh-graph', async (req, res) => {
+  try {
+    const [legislators, bills, lobbying, contracts] = await Promise.all([
+      refreshLegislatorsAndCommittees(),
+      refreshRecentBills(),
+      refreshLobbyingFilings(),
+      refreshGovContracts(),
+    ]);
+    res.json({ legislators, bills, lobbying, contracts });
+  } catch (err) {
+    log.error('server', `Knowledge graph refresh failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/intel/graph/:tradeKey', (req, res) => {
+  const context = getTradeGraphContext(req.params.tradeKey);
+  if (!context) return res.status(404).json({ error: 'unknown trade key' });
+  res.json(context);
+});
+
+app.get('/api/intel/politicians/:name/graph', (req, res) => {
+  const context = getPoliticianGraphContext(req.params.name);
+  if (!context) return res.status(404).json({ error: 'unknown politician graph context; run graph refresh first' });
+  res.json(context);
 });
 
 // tradeKey contains "|" and spaces — clients must URL-encode it.
@@ -824,6 +857,7 @@ app.listen(config.port, '127.0.0.1', () => {
 
   // SEC ticker universe (name/CIK/sector lookups) — background, best-effort
   ensureTickerUniverse();
+  ensureLegislatorsAndCommittees();
 
   cron.schedule(
     '0 6 * * *',
@@ -840,6 +874,26 @@ app.listen(config.port, '127.0.0.1', () => {
     () => {
       rescoreRecentTrades({ days: 60 }).catch((err) =>
         log.error('server', `Scheduled copy-score refresh failed: ${err.message}`)
+      );
+    },
+    { timezone: 'America/New_York' }
+  );
+
+  cron.schedule(
+    '0 5 * * 0',
+    () => {
+      refreshLegislatorsAndCommittees().catch((err) =>
+        log.error('server', `Scheduled legislator/committee refresh failed: ${err.message}`)
+      );
+    },
+    { timezone: 'America/New_York' }
+  );
+
+  cron.schedule(
+    '0 5 * * *',
+    () => {
+      Promise.all([refreshRecentBills(), refreshLobbyingFilings(), refreshGovContracts()]).catch((err) =>
+        log.error('server', `Scheduled knowledge graph activity refresh failed: ${err.message}`)
       );
     },
     { timezone: 'America/New_York' }
