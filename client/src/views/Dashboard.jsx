@@ -239,23 +239,41 @@ export function SignalTable({ signals }) {
       <thead>
         <tr>
           <th>Time</th><th>Source</th><th>Ticker</th><th>Dir</th><th>Conf</th>
-          <th>Fund</th><th>Decision</th><th>Order</th><th>Why</th>
+          <th>Relevance</th><th>Fund</th><th>Decision</th><th>Order</th><th>Why</th>
         </tr>
       </thead>
       <tbody>
-        {signals.map((s, i) => (
-          <tr key={`${s.id}-${s.fund ?? i}`}>
-            <td style={{ whiteSpace: 'nowrap' }}>{s.created_at}</td>
-            <td>{s.source}</td>
-            <td>{s.ticker}</td>
-            <td style={{ color: s.direction === 'buy' ? '#86efac' : '#fca5a5' }}>{s.direction}</td>
-            <td>{s.confidence ?? '—'}</td>
-            <td>{s.fund ?? '—'}</td>
-            <td>{s.approved == null ? '—' : s.approved ? '✅' : '❌'}</td>
-            <td>{s.order_status ?? '—'}</td>
-            <td style={{ maxWidth: 380, color: '#a1a1aa' }}>{s.decision_reason || s.rationale}</td>
-          </tr>
-        ))}
+        {signals.map((s, i) => {
+          const relevance = s.sentimentClassification
+          return (
+            <tr key={`${s.id}-${s.fund ?? i}`}>
+              <td style={{ whiteSpace: 'nowrap' }}>{s.created_at}</td>
+              <td>{s.source}</td>
+              <td>{s.ticker}</td>
+              <td style={{ color: s.direction === 'buy' ? '#86efac' : '#fca5a5' }}>{s.direction}</td>
+              <td>{s.confidence ?? '—'}</td>
+              <td style={{ maxWidth: 160, color: '#a1a1aa', fontSize: '0.9em' }}>
+                {relevance
+                  ? (
+                      <>
+                        <div>{relevance.relevanceType} @ {relevance.marketRelevance}</div>
+                        {relevance.sectors?.length > 0 && <div>{relevance.sectors.join(', ')}</div>}
+                      </>
+                    )
+                  : '—'}
+              </td>
+              <td>{s.fund ?? '—'}</td>
+              <td>{s.approved == null ? '—' : s.approved ? '✅' : '❌'}</td>
+              <td>{s.order_status ?? '—'}</td>
+              <td style={{ maxWidth: 420, color: '#a1a1aa' }}>
+                <div>{s.decision_reason || s.rationale}</div>
+                {s.crossSignal?.note && (
+                  <div style={{ marginTop: 4, color: '#93c5fd', fontSize: '0.9em' }}>{s.crossSignal.note}</div>
+                )}
+              </td>
+            </tr>
+          )
+        })}
       </tbody>
     </table>
   )

@@ -5,6 +5,7 @@ import cron from 'node-cron';
 import { config, enabledFunds } from './config.js';
 import {
   listSignalsWithDecisions,
+  getSeenPost,
   getDailyPnl,
   getActiveKillSwitchEvent,
   recordKillSwitchTrip,
@@ -49,6 +50,7 @@ import { filingSpeedLeaderboard } from './intel/freshnessReports.js';
 import { getStatsProfile, listStats, refreshAllPoliticianStats } from './intel/politicianStats.js';
 import { rescoreRecentTrades, scoreTrade } from './intel/scoreRunner.js';
 import { getOrBuildThesisCard } from './intel/cardRunner.js';
+import { buildCrossSignalContext } from './intel/crossSignal.js';
 import { driftSincePct } from './marketData.js';
 import { fundClients, getFundClient } from './alpacaClient.js';
 import {
@@ -252,6 +254,12 @@ app.get('/api/intel/graph/:tradeKey', (req, res) => {
   const context = getTradeGraphContext(req.params.tradeKey);
   if (!context) return res.status(404).json({ error: 'unknown trade key' });
   res.json(context);
+});
+
+app.get('/api/intel/cross-signal/:postId', (req, res) => {
+  const post = getSeenPost(req.params.postId);
+  if (!post) return res.status(404).json({ error: 'unknown post id' });
+  res.json(buildCrossSignalContext(req.params.postId, { post }));
 });
 
 app.get('/api/intel/politicians/:name/graph', (req, res) => {

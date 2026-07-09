@@ -41,6 +41,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }),
   tradeGraph: (tradeKey) => req(`/api/intel/graph/${encodeURIComponent(tradeKey)}`),
+  crossSignal: (postId) => req(`/api/intel/cross-signal/${encodeURIComponent(postId)}`),
   politicianGraph: (name) => req(`/api/intel/politicians/${encodeURIComponent(name)}/graph`),
   drift: (tradeKey) => req(`/api/intel/drift/${encodeURIComponent(tradeKey)}`),
   trades: (params = {}) => {

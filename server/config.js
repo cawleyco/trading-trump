@@ -59,6 +59,7 @@ export const config = {
 
   signals: {
     sentimentConfidenceThreshold: num('SENTIMENT_CONFIDENCE_THRESHOLD', 0.8),
+    sentimentMinRelevance: num('SENTIMENT_MIN_RELEVANCE', 0.5),
     congressMaxDisclosureAgeDays: num('CONGRESS_MAX_DISCLOSURE_AGE_DAYS', 3),
     congressMinCopyScore: num('CONGRESS_MIN_COPY_SCORE', null),
     sentimentMaxPostAgeMinutes: num('SENTIMENT_MAX_POST_AGE_MINUTES', 15),

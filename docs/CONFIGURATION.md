@@ -84,6 +84,7 @@ Sell-signal sizing is special: a sell closes up to the whole existing position (
 | Variable | Default | Meaning |
 |---|---|---|
 | `SENTIMENT_CONFIDENCE_THRESHOLD` | `0.8` | Claude assigns each ticker a 0–1 confidence; a fund only acts on calls at/above its threshold (this value unless the fund overrides it). Also the default for tweet backtests, where it can be set per run. Raise it for fewer, higher-conviction trades. |
+| `SENTIMENT_MIN_RELEVANCE` | `0.5` | Post-level market relevance gate for sentiment signals. The classifier can identify company, sector, legislation, regulation, contracts, opinion, or no-market-impact posts; only non-`opinion`/`none` posts at or above this score can emit ticker signals. |
 | `CONGRESS_MAX_DISCLOSURE_AGE_DAYS` | `3` | Congress disclosures older than this (at the time the poller sees them) are logged and skipped, not traded. Guards against acting on stale filings after downtime. |
 | `CONGRESS_MIN_COPY_SCORE` | empty | Optional congress score gate. Empty means disabled and preserves today's behavior. When set, every new congress trade is scored before signal creation; signals below the threshold or recommended `avoid` / `manual-review` are logged and skipped. |
 | `SENTIMENT_MAX_POST_AGE_MINUTES` | `15` | Posts older than this when discovered are skipped. Sentiment moves happen fast; a stale post is already priced in. |

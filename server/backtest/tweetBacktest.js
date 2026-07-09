@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { classifyPost } from '../sentiment/classifier.js';
+import { classifyPost, isMarketRelevant } from '../sentiment/classifier.js';
 import { simulateTrades } from './simulate.js';
 import { insertBacktest, listSeenPosts } from '../db.js';
 import { config } from '../config.js';
@@ -83,16 +83,22 @@ export async function runTweetBacktest({
   for (const post of posts) {
     const classification = await classifyPost(post.text);
     if (!classification) continue;
+    const relevant = isMarketRelevant(classification);
     const tickers = classification.tickers.map((t) => ({
       ticker: String(t.ticker).toUpperCase(),
       direction: t.direction,
       confidence: t.confidence,
-      traded: t.confidence >= threshold,
+      rationale: t.rationale,
+      traded: relevant && t.confidence >= threshold,
     }));
     classifications.push({
       postId: post.id,
       createdAt: post.createdAt,
       text: post.text.slice(0, 200),
+      relevanceType: classification.relevanceType,
+      marketRelevance: classification.marketRelevance,
+      sectors: classification.sectors,
+      marketRelevant: relevant,
       rationale: classification.rationale,
       tickers,
     });
@@ -119,7 +125,7 @@ export async function runTweetBacktest({
   results.postsInRange = inRange.length;
   results.postsScanned = posts.length;
   results.classifiedPosts = classifications.length;
-  results.noImpactPosts = classifications.filter((c) => c.tickers.length === 0).length;
+  results.noImpactPosts = classifications.filter((c) => !c.marketRelevant || c.tickers.length === 0).length;
   results.belowThresholdTickers = classifications.reduce(
     (n, c) => n + c.tickers.filter((t) => !t.traded).length, 0);
   results.classifications = classifications;

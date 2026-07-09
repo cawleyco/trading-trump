@@ -46,7 +46,7 @@ Body: `{ "fund": "name" }` resets that fund's kill-switch events; omit `fund` to
 
 ### `GET /api/signals?limit=100`
 
-The audit log, newest first: each signal joined with its per-fund decisions and orders — a signal routed to N funds appears as N rows, each with a `fund` field. `limit` defaults to 100 (Signal Log view uses 500).
+The audit log, newest first: each signal joined with its per-fund decisions and orders — a signal routed to N funds appears as N rows, each with a `fund` field. `limit` defaults to 100 (Signal Log view uses 500). Sentiment rows include parsed `sentimentClassification` (`relevanceType`, `marketRelevance`, ticker calls, sectors) and any attached `crossSignal` corroboration.
 
 ### `POST /api/test-signal`
 
@@ -140,6 +140,16 @@ Refreshes the political knowledge graph: legislators/committees, recent Congress
 ### `GET /api/intel/graph/:tradeKey`
 
 Full graph context for an archived trade: linked politician identity, committees, related bills, lobbying filings, and contracts. The `tradeKey` must be URL-encoded.
+
+### `GET /api/intel/cross-signal/:postId`
+
+For a persisted Truth Social post classification, returns recent congress-buy corroboration for the named tickers/sectors and any committee-sector exposure for those politicians. This is display/alerting metadata only and does not affect signal gating.
+
+```json
+{ "postId": "123", "targets": { "tickers": ["XLE"], "sectors": ["energy"] },
+  "corroboratingTrades": [ { "trade_key": "...", "politician": "Jane Doe", "ticker": "XLE", "score": 78 } ],
+  "note": "Found 1 recent congress buy(s) matching XLE / energy." }
+```
 
 ### `GET /api/intel/politicians/:name/graph`
 

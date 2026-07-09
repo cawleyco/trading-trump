@@ -122,7 +122,9 @@ The graph is stored in plain SQLite tables, not a graph database. `refreshLegisl
 ### Trump sentiment (`server/sources/truthSocialPoller.js` + `truthSocialData.js` + `sentiment/classifier.js`)
 
 - Polls the configured account's public posts every `TRUTH_SOCIAL_POLL_SECONDS` via Truth Social's unofficial Mastodon-style endpoints. Re-truths (reposts) and empty posts are ignored; HTML is stripped to plain text.
-- Each new post goes to Claude with a fixed prompt that returns strict JSON: up to 3 tickers, each with `direction` (buy = post likely pushes price up, sell = down) and `confidence` 0–1, plus a rationale. The prompt is deliberately conservative — most posts should classify as "no market impact".
+- Each new post goes to Claude with a fixed prompt that returns strict JSON: post-level `relevanceType` (`company`, `sector`, `legislation`, `regulation`, `contracts`, `opinion`, or `none`), `marketRelevance` 0–1, up to 3 ticker calls (`direction`, `confidence`, rationale), sector tags, and a rationale. The prompt is deliberately conservative — most posts should classify as "opinion" or "none".
+- The full classification is persisted on `seen_posts.classification`. Only non-`opinion`/`none` posts with `marketRelevance >= SENTIMENT_MIN_RELEVANCE` can emit ticker signals; sector-only classifications are saved for future alerts but do not trade in v1.
+- Market-relevant ticker signals include `crossSignal` metadata in `rawReference`: recent congress buys of matching tickers/sectors and committee-sector exposure when graph data is available. `GET /api/intel/cross-signal/:postId` exposes the same context for inspection.
 - Every classified ticker becomes a signal; **confidence gating happens per fund** in the risk manager, so different funds can hold different bars for the same call.
 - Same dedup (by post ID), staleness guard (`SENTIMENT_MAX_POST_AGE_MINUTES`), and first-run seeding as the congress source. Post texts are stored in `seen_posts`, so everything the bot sees live becomes backtestable later.
 - If `ANTHROPIC_API_KEY` is unset or the API errors, the poller logs and skips — it never crashes the bot.
@@ -189,7 +191,7 @@ SQLite (`trading.db`, WAL mode). Tables:
 | `fills` | Fill events from the per-fund websockets: quantity, average price |
 | `daily_pnl` | One row per US/Eastern trading day **per fund**: day P&L and the equity baseline |
 | `kill_switch_events` | Every circuit-breaker trip and manual halt per fund, with reason, trip time, and reset time |
-| `seen_congress_trades` / `seen_posts` | Dedup state so nothing is traded twice; `seen_posts` also keeps post text + timestamp to extend backtest coverage |
+| `seen_congress_trades` / `seen_posts` | Dedup state so nothing is traded twice; `seen_posts` also keeps post text, timestamp, and the full sentiment classification JSON for backtests/auditing |
 | `congress_trades` | Full-row archive of every disclosed trade the poller/backfill has seen: parties, dates, parsed amount band (`amount_min/max/mid`), source + filing URL, and (later phases) quality/identity fields. The substrate for scoring, profiles, and archive-backed backtests |
 | `ticker_meta` | Ticker → company name, SEC CIK, SIC code, and coarse sector; populated from SEC EDGAR, refreshed weekly |
 | `review_queue` | Low-confidence filings (parse confidence &lt; 0.8) held for human review, with reason and approved/rejected status |

@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS seen_posts (
   post_id TEXT PRIMARY KEY,
   text TEXT,                        -- kept so recent posts are backtestable
   created_at TEXT,
+  classification TEXT,              -- full sentiment classifier JSON
   seen_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -527,7 +528,7 @@ for (const table of ['decisions', 'orders', 'kill_switch_events']) {
   }
 }
 
-for (const col of ['text', 'created_at']) {
+for (const col of ['text', 'created_at', 'classification']) {
   if (!hasColumn('seen_posts', col)) {
     db.exec(`ALTER TABLE seen_posts ADD COLUMN ${col} TEXT`);
   }
@@ -1243,20 +1244,35 @@ export function hasSeenPost(postId) {
   return !!db.prepare(`SELECT 1 FROM seen_posts WHERE post_id = ?`).get(postId);
 }
 
-export function markPostSeen(postId, text, createdAt) {
+export function markPostSeen(postId, text, createdAt, classification = null) {
   db.prepare(
-    `INSERT OR IGNORE INTO seen_posts (post_id, text, created_at) VALUES (?, ?, ?)`
-  ).run(postId, text ?? null, createdAt ?? null);
+    `INSERT OR IGNORE INTO seen_posts (post_id, text, created_at, classification) VALUES (?, ?, ?, ?)`
+  ).run(postId, text ?? null, createdAt ?? null, classification ? JSON.stringify(classification) : null);
+}
+
+export function updateSeenPostClassification(postId, classification) {
+  db.prepare(`UPDATE seen_posts SET classification = ? WHERE post_id = ?`)
+    .run(classification ? JSON.stringify(classification) : null, postId);
+}
+
+export function getSeenPost(postId) {
+  const row = db.prepare(`SELECT * FROM seen_posts WHERE post_id = ?`).get(postId);
+  if (!row) return null;
+  return {
+    ...row,
+    classification: jsonOrNull(row.classification),
+  };
 }
 
 /** Posts collected by the live poller — supplements the historical archive. */
 export function listSeenPosts() {
   return db
     .prepare(
-      `SELECT post_id, text, created_at FROM seen_posts
+      `SELECT post_id, text, created_at, classification FROM seen_posts
        WHERE text IS NOT NULL AND created_at IS NOT NULL ORDER BY created_at ASC`
     )
-    .all();
+    .all()
+    .map((row) => ({ ...row, classification: jsonOrNull(row.classification) }));
 }
 
 export function insertBacktest({ kind, params, results }) {
@@ -1290,7 +1306,16 @@ export function listSignalsWithDecisions(limit = 100) {
        LEFT JOIN orders o ON o.decision_id = d.id
        ORDER BY s.id DESC, d.id DESC LIMIT ?`
     )
-    .all(limit);
+    .all(limit)
+    .map((row) => {
+      const rawReference = jsonOrNull(row.raw_reference);
+      return {
+        ...row,
+        rawReference,
+        sentimentClassification: row.source === 'sentiment' ? rawReference?.classification ?? null : null,
+        crossSignal: row.source === 'sentiment' ? rawReference?.crossSignal ?? null : null,
+      };
+    });
 }
 
 function jsonOrNull(value) {

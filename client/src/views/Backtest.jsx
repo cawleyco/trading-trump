@@ -545,13 +545,17 @@ function Results({ result }) {
           </summary>
           <table style={{ marginTop: 8 }}>
             <thead>
-              <tr><th>Posted</th><th>Post</th><th>Ticker calls</th><th>Reasoning</th></tr>
+              <tr><th>Posted</th><th>Post</th><th>Relevance</th><th>Ticker calls</th><th>Reasoning</th></tr>
             </thead>
             <tbody>
               {classifications.map((c) => (
                 <tr key={c.postId}>
                   <td style={{ whiteSpace: 'nowrap' }}>{c.createdAt.slice(0, 16).replace('T', ' ')}</td>
                   <td style={{ maxWidth: 320, color: '#a1a1aa', fontSize: '0.9em' }}>{c.text}</td>
+                  <td style={{ whiteSpace: 'nowrap', color: c.marketRelevant ? '#86efac' : '#a1a1aa' }}>
+                    <div>{c.relevanceType || '—'} @ {c.marketRelevance ?? '—'}</div>
+                    {c.sectors?.length > 0 && <div style={{ color: '#a1a1aa', fontSize: '0.9em' }}>{c.sectors.join(', ')}</div>}
+                  </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {c.tickers.length === 0
                       ? <span style={{ color: '#52525b' }}>no impact</span>
