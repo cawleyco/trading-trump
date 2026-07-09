@@ -151,6 +151,17 @@ CREATE TABLE IF NOT EXISTS politician_stats (
   edge_score REAL,
   stats TEXT
 );
+
+CREATE TABLE IF NOT EXISTS trade_scores (
+  trade_key TEXT PRIMARY KEY REFERENCES congress_trades(trade_key),
+  score REAL NOT NULL,
+  confidence REAL NOT NULL,
+  recommendation TEXT NOT NULL,
+  factors TEXT NOT NULL,
+  warnings TEXT NOT NULL,
+  computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  inputs_hash TEXT
+);
 `);
 
 // --- migrations for databases created before multi-fund support ---
@@ -406,6 +417,108 @@ export function getPoliticianStats(politician) {
   return parsePoliticianStatsRow(
     db.prepare(`SELECT * FROM politician_stats WHERE politician = ?`).get(politician)
   );
+}
+
+function parseTradeScoreRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    factors: row.factors ? JSON.parse(row.factors) : {},
+    warnings: row.warnings ? JSON.parse(row.warnings) : [],
+  };
+}
+
+export function upsertTradeScore({ tradeKey, score, confidence, recommendation, factors, warnings, inputsHash }) {
+  db.prepare(
+    `INSERT INTO trade_scores
+       (trade_key, score, confidence, recommendation, factors, warnings, computed_at, inputs_hash)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?)
+     ON CONFLICT(trade_key) DO UPDATE SET
+       score = excluded.score,
+       confidence = excluded.confidence,
+       recommendation = excluded.recommendation,
+       factors = excluded.factors,
+       warnings = excluded.warnings,
+       computed_at = datetime('now'),
+       inputs_hash = excluded.inputs_hash`
+  ).run(
+    tradeKey,
+    score,
+    confidence,
+    recommendation,
+    JSON.stringify(factors ?? {}),
+    JSON.stringify(warnings ?? []),
+    inputsHash ?? null
+  );
+  return getTradeScore(tradeKey);
+}
+
+export function getTradeScore(tradeKey) {
+  return parseTradeScoreRow(db.prepare(`SELECT * FROM trade_scores WHERE trade_key = ?`).get(tradeKey));
+}
+
+export function listRecentTradeKeys(days = 60) {
+  return db
+    .prepare(
+      `SELECT trade_key FROM congress_trades
+       WHERE COALESCE(first_seen_at, disclosure_date, transaction_date) >= date('now', ?)
+       ORDER BY disclosure_date DESC, id DESC`
+    )
+    .all(`-${days} days`)
+    .map((r) => r.trade_key);
+}
+
+export function countClusterTrades({ ticker, type, disclosureDate, days = 30 }) {
+  if (!ticker || !type || !disclosureDate) return 1;
+  const row = db
+    .prepare(
+      `SELECT COUNT(DISTINCT politician) AS n
+       FROM congress_trades
+       WHERE ticker = ?
+         AND type = ?
+         AND disclosure_date BETWEEN date(?, ?) AND ?`
+    )
+    .get(ticker, type, disclosureDate, `-${days} days`, disclosureDate);
+  return Math.max(1, Number(row?.n ?? 0));
+}
+
+export function countRepeatBuys({ tradeKey, politician, ticker, transactionDate, days = 90 }) {
+  if (!politician || !ticker || !transactionDate) return 0;
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n
+       FROM congress_trades
+       WHERE politician = ?
+         AND ticker = ?
+         AND type = 'buy'
+         AND trade_key != ?
+         AND transaction_date BETWEEN date(?, ?) AND ?`
+    )
+    .get(politician, ticker, tradeKey ?? '', transactionDate, `-${days} days`, transactionDate);
+  return Number(row?.n ?? 0);
+}
+
+export function listTradesWithScores({ since, minScore, recommendation, politician, ticker, limit = 200 } = {}) {
+  const where = [];
+  const params = [];
+  if (since) { where.push('ct.disclosure_date >= ?'); params.push(since); }
+  if (minScore != null) { where.push('ts.score >= ?'); params.push(minScore); }
+  if (recommendation) { where.push('ts.recommendation = ?'); params.push(recommendation); }
+  if (politician) { where.push('ct.politician = ?'); params.push(politician); }
+  if (ticker) { where.push('ct.ticker = ?'); params.push(String(ticker).toUpperCase()); }
+  const sql =
+    `SELECT ct.*, ts.score, ts.confidence, ts.recommendation, ts.factors,
+            ts.warnings, ts.computed_at AS score_computed_at
+     FROM congress_trades ct
+     LEFT JOIN trade_scores ts ON ts.trade_key = ct.trade_key
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY ct.disclosure_date DESC, ct.id DESC
+     LIMIT ?`;
+  return db.prepare(sql).all(...params, limit).map((row) => ({
+    ...row,
+    factors: row.factors ? JSON.parse(row.factors) : null,
+    warnings: row.warnings ? JSON.parse(row.warnings) : [],
+  }));
 }
 
 /**
