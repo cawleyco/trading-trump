@@ -187,6 +187,36 @@ Archive feed joined to persisted scores, newest first. Filters are optional; `re
 ]
 ```
 
+### `GET /api/intel/events?from=&to=&sector=`
+
+Political market calendar events, chronological: committee hearings, bill actions, lobbying filing deadlines, and elections. Each row includes sector tags, related tickers derived from recent Congress trades in those sectors, and a small `recentTrades` list for click-through context.
+
+```json
+[
+  { "id": 12, "event_type": "hearing", "event_date": "2026-08-12",
+    "title": "Hearing on defense supply chains",
+    "source_url": "https://www.congress.gov/...",
+    "committee_id": "HSAS",
+    "sectors": ["defense-aerospace", "technology"],
+    "related_tickers": ["LMT", "RTX"],
+    "recentTrades": [
+      { "trade_key": "Jane Doe|LMT|2026-07-01|buy|$15,001 - $50,000",
+        "politician": "Jane Doe", "ticker": "LMT", "type": "buy",
+        "disclosure_date": "2026-07-10" }
+    ] }
+]
+```
+
+### `POST /api/intel/events/refresh`
+
+Runs the event collectors immediately. Body is optional: `{ "from": "2026-07-09", "to": "2026-10-07" }`. Missing `CONGRESS_GOV_API_KEY` skips only hearing collection; static deadlines/elections and bill actions still run.
+
+```json
+{ "hearings": { "skipped": true, "reason": "missing CONGRESS_GOV_API_KEY", "stored": 0 },
+  "billActions": { "skipped": false, "considered": 8, "stored": 8 },
+  "static": { "skipped": false, "stored": 5 } }
+```
+
 ### `GET /api/intel/card/:tradeKey`
 
 Deterministic, template-based thesis card for one archived trade. Scores the trade first if it has no persisted score, then builds and caches the card in `thesis_cards` (rebuilt automatically when the trade's score is newer). Pass `?force=true` to rebuild unconditionally. `polished` is a Claude-written analyst note, present only when `THESIS_LLM=true` and the call succeeds; it is `null` otherwise (the deterministic card still renders). The path segment contains `|` and spaces — URL-encode it.

@@ -1,0 +1,17 @@
+[
+  {
+    "date": "2026-11-03",
+    "title": "2026 federal general election",
+    "sectors": ["financials", "healthcare", "energy", "defense-aerospace", "technology"]
+  },
+  {
+    "date": "2028-03-07",
+    "title": "2028 Super Tuesday presidential and congressional primaries",
+    "sectors": ["financials", "healthcare", "energy", "defense-aerospace", "technology"]
+  },
+  {
+    "date": "2028-11-07",
+    "title": "2028 federal general election",
+    "sectors": ["financials", "healthcare", "energy", "defense-aerospace", "technology"]
+  }
+]

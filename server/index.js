@@ -18,6 +18,8 @@ import {
   getTradeGraphContext,
   getPoliticianGraphContext,
   listTradesWithScores,
+  listEvents,
+  listRecentTradesForTickers,
   createYoutubeChannel,
   upsertYoutubeChannel,
   listYoutubeChannels,
@@ -69,6 +71,7 @@ import { ensureLegislatorsAndCommittees, refreshLegislatorsAndCommittees } from 
 import { refreshRecentBills } from './sources/congressGov.js';
 import { refreshLobbyingFilings } from './sources/lobbying.js';
 import { refreshGovContracts } from './sources/contracts.js';
+import { refreshPoliticalEvents } from './sources/eventsCollector.js';
 import { startPositionManager } from './positionManager.js';
 import { runCongressBacktest, runCongressLeaderboard, runEntryBasisComparison, listPoliticians, ENTRY_BASES } from './backtest/congressBacktest.js';
 import { runWalkForward } from './backtest/walkForward.js';
@@ -318,6 +321,34 @@ app.get('/api/intel/trades', (req, res) => {
     ticker: req.query.ticker || undefined,
     limit: Number(req.query.limit) || 200,
   }));
+});
+
+app.get('/api/intel/events', (req, res) => {
+  const events = listEvents({
+    from: req.query.from || undefined,
+    to: req.query.to || undefined,
+    sector: req.query.sector || undefined,
+    limit: Number(req.query.limit) || 300,
+  }).map((event) => ({
+    ...event,
+    recentTrades: listRecentTradesForTickers(event.related_tickers || [], {
+      since: event.event_date,
+      limit: 12,
+    }),
+  }));
+  res.json(events);
+});
+
+app.post('/api/intel/events/refresh', async (req, res) => {
+  try {
+    res.json(await refreshPoliticalEvents({
+      from: req.body?.from || undefined,
+      to: req.body?.to || undefined,
+    }));
+  } catch (err) {
+    log.error('server', `Political events refresh failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---------- P&L attribution ----------
@@ -866,6 +897,9 @@ app.listen(config.port, '127.0.0.1', () => {
   // SEC ticker universe (name/CIK/sector lookups) — background, best-effort
   ensureTickerUniverse();
   ensureLegislatorsAndCommittees();
+  refreshPoliticalEvents().catch((err) =>
+    log.error('server', `Startup political events refresh failed: ${err.message}`)
+  );
 
   cron.schedule(
     '0 6 * * *',
@@ -902,6 +936,16 @@ app.listen(config.port, '127.0.0.1', () => {
     () => {
       Promise.all([refreshRecentBills(), refreshLobbyingFilings(), refreshGovContracts()]).catch((err) =>
         log.error('server', `Scheduled knowledge graph activity refresh failed: ${err.message}`)
+      );
+    },
+    { timezone: 'America/New_York' }
+  );
+
+  cron.schedule(
+    '15 5 * * *',
+    () => {
+      refreshPoliticalEvents().catch((err) =>
+        log.error('server', `Scheduled political events refresh failed: ${err.message}`)
       );
     },
     { timezone: 'America/New_York' }

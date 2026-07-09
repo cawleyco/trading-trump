@@ -2,8 +2,18 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 
 export default function Trades() {
+  const initialFilters = () => {
+    const qs = new URLSearchParams(window.location.search)
+    return {
+      since: qs.get('since') || '',
+      minScore: qs.get('minScore') || '',
+      recommendation: qs.get('recommendation') || '',
+      politician: qs.get('politician') || '',
+      ticker: (qs.get('ticker') || '').toUpperCase(),
+    }
+  }
   const [rows, setRows] = useState([])
-  const [filters, setFilters] = useState({ since: '', minScore: '', recommendation: '', politician: '', ticker: '' })
+  const [filters, setFilters] = useState(initialFilters)
   const [expanded, setExpanded] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)

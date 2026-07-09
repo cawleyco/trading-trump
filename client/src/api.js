@@ -51,6 +51,19 @@ export const api = {
     }
     return req(`/api/intel/trades?${qs.toString()}`)
   },
+  events: (params = {}) => {
+    const qs = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') qs.set(key, value)
+    }
+    return req(`/api/intel/events?${qs.toString()}`)
+  },
+  refreshEvents: (body = {}) =>
+    req('/api/intel/events/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   scoreTrade: (tradeKey) =>
     req(`/api/intel/score/${encodeURIComponent(tradeKey)}`, {
       method: 'POST',

@@ -3,6 +3,7 @@ import Dashboard from './views/Dashboard.jsx'
 import Backtest from './views/Backtest.jsx'
 import Politicians from './views/Politicians.jsx'
 import Trades from './views/Trades.jsx'
+import Calendar from './views/Calendar.jsx'
 import SignalLog from './views/SignalLog.jsx'
 import Influence from './views/Influence.jsx'
 import StatusBar from './components/StatusBar.jsx'
@@ -10,6 +11,7 @@ import StatusBar from './components/StatusBar.jsx'
 const VIEWS = {
   dashboard: ['Dashboard', Dashboard],
   trades: ['Trades', Trades],
+  calendar: ['Calendar', Calendar],
   backtest: ['Backtesting', Backtest],
   politicians: ['Politicians', Politicians],
   influence: ['Influence Signals', Influence],
@@ -19,6 +21,7 @@ const VIEWS = {
 const VIEW_PATHS = {
   dashboard: '/',
   trades: '/app/trades',
+  calendar: '/app/calendar',
   backtest: '/app/backtests',
   politicians: '/app/politicians',
   influence: '/app/influence/youtube',
@@ -28,6 +31,7 @@ const VIEW_PATHS = {
 function viewFromPath(path) {
   if (path.startsWith('/app/influence')) return 'influence'
   if (path.startsWith('/app/trades')) return 'trades'
+  if (path.startsWith('/app/calendar')) return 'calendar'
   if (path.startsWith('/app/backtests')) return 'backtest'
   if (path.startsWith('/app/politicians')) return 'politicians'
   if (path.startsWith('/app/signals')) return 'log'

@@ -105,6 +105,10 @@ The graph is stored in plain SQLite tables, not a graph database. `refreshLegisl
 
 `computeRelevance(trade)` performs a deterministic two-hop query: trade politician → committees → committee sectors, and ticker → company/sector/activity. It awards points for committee-sector overlap, committee leadership, active bill overlap, recent lobbying, lobbying issue overlap, and recent federal contracts overseen by a relevant committee. The resulting score replaces the former neutral committee stub, adds the `no-political-relevance` warning below 25, and feeds thesis-card explanations. `GET /api/intel/graph/:tradeKey` returns the full context rendered as a Connections panel in the Trades view; politician profiles also show linked committees and related bills.
 
+### Political market calendar (`server/sources/eventsCollector.js`)
+
+The event collector stores upcoming/recent political catalysts in `events`: Congress.gov committee meetings for tracked committees when `CONGRESS_GOV_API_KEY` is configured, bill actions from the existing `bills` table, static Senate LDA quarterly filing deadlines, and manually maintained federal election dates from `server/lib/electionDates.json`. Earnings remain a reserved event type for a future data source. Every event carries sector tags and a derived `related_tickers` list: tickers in those sectors that appeared in Congress trades during the prior 90 days. The collector runs at startup and daily at 05:15 ET; each source skips independently on missing data or config. `GET /api/intel/events` powers the Calendar view, grouped by week with links back to matching recent trades.
+
 ## Signal sources
 
 ### Congress (`server/sources/congressPoller.js` + `congressData.js` + `senateEfd.js`)
@@ -199,6 +203,7 @@ SQLite (`trading.db`, WAL mode). Tables:
 | `trade_scores` | Persisted copy-worthiness score per archived trade: composite score, confidence, recommendation, factor details, warnings, and input hash |
 | `politicians` / `committees` / `committee_memberships` | Political identity and committee graph used to link filings to Bioguide IDs and derive committee-sector relevance |
 | `bills` / `lobbying_filings` / `gov_contracts` | Recent political/economic activity joined into relevance scoring and graph context panels |
+| `events` | Political market calendar rows: hearings, bill actions, lobbying deadlines, elections, sector tags, and related Congress-traded tickers |
 | `backtests` | Saved backtest params + results (congress / tweet / leaderboard / walk-forward) |
 | `app_modules` | Enabled module registry rows such as `politics`, `influence`, and `youtube` |
 | `assets` / `asset_aliases` | Shared asset registry used by Influence Signals mention detection |
@@ -215,4 +220,4 @@ Schema migrations (adding fund columns etc.) run automatically and idempotently 
 
 ## Logging (`server/logger.js`)
 
-Structured JSON lines to stdout (`ts`, `level`, `component`, `message`, plus context like `signalId`). The database is the durable audit trail; the log is the operational play-by-play. Grep-friendly: `component` is one of `server`, `risk`, `alpaca`, `congress`, `truth-social`, `sentiment`, `senate-efd`, `backtest`, `auto-exit`, `notify`, `market-data`, `ticker-meta`, `politician-stats`. Per-fund lines are prefixed `[fund-name]`.
+Structured JSON lines to stdout (`ts`, `level`, `component`, `message`, plus context like `signalId`). The database is the durable audit trail; the log is the operational play-by-play. Grep-friendly: `component` is one of `server`, `risk`, `alpaca`, `congress`, `truth-social`, `sentiment`, `senate-efd`, `backtest`, `auto-exit`, `notify`, `market-data`, `ticker-meta`, `politician-stats`, `events`. Per-fund lines are prefixed `[fund-name]`.

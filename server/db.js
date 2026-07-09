@@ -237,6 +237,20 @@ CREATE TABLE IF NOT EXISTS thesis_cards (
   computed_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,   -- 'hearing'|'bill-action'|'lobbying-deadline'|'earnings'|'election'
+  event_date TEXT NOT NULL,
+  title TEXT NOT NULL,
+  source_url TEXT,
+  committee_id TEXT,
+  sectors TEXT,               -- JSON
+  related_tickers TEXT,       -- JSON, derived from recent Congress trades in those sectors
+  dedup_key TEXT UNIQUE
+);
+CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
+
 CREATE TABLE IF NOT EXISTS app_modules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   key TEXT UNIQUE NOT NULL,
@@ -1004,6 +1018,116 @@ export function upsertThesisCard({ tradeKey, card, polished, scoreComputedAt }) 
        computed_at = datetime('now')`
   ).run(tradeKey, JSON.stringify(card ?? {}), polished ?? null, scoreComputedAt ?? null);
   return getThesisCard(tradeKey);
+}
+
+function parseEventRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    sectors: jsonOrNull(row.sectors) ?? [],
+    related_tickers: jsonOrNull(row.related_tickers) ?? [],
+  };
+}
+
+export function upsertEvent(row) {
+  const dedupKey = row.dedupKey || row.dedup_key || [
+    row.eventType || row.event_type,
+    row.eventDate || row.event_date,
+    row.title,
+    row.committeeId || row.committee_id || '',
+  ].join('|');
+  db.prepare(
+    `INSERT INTO events (
+       event_type, event_date, title, source_url, committee_id, sectors, related_tickers, dedup_key
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(dedup_key) DO UPDATE SET
+       event_type = excluded.event_type,
+       event_date = excluded.event_date,
+       title = excluded.title,
+       source_url = excluded.source_url,
+       committee_id = excluded.committee_id,
+       sectors = excluded.sectors,
+       related_tickers = excluded.related_tickers`
+  ).run(
+    row.eventType || row.event_type,
+    row.eventDate || row.event_date,
+    row.title,
+    row.sourceUrl || row.source_url || null,
+    row.committeeId || row.committee_id || null,
+    JSON.stringify(row.sectors ?? []),
+    JSON.stringify(row.relatedTickers || row.related_tickers || []),
+    dedupKey
+  );
+  return parseEventRow(db.prepare(`SELECT * FROM events WHERE dedup_key = ?`).get(dedupKey));
+}
+
+export function listEvents({ from, to, sector, limit = 300 } = {}) {
+  const where = [];
+  const params = [];
+  if (from) { where.push('event_date >= ?'); params.push(from); }
+  if (to) { where.push('event_date <= ?'); params.push(to); }
+  params.push(Math.max(Number(limit) || 300, 1) * (sector ? 4 : 1));
+  const rows = db.prepare(
+    `SELECT * FROM events
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY event_date ASC, id ASC LIMIT ?`
+  ).all(...params).map(parseEventRow);
+  const filtered = sector
+    ? rows.filter((row) => row.sectors.includes(sector))
+    : rows;
+  return filtered.slice(0, Math.max(Number(limit) || 300, 1));
+}
+
+export function listTrackedCommitteesForEvents() {
+  return db.prepare(
+    `SELECT DISTINCT c.committee_id, c.name, c.chamber, c.sectors
+     FROM committees c
+     LEFT JOIN committee_memberships cm ON cm.committee_id = c.committee_id
+     WHERE cm.bioguide_id IS NOT NULL OR c.sectors IS NOT NULL
+     ORDER BY c.name`
+  ).all().map(parseCommittee);
+}
+
+export function listBillsForEvents({ from, to, limit = 200 } = {}) {
+  const where = ['latest_action_date IS NOT NULL'];
+  const params = [];
+  if (from) { where.push('latest_action_date >= ?'); params.push(from); }
+  if (to) { where.push('latest_action_date <= ?'); params.push(to); }
+  params.push(limit);
+  return db.prepare(
+    `SELECT * FROM bills
+     WHERE ${where.join(' AND ')}
+     ORDER BY latest_action_date DESC LIMIT ?`
+  ).all(...params).map(parseBill);
+}
+
+export function listRelatedTickersForSectors(sectors = [], { asOf, days = 90, limit = 20 } = {}) {
+  if (!sectors.length) return [];
+  const placeholders = sectors.map(() => '?').join(', ');
+  return db.prepare(
+    `SELECT ct.ticker, COUNT(*) AS trade_count, MAX(ct.disclosure_date) AS latest_disclosure
+     FROM congress_trades ct
+     JOIN ticker_meta tm ON tm.ticker = ct.ticker
+     WHERE tm.sector IN (${placeholders})
+       AND ct.disclosure_date BETWEEN date(COALESCE(?, 'now'), ?) AND date(COALESCE(?, 'now'))
+     GROUP BY ct.ticker
+     ORDER BY trade_count DESC, latest_disclosure DESC
+     LIMIT ?`
+  ).all(...sectors, asOf ?? null, `-${days} days`, asOf ?? null, limit)
+    .map((row) => row.ticker);
+}
+
+export function listRecentTradesForTickers(tickers = [], { since, limit = 20 } = {}) {
+  const clean = [...new Set(tickers.map((t) => String(t || '').toUpperCase()).filter(Boolean))];
+  if (!clean.length) return [];
+  const placeholders = clean.map(() => '?').join(', ');
+  return db.prepare(
+    `SELECT trade_key, politician, ticker, type, disclosure_date, transaction_date, amount_range
+     FROM congress_trades
+     WHERE ticker IN (${placeholders})
+       AND disclosure_date >= date(COALESCE(?, 'now'), '-90 days')
+     ORDER BY disclosure_date DESC, id DESC LIMIT ?`
+  ).all(...clean, since ?? null, limit);
 }
 
 export function listRecentTradeKeys(days = 60) {
