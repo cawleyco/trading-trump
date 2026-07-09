@@ -121,6 +121,21 @@ Any scored trade renders an explainable **thesis card** — a plain-language bri
 - Same dedup (by post ID), staleness guard (`SENTIMENT_MAX_POST_AGE_MINUTES`), and first-run seeding as the congress source. Post texts are stored in `seen_posts`, so everything the bot sees live becomes backtestable later.
 - If `ANTHROPIC_API_KEY` is unset or the API errors, the poller logs and skips — it never crashes the bot.
 
+### Influence Signals / YouTube (`server/influence/*`, `server/sources/youtubeApiClient.js`)
+
+Influence Signals is a separate research module for public-source market impact. The YouTube MVP tracks creator channels, syncs official YouTube Data API metadata, accepts compliant manual transcript uploads, segments transcripts, detects asset mentions, classifies them, backtests post-mention returns, calculates creator-alpha profiles, and creates research-only `influence_signal_events`.
+
+The module deliberately does **not** scrape YouTube transcripts and does **not** write into the executable `signals` table. Any future bridge to the live risk/order pipeline is gated behind `YOUTUBE_LIVE_SIGNALS_ENABLED=false` and would require an explicit integration phase.
+
+Key pieces:
+
+- `server/sources/youtubeApiClient.js` uses official metadata endpoints only: channel metadata, uploads playlist videos, and video metadata/statistics.
+- `server/influence/transcripts.js` provides the transcript provider registry plus manual/stub providers and plain-text/SRT/VTT segmentation.
+- `server/influence/entityResolution.js` and `youtubeMentionDetection.js` detect cashtags, asset aliases, and company/token names with ambiguity filters for terms like apple/SOL.
+- `server/influence/youtubeMentionClassifier.js` classifies mentions with structured JSON and stores normalized scores plus raw model output.
+- `server/backtest/youtubeBacktest.js` calculates mention returns by horizon and creator-alpha metrics; MVP falls back to deterministic mock market data when no provider is configured.
+- `server/influence/youtubeSignals.js` converts high-quality classified mentions into research signal events with careful labels such as `watch`, `avoid`, and `manual_review`.
+
 ## Backtesting (`server/backtest/`)
 
 ### `simulate.js` — shared simulation core
@@ -175,6 +190,16 @@ SQLite (`trading.db`, WAL mode). Tables:
 | `politician_stats` | Per-politician tear-sheet: forward returns by horizon, win rates, sector breakdown, concentration, and `edge_score`; refreshed nightly |
 | `trade_scores` | Persisted copy-worthiness score per archived trade: composite score, confidence, recommendation, factor details, warnings, and input hash |
 | `backtests` | Saved backtest params + results (congress / tweet / leaderboard / walk-forward) |
+| `app_modules` | Enabled module registry rows such as `politics`, `influence`, and `youtube` |
+| `assets` / `asset_aliases` | Shared asset registry used by Influence Signals mention detection |
+| `youtube_channels` / `youtube_channel_snapshots` | Tracked YouTube creators and their subscriber/view/video count snapshots |
+| `youtube_videos` / `youtube_video_snapshots` | YouTube video metadata and engagement snapshots from official metadata/manual seed data |
+| `content_documents` / `content_segments` | Generic text documents and timestamped transcript chunks |
+| `asset_mentions` / `mention_classifications` | Detected asset mentions and normalized classification/quality/pump-risk scores |
+| `youtube_backtest_runs` / `youtube_backtest_signal_results` | YouTube mention backtest configs and per-mention horizon returns |
+| `creator_alpha_metrics` | Aggregated YouTube creator performance, win rates, pump-dump rate, and alpha labels |
+| `influence_signal_events` | Research-only influence signal feed, separate from executable trading signals |
+| `market_candles` | Reserved shared candle storage for future persisted market-data providers |
 
 Schema migrations (adding fund columns etc.) run automatically and idempotently at startup — v1 databases upgrade in place, existing rows attributed to fund `default`.
 

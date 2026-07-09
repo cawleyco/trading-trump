@@ -90,4 +90,67 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  youtubeDashboard: () => req('/api/influence/youtube/dashboard'),
+  youtubeChannels: () => req('/api/influence/youtube/channels'),
+  youtubeChannel: (id) => req(`/api/influence/youtube/channels/${id}`),
+  createYoutubeChannel: (body) =>
+    req('/api/influence/youtube/channels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  updateYoutubeChannel: (id, body) =>
+    req(`/api/influence/youtube/channels/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  syncYoutubeChannel: (id, body = {}) =>
+    req(`/api/influence/youtube/channels/${id}/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  recalculateYoutubeAlpha: (id) =>
+    req(`/api/influence/youtube/channels/${id}/recalculate-alpha`, { method: 'POST' }),
+  youtubeVideos: (channelId) =>
+    req(`/api/influence/youtube/videos${channelId ? `?channelId=${encodeURIComponent(channelId)}` : ''}`),
+  youtubeVideo: (id) => req(`/api/influence/youtube/videos/${id}`),
+  createYoutubeVideo: (body) =>
+    req('/api/influence/youtube/videos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  uploadYoutubeTranscript: (id, body) =>
+    req(`/api/influence/youtube/videos/${id}/transcript`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  analyzeYoutubeVideo: (id) =>
+    req(`/api/influence/youtube/videos/${id}/analyze`, { method: 'POST' }),
+  generateYoutubeSignals: (id) =>
+    req(`/api/influence/youtube/videos/${id}/signals`, { method: 'POST' }),
+  youtubeMentions: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')).toString()
+    return req(`/api/influence/youtube/mentions${qs ? `?${qs}` : ''}`)
+  },
+  classifyYoutubeMention: (id) =>
+    req(`/api/influence/youtube/mentions/${id}/reclassify`, { method: 'POST' }),
+  overrideYoutubeMention: (id, body) =>
+    req(`/api/influence/youtube/mentions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  youtubeBacktests: () => req('/api/influence/youtube/backtests'),
+  runYoutubeBacktest: (body) =>
+    req('/api/influence/youtube/backtests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  youtubeBacktest: (id) => req(`/api/influence/youtube/backtests/${id}`),
+  influenceSignals: (moduleKey = 'youtube') => req(`/api/influence/signals?moduleKey=${encodeURIComponent(moduleKey)}`),
 }

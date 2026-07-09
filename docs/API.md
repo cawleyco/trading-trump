@@ -224,6 +224,52 @@ Same body as `/api/backtests/congress` (no `entryBasis`). Runs the params under 
 
 Returns `results.leaderboard`: `[{ politician, trades, skipped, winRate, totalPnl, totalInvested, returnPct }]` ranked by return, plus `politiciansConsidered`.
 
+## Influence Signals / YouTube
+
+Research-only YouTube creator market-impact endpoints live under `/api/influence/*`. They do not write to the executable `/api/signals` trading pipeline.
+
+### Channels
+
+- `GET /api/influence/youtube/channels`
+- `POST /api/influence/youtube/channels`
+- `GET /api/influence/youtube/channels/:id`
+- `PATCH /api/influence/youtube/channels/:id`
+- `POST /api/influence/youtube/channels/:id/sync`
+- `GET /api/influence/youtube/channels/:id/videos`
+- `GET /api/influence/youtube/channels/:id/mentions`
+- `GET /api/influence/youtube/channels/:id/alpha`
+
+Manual channel creation requires `youtube_channel_id` and `title`. Passing `{ "resolveWithApi": true, "input": "@handle" }` resolves metadata through the official YouTube Data API if `YOUTUBE_API_KEY` is configured.
+
+### Videos And Transcripts
+
+- `GET /api/influence/youtube/videos`
+- `POST /api/influence/youtube/videos`
+- `GET /api/influence/youtube/videos/:id`
+- `POST /api/influence/youtube/videos/:id/sync`
+- `POST /api/influence/youtube/videos/:id/transcript`
+- `POST /api/influence/youtube/videos/:id/analyze`
+- `POST /api/influence/youtube/videos/:id/signals`
+
+Transcript upload accepts `{ "rawText": "...", "format": "plain_text" | "srt" | "vtt" }`. The system stores the raw document and timestamped segments. It does not scrape YouTube transcripts.
+
+### Mentions, Backtests, Signals
+
+- `GET /api/influence/youtube/mentions`
+- `GET /api/influence/youtube/mentions/:id`
+- `PATCH /api/influence/youtube/mentions/:id`
+- `POST /api/influence/youtube/mentions/:id/reclassify`
+- `GET /api/influence/youtube/mentions/:id/backtest`
+- `GET /api/influence/youtube/backtests`
+- `POST /api/influence/youtube/backtests`
+- `GET /api/influence/youtube/backtests/:id`
+- `POST /api/influence/youtube/backtests/:id/run`
+- `GET /api/influence/signals?moduleKey=youtube`
+- `GET /api/influence/signals/:id`
+- `PATCH /api/influence/signals/:id`
+
+Suggested actions are market-intelligence labels only: `watch`, `avoid`, `fade_candidate`, `copy_candidate`, or `manual_review`.
+
 ### `POST /api/backtests/walk-forward`
 
 The overfitting guard. Splits the range into `folds` windows; for each window it ranks politicians in-sample, then copies only that window's top-`topN` into the **next** window and measures out-of-sample return.

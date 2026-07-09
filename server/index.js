@@ -15,6 +15,33 @@ import {
   resolveReviewItem,
   getCongressTradeByKey,
   listTradesWithScores,
+  createYoutubeChannel,
+  upsertYoutubeChannel,
+  listYoutubeChannels,
+  getYoutubeChannel,
+  updateYoutubeChannel,
+  insertYoutubeChannelSnapshot,
+  markYoutubeChannelSynced,
+  upsertYoutubeVideo,
+  listYoutubeVideos,
+  getYoutubeVideo,
+  insertYoutubeVideoSnapshot,
+  updateYoutubeVideoStatuses,
+  createContentDocument,
+  insertContentSegments,
+  listContentDocumentsForVideo,
+  listContentSegmentsForVideo,
+  listAssetMentions,
+  getAssetMention,
+  createMentionClassification,
+  listMentionClassifications,
+  listYoutubeBacktestRuns,
+  getYoutubeBacktestRun,
+  listInfluenceSignals,
+  getInfluenceSignal,
+  updateInfluenceSignal,
+  getYoutubeDashboardStats,
+  getCreatorAlpha,
 } from './db.js';
 import { filingSpeedLeaderboard } from './intel/freshnessReports.js';
 import { getStatsProfile, listStats, refreshAllPoliticianStats } from './intel/politicianStats.js';
@@ -38,11 +65,22 @@ import { startPositionManager } from './positionManager.js';
 import { runCongressBacktest, runCongressLeaderboard, runEntryBasisComparison, listPoliticians, ENTRY_BASES } from './backtest/congressBacktest.js';
 import { runWalkForward } from './backtest/walkForward.js';
 import { runTweetBacktest } from './backtest/tweetBacktest.js';
+import { runYoutubeBacktest, recalculateCreatorAlpha } from './backtest/youtubeBacktest.js';
 import { getAttribution } from './attribution.js';
 import { log } from './logger.js';
+import {
+  resolveChannelId,
+  getChannelMetadata,
+  listLatestVideosFromUploadsPlaylist,
+  getVideoMetadata,
+} from './sources/youtubeApiClient.js';
+import { ManualTranscriptProvider } from './influence/transcripts.js';
+import { detectAndStoreYoutubeMentions } from './influence/youtubeMentionDetection.js';
+import { classifyAndStoreYoutubeMention, normalizeClassification } from './influence/youtubeMentionClassifier.js';
+import { generateYoutubeSignals } from './influence/youtubeSignals.js';
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 function todayEt() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
@@ -402,6 +440,362 @@ app.post('/api/backtests/tweet', async (req, res) => {
     log.error('server', `Tweet backtest failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ---------- Influence Signals / YouTube ----------
+function numericIdParam(req, res) {
+  if (!/^\d+$/.test(req.params.id)) {
+    res.status(400).json({ error: 'numeric id required' });
+    return null;
+  }
+  return Number(req.params.id);
+}
+
+function requireInfluence(req, res) {
+  if (!config.influence.enabled || !config.influence.youtubeEnabled) {
+    res.status(404).json({ error: 'Influence Signals YouTube module is disabled' });
+    return false;
+  }
+  return true;
+}
+
+app.get('/api/influence/youtube/dashboard', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json(getYoutubeDashboardStats());
+});
+
+app.get('/api/influence/youtube/channels', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json(listYoutubeChannels({ limit: Number(req.query.limit) || 500 }));
+});
+
+app.post('/api/influence/youtube/channels', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  try {
+    if (req.body.resolveWithApi) {
+      const channelId = await resolveChannelId(req.body.input || req.body.youtube_channel_id || req.body.handle);
+      const metadata = await getChannelMetadata(channelId);
+      const channel = upsertYoutubeChannel({
+        ...metadata,
+        category: req.body.category,
+        influence_tier: req.body.influence_tier,
+        risk_notes: req.body.risk_notes,
+        tracking_enabled: req.body.tracking_enabled !== false,
+      });
+      insertYoutubeChannelSnapshot(channel.id, channel);
+      return res.json(channel);
+    }
+    if (!req.body.youtube_channel_id || !req.body.title) {
+      return res.status(400).json({ error: 'youtube_channel_id and title are required' });
+    }
+    res.json(createYoutubeChannel(req.body));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/influence/youtube/channels/:id', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const channel = getYoutubeChannel(id);
+  if (!channel) return res.status(404).json({ error: 'channel not found' });
+  res.json({ ...channel, alpha: getCreatorAlpha(id) });
+});
+
+app.patch('/api/influence/youtube/channels/:id', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const channel = updateYoutubeChannel(id, req.body || {});
+  if (!channel) return res.status(404).json({ error: 'channel not found' });
+  res.json(channel);
+});
+
+app.get('/api/influence/youtube/channels/:id/videos', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  res.json(listYoutubeVideos({ channelId: id, limit: Number(req.query.limit) || 200 }));
+});
+
+app.get('/api/influence/youtube/channels/:id/mentions', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  res.json(listAssetMentions({ channelId: id, limit: Number(req.query.limit) || 500 }));
+});
+
+app.get('/api/influence/youtube/channels/:id/alpha', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  res.json(getCreatorAlpha(id));
+});
+
+app.post('/api/influence/youtube/channels/:id/sync', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const channel = getYoutubeChannel(id);
+  if (!channel) return res.status(404).json({ error: 'channel not found' });
+  try {
+    let current = channel;
+    if (!channel.uploads_playlist_id || req.body.refreshChannelMetadata) {
+      const metadata = await getChannelMetadata(channel.youtube_channel_id);
+      current = updateYoutubeChannel(id, metadata);
+      insertYoutubeChannelSnapshot(id, current);
+    }
+    if (!current.uploads_playlist_id) {
+      return res.status(400).json({ error: 'channel has no uploads playlist id' });
+    }
+    const latest = await listLatestVideosFromUploadsPlaylist(
+      current.uploads_playlist_id,
+      Number(req.body.maxResults) || config.influence.syncMaxResults
+    );
+    const videos = [];
+    for (const item of latest) {
+      let full = item;
+      try {
+        full = { ...item, ...(await getVideoMetadata(item.youtube_video_id)) };
+      } catch (err) {
+        log.warn('youtube', `Video metadata failed for ${item.youtube_video_id}: ${err.message}`);
+      }
+      const video = upsertYoutubeVideo({ ...full, channel_id: id, ingestion_status: 'metadata_fetched' });
+      if (full.stats) insertYoutubeVideoSnapshot(video.id, full.stats);
+      videos.push(video);
+    }
+    markYoutubeChannelSynced(id);
+    res.json({ channel: getYoutubeChannel(id), videos });
+  } catch (err) {
+    log.error('youtube', `Channel sync failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/influence/youtube/videos', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json(listYoutubeVideos({ channelId: req.query.channelId ? Number(req.query.channelId) : null, limit: Number(req.query.limit) || 200 }));
+});
+
+app.post('/api/influence/youtube/videos', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  if (!req.body.youtube_video_id || !req.body.channel_id || !req.body.title || !req.body.published_at) {
+    return res.status(400).json({ error: 'youtube_video_id, channel_id, title, and published_at are required' });
+  }
+  res.json(upsertYoutubeVideo({ ...req.body, ingestion_status: 'metadata_fetched' }));
+});
+
+app.get('/api/influence/youtube/videos/:id', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const video = getYoutubeVideo(id);
+  if (!video) return res.status(404).json({ error: 'video not found' });
+  res.json({
+    ...video,
+    documents: listContentDocumentsForVideo(id),
+    segments: listContentSegmentsForVideo(id),
+    mentions: listAssetMentions({ videoId: id, limit: 500 }),
+  });
+});
+
+app.post('/api/influence/youtube/videos/:id/sync', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const video = getYoutubeVideo(id);
+  if (!video) return res.status(404).json({ error: 'video not found' });
+  try {
+    const metadata = await getVideoMetadata(video.youtube_video_id);
+    const updated = upsertYoutubeVideo({ ...metadata, channel_id: video.channel_id, ingestion_status: 'metadata_fetched' });
+    if (metadata.stats) insertYoutubeVideoSnapshot(updated.id, metadata.stats);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/influence/youtube/videos/:id/transcript', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  if (!config.influence.manualTranscriptsEnabled) return res.status(403).json({ error: 'manual transcripts disabled' });
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const video = getYoutubeVideo(id);
+  if (!video) return res.status(404).json({ error: 'video not found' });
+  const provider = new ManualTranscriptProvider({
+    rawText: req.body.rawText || req.body.raw_text,
+    format: req.body.format,
+    language: req.body.language,
+  });
+  const result = await provider.fetchTranscript(video);
+  if (result.status !== 'success') return res.status(400).json(result);
+  const documentId = createContentDocument({
+    source_type: 'youtube_video',
+    source_id: id,
+    provider_name: result.providerName,
+    language: result.language,
+    raw_text: result.rawText,
+    source_format: result.format,
+    authorization_status: req.body.authorizationStatus || 'manual_upload',
+  });
+  insertContentSegments(documentId, result.segments);
+  updateYoutubeVideoStatuses(id, { transcript_status: 'available' });
+  res.json({ documentId, segments: listContentSegmentsForVideo(id) });
+});
+
+app.post('/api/influence/youtube/videos/:id/analyze', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const video = getYoutubeVideo(id);
+  if (!video) return res.status(404).json({ error: 'video not found' });
+  const detection = detectAndStoreYoutubeMentions(video);
+  updateYoutubeVideoStatuses(id, { analysis_status: 'complete' });
+  res.json({ detection, mentions: listAssetMentions({ videoId: id, limit: 500 }) });
+});
+
+app.get('/api/influence/youtube/videos/:id/mentions', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  res.json(listAssetMentions({ videoId: id, limit: Number(req.query.limit) || 500 }));
+});
+
+app.get('/api/influence/youtube/videos/:id/backtest-results', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  res.json(runYoutubeBacktest({ name: `Video ${id} mention backtest`, videoId: id, limit: 500 }));
+});
+
+app.get('/api/influence/youtube/mentions', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json(listAssetMentions({
+    videoId: req.query.videoId ? Number(req.query.videoId) : null,
+    channelId: req.query.channelId ? Number(req.query.channelId) : null,
+    assetId: req.query.assetId ? Number(req.query.assetId) : null,
+    limit: Number(req.query.limit) || 500,
+  }));
+});
+
+app.get('/api/influence/youtube/mentions/:id', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const mention = getAssetMention(id);
+  if (!mention) return res.status(404).json({ error: 'mention not found' });
+  res.json({ ...mention, classifications: listMentionClassifications(id) });
+});
+
+app.patch('/api/influence/youtube/mentions/:id', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const mention = getAssetMention(id);
+  if (!mention) return res.status(404).json({ error: 'mention not found' });
+  const normalized = normalizeClassification(req.body, mention);
+  res.json(createMentionClassification({
+    mention_id: id,
+    ...normalized,
+    model_name: 'manual',
+    prompt_version: 'manual-override',
+    raw_model_output: req.body,
+    is_manual_override: true,
+  }));
+});
+
+app.post('/api/influence/youtube/mentions/:id/reclassify', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const mention = getAssetMention(id);
+  if (!mention) return res.status(404).json({ error: 'mention not found' });
+  const video = mention.video_id ? getYoutubeVideo(mention.video_id) : null;
+  const classification = await classifyAndStoreYoutubeMention(mention, {
+    videoTitle: video?.title,
+    videoDescription: video?.description,
+    channelTitle: mention.channel_title,
+    hasPaidProductPlacement: video?.has_paid_product_placement,
+  });
+  if (!classification) return res.status(400).json({ error: 'classification unavailable' });
+  res.json(classification);
+});
+
+app.get('/api/influence/youtube/mentions/:id/backtest', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  res.json(runYoutubeBacktest({ name: `Mention ${id} backtest`, mentionId: id, limit: 500 }));
+});
+
+app.get('/api/influence/youtube/backtests', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json(listYoutubeBacktestRuns());
+});
+
+app.post('/api/influence/youtube/backtests', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  try {
+    res.json(runYoutubeBacktest(req.body || {}));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/influence/youtube/backtests/:id', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const run = getYoutubeBacktestRun(id);
+  if (!run) return res.status(404).json({ error: 'backtest not found' });
+  res.json(run);
+});
+
+app.post('/api/influence/youtube/backtests/:id/run', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const run = getYoutubeBacktestRun(id);
+  if (!run) return res.status(404).json({ error: 'backtest not found' });
+  res.json(runYoutubeBacktest({ ...run.strategy_config, name: `${run.name} rerun` }));
+});
+
+app.post('/api/influence/youtube/channels/:id/recalculate-alpha', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  res.json(recalculateCreatorAlpha(id));
+});
+
+app.post('/api/influence/youtube/videos/:id/signals', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  res.json(generateYoutubeSignals({ videoId: id }));
+});
+
+app.get('/api/influence/signals', (req, res) => {
+  if (!config.influence.enabled) return res.status(404).json({ error: 'Influence Signals module is disabled' });
+  res.json(listInfluenceSignals({ moduleKey: req.query.moduleKey, limit: Number(req.query.limit) || 100 }));
+});
+
+app.get('/api/influence/signals/:id', (req, res) => {
+  if (!config.influence.enabled) return res.status(404).json({ error: 'Influence Signals module is disabled' });
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const signal = getInfluenceSignal(id);
+  if (!signal) return res.status(404).json({ error: 'signal not found' });
+  res.json(signal);
+});
+
+app.patch('/api/influence/signals/:id', (req, res) => {
+  if (!config.influence.enabled) return res.status(404).json({ error: 'Influence Signals module is disabled' });
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const signal = updateInfluenceSignal(id, req.body || {});
+  if (!signal) return res.status(404).json({ error: 'signal not found' });
+  res.json(signal);
 });
 
 // ---------- static frontend (production build) ----------

@@ -61,6 +61,7 @@ The combinations (per fund):
 | `ANTHROPIC_API_KEY` | No | Claude sentiment classification. If empty, the sentiment source logs a warning and never emits signals; tweet backtests produce zero trades. |
 | `QUIVER_API_KEY` | No | Congress trade data (House + Senate, fast). If empty, the bot scrapes the official Senate eFD site instead (free, Senate only, slower for historical ranges). |
 | `SEC_CONTACT_EMAIL` | No | Contact email included in the User-Agent of SEC EDGAR requests (ticker → company/CIK/sector metadata). SEC asks automated clients to identify themselves; the data is free and needs no key. |
+| `YOUTUBE_API_KEY` | No | Official YouTube Data API metadata only: channel metadata, uploads playlist videos, video statistics, captions availability flag, and paid-product-placement metadata. Transcript scraping is not implemented. |
 
 ## Risk limits (the safety rails)
 
@@ -85,6 +86,21 @@ Sell-signal sizing is special: a sell closes up to the whole existing position (
 | `CONGRESS_MAX_DISCLOSURE_AGE_DAYS` | `3` | Congress disclosures older than this (at the time the poller sees them) are logged and skipped, not traded. Guards against acting on stale filings after downtime. |
 | `CONGRESS_MIN_COPY_SCORE` | empty | Optional congress score gate. Empty means disabled and preserves today's behavior. When set, every new congress trade is scored before signal creation; signals below the threshold or recommended `avoid` / `manual-review` are logged and skipped. |
 | `SENTIMENT_MAX_POST_AGE_MINUTES` | `15` | Posts older than this when discovered are skipped. Sentiment moves happen fast; a stale post is already priced in. |
+
+## Influence Signals / YouTube
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `INFLUENCE_ENABLED` | `true` | Enables the research-only Influence Signals API/UI. |
+| `YOUTUBE_ENABLED` | `true` | Enables the YouTube subsection under Influence Signals. |
+| `YOUTUBE_MANUAL_TRANSCRIPTS_ENABLED` | `true` | Allows admin/manual transcript upload for videos. |
+| `YOUTUBE_CREATOR_AUTHORIZED_CAPTIONS_ENABLED` | `false` | Reserved for future creator-authorized caption access. |
+| `YOUTUBE_LLM_CLASSIFICATION_ENABLED` | `true` | Enables Claude-based YouTube mention classification when `ANTHROPIC_API_KEY` is also set. |
+| `YOUTUBE_BACKTESTING_ENABLED` | `true` | Enables YouTube mention backtesting views/endpoints. |
+| `YOUTUBE_LIVE_SIGNALS_ENABLED` | `false` | Reserved for future trading-pipeline integration. The MVP writes only research signals, never executable trade signals. |
+| `YOUTUBE_SYNC_MAX_RESULTS` | `10` | Default number of upload-playlist videos to fetch on a channel sync. |
+| `YOUTUBE_POLL_SECONDS` | `1800` | Reserved sync cadence for future background polling. MVP sync is manual. |
+| `YOUTUBE_SIGNAL_QUALITY_THRESHOLD` | `70` | Minimum mention quality score for creating a research signal event. |
 
 ## Polling
 

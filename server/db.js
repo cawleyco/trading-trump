@@ -170,6 +170,285 @@ CREATE TABLE IF NOT EXISTS thesis_cards (
   score_computed_at TEXT,            -- score's computed_at when built (cache invalidation)
   computed_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS app_modules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS assets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_type TEXT NOT NULL,
+  symbol TEXT NOT NULL UNIQUE,
+  canonical_name TEXT NOT NULL,
+  exchange TEXT,
+  market TEXT,
+  coingecko_id TEXT,
+  coinmarketcap_id TEXT,
+  isin TEXT,
+  cusip TEXT,
+  figi TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS asset_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL REFERENCES assets(id),
+  alias TEXT NOT NULL,
+  alias_type TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 1.0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(asset_id, alias)
+);
+CREATE INDEX IF NOT EXISTS idx_asset_aliases_alias ON asset_aliases(alias);
+
+CREATE TABLE IF NOT EXISTS youtube_channels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  youtube_channel_id TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  handle TEXT,
+  custom_url TEXT,
+  description TEXT,
+  thumbnail_url TEXT,
+  uploads_playlist_id TEXT,
+  subscriber_count INTEGER,
+  video_count INTEGER,
+  view_count INTEGER,
+  country TEXT,
+  language TEXT,
+  category TEXT,
+  influence_tier TEXT,
+  tracking_enabled INTEGER NOT NULL DEFAULT 1,
+  risk_notes TEXT,
+  last_synced_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS youtube_channel_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel_id INTEGER NOT NULL REFERENCES youtube_channels(id),
+  captured_at TEXT NOT NULL DEFAULT (datetime('now')),
+  subscriber_count INTEGER,
+  video_count INTEGER,
+  view_count INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS youtube_videos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  youtube_video_id TEXT UNIQUE NOT NULL,
+  channel_id INTEGER NOT NULL REFERENCES youtube_channels(id),
+  title TEXT NOT NULL,
+  description TEXT,
+  published_at TEXT NOT NULL,
+  duration_seconds INTEGER,
+  thumbnail_url TEXT,
+  url TEXT,
+  has_captions INTEGER,
+  has_paid_product_placement INTEGER,
+  default_language TEXT,
+  default_audio_language TEXT,
+  live_broadcast_content TEXT,
+  ingestion_status TEXT NOT NULL DEFAULT 'pending',
+  transcript_status TEXT NOT NULL DEFAULT 'not_requested',
+  analysis_status TEXT NOT NULL DEFAULT 'not_started',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_youtube_videos_channel ON youtube_videos(channel_id);
+CREATE INDEX IF NOT EXISTS idx_youtube_videos_published ON youtube_videos(published_at);
+
+CREATE TABLE IF NOT EXISTS youtube_video_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id INTEGER NOT NULL REFERENCES youtube_videos(id),
+  captured_at TEXT NOT NULL DEFAULT (datetime('now')),
+  view_count INTEGER,
+  like_count INTEGER,
+  comment_count INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS content_documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_type TEXT NOT NULL,
+  source_id INTEGER NOT NULL,
+  provider_name TEXT NOT NULL,
+  language TEXT,
+  raw_text TEXT NOT NULL,
+  source_format TEXT,
+  authorization_status TEXT NOT NULL DEFAULT 'unknown',
+  fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_content_documents_source ON content_documents(source_type, source_id);
+
+CREATE TABLE IF NOT EXISTS content_segments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id INTEGER NOT NULL REFERENCES content_documents(id),
+  segment_index INTEGER NOT NULL,
+  start_seconds REAL,
+  end_seconds REAL,
+  text TEXT NOT NULL,
+  token_count INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(document_id, segment_index)
+);
+
+CREATE TABLE IF NOT EXISTS asset_mentions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL REFERENCES assets(id),
+  source_type TEXT NOT NULL,
+  source_id INTEGER NOT NULL,
+  video_id INTEGER REFERENCES youtube_videos(id),
+  channel_id INTEGER REFERENCES youtube_channels(id),
+  segment_id INTEGER REFERENCES content_segments(id),
+  mention_text TEXT NOT NULL,
+  surrounding_text TEXT,
+  mention_start_seconds REAL,
+  mention_end_seconds REAL,
+  detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+  event_time TEXT NOT NULL,
+  detection_method TEXT NOT NULL,
+  entity_confidence REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(asset_id, source_type, source_id, mention_text, mention_start_seconds)
+);
+CREATE INDEX IF NOT EXISTS idx_asset_mentions_video ON asset_mentions(video_id);
+CREATE INDEX IF NOT EXISTS idx_asset_mentions_asset ON asset_mentions(asset_id);
+
+CREATE TABLE IF NOT EXISTS mention_classifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mention_id INTEGER NOT NULL REFERENCES asset_mentions(id),
+  direction TEXT NOT NULL,
+  conviction_score REAL NOT NULL,
+  relevance_score REAL NOT NULL,
+  directness_score REAL NOT NULL,
+  sponsorship_risk_score REAL NOT NULL,
+  pump_risk_score REAL NOT NULL,
+  time_horizon TEXT,
+  mention_type TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  evidence TEXT,
+  should_create_signal INTEGER NOT NULL DEFAULT 0,
+  mention_quality_score REAL,
+  model_name TEXT,
+  model_version TEXT,
+  prompt_version TEXT,
+  raw_model_output TEXT,
+  is_manual_override INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mention_classifications_mention ON mention_classifications(mention_id);
+
+CREATE TABLE IF NOT EXISTS youtube_backtest_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  module_key TEXT NOT NULL DEFAULT 'youtube',
+  strategy_config TEXT NOT NULL,
+  start_date TEXT,
+  end_date TEXT,
+  status TEXT NOT NULL DEFAULT 'queued',
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS youtube_backtest_signal_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  backtest_run_id INTEGER NOT NULL REFERENCES youtube_backtest_runs(id),
+  signal_event_id INTEGER,
+  mention_id INTEGER REFERENCES asset_mentions(id),
+  asset_id INTEGER NOT NULL REFERENCES assets(id),
+  entry_time TEXT NOT NULL,
+  entry_price REAL,
+  exit_1h_price REAL,
+  exit_6h_price REAL,
+  exit_24h_price REAL,
+  exit_7d_price REAL,
+  exit_30d_price REAL,
+  exit_90d_price REAL,
+  return_1h REAL,
+  return_6h REAL,
+  return_24h REAL,
+  return_7d REAL,
+  return_30d REAL,
+  return_90d REAL,
+  max_drawdown_30d REAL,
+  max_runup_30d REAL,
+  volume_change_24h REAL,
+  benchmark_return_30d REAL,
+  result_metadata TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS creator_alpha_metrics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel_id INTEGER NOT NULL REFERENCES youtube_channels(id),
+  asset_type TEXT,
+  direction TEXT,
+  mention_type TEXT,
+  sample_size INTEGER NOT NULL,
+  avg_return_1h REAL,
+  avg_return_6h REAL,
+  avg_return_24h REAL,
+  avg_return_7d REAL,
+  avg_return_30d REAL,
+  avg_return_90d REAL,
+  win_rate_24h REAL,
+  win_rate_7d REAL,
+  win_rate_30d REAL,
+  median_return_30d REAL,
+  volatility_30d REAL,
+  pump_dump_rate REAL,
+  fade_score REAL,
+  alpha_score REAL,
+  label TEXT,
+  calculated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_creator_alpha_channel ON creator_alpha_metrics(channel_id);
+
+CREATE TABLE IF NOT EXISTS influence_signal_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_type TEXT NOT NULL,
+  source_id INTEGER NOT NULL,
+  module_key TEXT NOT NULL,
+  asset_id INTEGER NOT NULL REFERENCES assets(id),
+  event_time TEXT NOT NULL,
+  detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+  direction TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  strength_score REAL NOT NULL,
+  actionability_score REAL NOT NULL,
+  suggested_action TEXT NOT NULL,
+  title TEXT NOT NULL,
+  explanation TEXT NOT NULL,
+  evidence TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(source_type, source_id, module_key, asset_id, direction)
+);
+CREATE INDEX IF NOT EXISTS idx_influence_signal_events_module ON influence_signal_events(module_key, created_at);
+
+CREATE TABLE IF NOT EXISTS market_candles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  asset_id INTEGER NOT NULL REFERENCES assets(id),
+  interval TEXT NOT NULL,
+  candle_time TEXT NOT NULL,
+  open REAL,
+  high REAL,
+  low REAL,
+  close REAL,
+  volume REAL,
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(asset_id, interval, candle_time, source)
+);
 `);
 
 // --- migrations for databases created before multi-fund support ---
@@ -652,4 +931,685 @@ export function listSignalsWithDecisions(limit = 100) {
        ORDER BY s.id DESC, d.id DESC LIMIT ?`
     )
     .all(limit);
+}
+
+function jsonOrNull(value) {
+  if (value == null) return null;
+  try { return JSON.parse(value); } catch { return null; }
+}
+
+function boolInt(value) {
+  return value ? 1 : 0;
+}
+
+function parseYoutubeChannel(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    tracking_enabled: !!row.tracking_enabled,
+  };
+}
+
+function parseYoutubeVideo(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    has_captions: row.has_captions == null ? null : !!row.has_captions,
+    has_paid_product_placement: row.has_paid_product_placement == null ? null : !!row.has_paid_product_placement,
+  };
+}
+
+function parseAsset(row) {
+  if (!row) return null;
+  return { ...row, is_active: !!row.is_active };
+}
+
+function parseMentionClassification(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    evidence: row.evidence ? JSON.parse(row.evidence) : [],
+    raw_model_output: jsonOrNull(row.raw_model_output),
+    should_create_signal: !!row.should_create_signal,
+    is_manual_override: !!row.is_manual_override,
+  };
+}
+
+function parseInfluenceSignal(row) {
+  if (!row) return null;
+  return { ...row, evidence: jsonOrNull(row.evidence) ?? {} };
+}
+
+export function seedInfluenceDefaults() {
+  const modules = [
+    ['politics', 'Politics', 'Political trading and market-intelligence signals'],
+    ['influence', 'Influence Signals', 'Public figure and public-source market influence signals'],
+    ['youtube', 'YouTube', 'YouTube creator market-impact tracking'],
+  ];
+  const insertModule = db.prepare(
+    `INSERT OR IGNORE INTO app_modules (key, name, description) VALUES (?, ?, ?)`
+  );
+  for (const m of modules) insertModule.run(...m);
+
+  const assets = [
+    ['equity', 'AAPL', 'Apple Inc.', 'NASDAQ', 'US', ['Apple', 'Apple stock', '$AAPL']],
+    ['equity', 'TSLA', 'Tesla Inc.', 'NASDAQ', 'US', ['Tesla', 'Tesla stock', '$TSLA']],
+    ['equity', 'NVDA', 'Nvidia Corp.', 'NASDAQ', 'US', ['Nvidia', 'NVIDIA', 'Nvidia stock', '$NVDA']],
+    ['equity', 'MSFT', 'Microsoft Corp.', 'NASDAQ', 'US', ['Microsoft', 'Microsoft stock', '$MSFT']],
+    ['crypto', 'BTC', 'Bitcoin', null, 'crypto', ['Bitcoin', 'BTC', '$BTC']],
+    ['crypto', 'ETH', 'Ethereum', null, 'crypto', ['Ethereum', 'Ether', 'ETH', '$ETH']],
+    ['crypto', 'SOL', 'Solana', null, 'crypto', ['Solana', 'SOL', '$SOL']],
+  ];
+  for (const [assetType, symbol, canonicalName, exchange, market, aliases] of assets) {
+    const res = db.prepare(
+      `INSERT OR IGNORE INTO assets (asset_type, symbol, canonical_name, exchange, market)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(assetType, symbol, canonicalName, exchange, market);
+    const asset = res.changes > 0
+      ? { id: res.lastInsertRowid }
+      : db.prepare(`SELECT id FROM assets WHERE symbol = ?`).get(symbol);
+    for (const alias of aliases) {
+      db.prepare(
+        `INSERT OR IGNORE INTO asset_aliases (asset_id, alias, alias_type, confidence)
+         VALUES (?, ?, ?, ?)`
+      ).run(asset.id, alias, alias.startsWith('$') ? 'cashtag' : 'common_name', 1);
+    }
+  }
+}
+
+seedInfluenceDefaults();
+
+export function createYoutubeChannel(input) {
+  const res = db.prepare(
+    `INSERT INTO youtube_channels (
+       youtube_channel_id, title, handle, custom_url, description, thumbnail_url,
+       uploads_playlist_id, subscriber_count, video_count, view_count, country,
+       language, category, influence_tier, tracking_enabled, risk_notes
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.youtube_channel_id,
+    input.title,
+    input.handle ?? null,
+    input.custom_url ?? null,
+    input.description ?? null,
+    input.thumbnail_url ?? null,
+    input.uploads_playlist_id ?? null,
+    input.subscriber_count ?? null,
+    input.video_count ?? null,
+    input.view_count ?? null,
+    input.country ?? null,
+    input.language ?? null,
+    input.category ?? null,
+    input.influence_tier ?? null,
+    input.tracking_enabled === false ? 0 : 1,
+    input.risk_notes ?? null
+  );
+  return getYoutubeChannel(res.lastInsertRowid);
+}
+
+export function upsertYoutubeChannel(input) {
+  db.prepare(
+    `INSERT INTO youtube_channels (
+       youtube_channel_id, title, handle, custom_url, description, thumbnail_url,
+       uploads_playlist_id, subscriber_count, video_count, view_count, country,
+       language, category, influence_tier, tracking_enabled, risk_notes, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(youtube_channel_id) DO UPDATE SET
+       title = excluded.title,
+       handle = excluded.handle,
+       custom_url = excluded.custom_url,
+       description = excluded.description,
+       thumbnail_url = excluded.thumbnail_url,
+       uploads_playlist_id = excluded.uploads_playlist_id,
+       subscriber_count = excluded.subscriber_count,
+       video_count = excluded.video_count,
+       view_count = excluded.view_count,
+       country = excluded.country,
+       language = excluded.language,
+       category = COALESCE(excluded.category, youtube_channels.category),
+       influence_tier = COALESCE(excluded.influence_tier, youtube_channels.influence_tier),
+       tracking_enabled = excluded.tracking_enabled,
+       risk_notes = COALESCE(excluded.risk_notes, youtube_channels.risk_notes),
+       updated_at = datetime('now')`
+  ).run(
+    input.youtube_channel_id,
+    input.title,
+    input.handle ?? null,
+    input.custom_url ?? null,
+    input.description ?? null,
+    input.thumbnail_url ?? null,
+    input.uploads_playlist_id ?? null,
+    input.subscriber_count ?? null,
+    input.video_count ?? null,
+    input.view_count ?? null,
+    input.country ?? null,
+    input.language ?? null,
+    input.category ?? null,
+    input.influence_tier ?? null,
+    input.tracking_enabled === false ? 0 : 1,
+    input.risk_notes ?? null
+  );
+  return getYoutubeChannelByYoutubeId(input.youtube_channel_id);
+}
+
+export function listYoutubeChannels({ limit = 500 } = {}) {
+  return db.prepare(
+    `SELECT yc.*,
+            (SELECT COUNT(*) FROM youtube_videos yv WHERE yv.channel_id = yc.id) AS videos_analyzed,
+            (SELECT COUNT(*) FROM asset_mentions am WHERE am.channel_id = yc.id) AS mentions_detected,
+            (SELECT alpha_score FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS alpha_score,
+            (SELECT win_rate_30d FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS win_rate_30d,
+            (SELECT avg_return_30d FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS avg_return_30d,
+            (SELECT pump_dump_rate FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS pump_risk_score
+     FROM youtube_channels yc
+     ORDER BY yc.title ASC LIMIT ?`
+  ).all(limit).map(parseYoutubeChannel);
+}
+
+export function getYoutubeChannel(id) {
+  return parseYoutubeChannel(db.prepare(`SELECT * FROM youtube_channels WHERE id = ?`).get(id));
+}
+
+export function getYoutubeChannelByYoutubeId(youtubeChannelId) {
+  return parseYoutubeChannel(
+    db.prepare(`SELECT * FROM youtube_channels WHERE youtube_channel_id = ?`).get(youtubeChannelId)
+  );
+}
+
+export function updateYoutubeChannel(id, input) {
+  const existing = getYoutubeChannel(id);
+  if (!existing) return null;
+  const next = { ...existing, ...input };
+  db.prepare(
+    `UPDATE youtube_channels SET
+       youtube_channel_id = ?, title = ?, handle = ?, custom_url = ?, description = ?,
+       thumbnail_url = ?, uploads_playlist_id = ?, subscriber_count = ?, video_count = ?,
+       view_count = ?, country = ?, language = ?, category = ?, influence_tier = ?,
+       tracking_enabled = ?, risk_notes = ?, updated_at = datetime('now')
+     WHERE id = ?`
+  ).run(
+    next.youtube_channel_id,
+    next.title,
+    next.handle ?? null,
+    next.custom_url ?? null,
+    next.description ?? null,
+    next.thumbnail_url ?? null,
+    next.uploads_playlist_id ?? null,
+    next.subscriber_count ?? null,
+    next.video_count ?? null,
+    next.view_count ?? null,
+    next.country ?? null,
+    next.language ?? null,
+    next.category ?? null,
+    next.influence_tier ?? null,
+    next.tracking_enabled === false ? 0 : 1,
+    next.risk_notes ?? null,
+    id
+  );
+  return getYoutubeChannel(id);
+}
+
+export function insertYoutubeChannelSnapshot(channelId, counts = {}) {
+  db.prepare(
+    `INSERT INTO youtube_channel_snapshots (channel_id, subscriber_count, video_count, view_count)
+     VALUES (?, ?, ?, ?)`
+  ).run(channelId, counts.subscriber_count ?? null, counts.video_count ?? null, counts.view_count ?? null);
+}
+
+export function markYoutubeChannelSynced(id) {
+  db.prepare(`UPDATE youtube_channels SET last_synced_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`).run(id);
+}
+
+export function upsertYoutubeVideo(input) {
+  db.prepare(
+    `INSERT INTO youtube_videos (
+       youtube_video_id, channel_id, title, description, published_at, duration_seconds,
+       thumbnail_url, url, has_captions, has_paid_product_placement, default_language,
+       default_audio_language, live_broadcast_content, ingestion_status, transcript_status,
+       analysis_status, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(youtube_video_id) DO UPDATE SET
+       channel_id = excluded.channel_id,
+       title = excluded.title,
+       description = excluded.description,
+       published_at = excluded.published_at,
+       duration_seconds = COALESCE(excluded.duration_seconds, youtube_videos.duration_seconds),
+       thumbnail_url = COALESCE(excluded.thumbnail_url, youtube_videos.thumbnail_url),
+       url = COALESCE(excluded.url, youtube_videos.url),
+       has_captions = COALESCE(excluded.has_captions, youtube_videos.has_captions),
+       has_paid_product_placement = COALESCE(excluded.has_paid_product_placement, youtube_videos.has_paid_product_placement),
+       default_language = COALESCE(excluded.default_language, youtube_videos.default_language),
+       default_audio_language = COALESCE(excluded.default_audio_language, youtube_videos.default_audio_language),
+       live_broadcast_content = COALESCE(excluded.live_broadcast_content, youtube_videos.live_broadcast_content),
+       ingestion_status = excluded.ingestion_status,
+       updated_at = datetime('now')`
+  ).run(
+    input.youtube_video_id,
+    input.channel_id,
+    input.title,
+    input.description ?? '',
+    input.published_at,
+    input.duration_seconds ?? null,
+    input.thumbnail_url ?? null,
+    input.url ?? `https://www.youtube.com/watch?v=${input.youtube_video_id}`,
+    input.has_captions == null ? null : boolInt(input.has_captions),
+    input.has_paid_product_placement == null ? null : boolInt(input.has_paid_product_placement),
+    input.default_language ?? null,
+    input.default_audio_language ?? null,
+    input.live_broadcast_content ?? null,
+    input.ingestion_status ?? 'metadata_fetched',
+    input.transcript_status ?? 'not_requested',
+    input.analysis_status ?? 'not_started'
+  );
+  return getYoutubeVideoByYoutubeId(input.youtube_video_id);
+}
+
+export function listYoutubeVideos({ channelId, limit = 200 } = {}) {
+  const params = [];
+  let where = '';
+  if (channelId) { where = 'WHERE yv.channel_id = ?'; params.push(channelId); }
+  params.push(limit);
+  return db.prepare(
+    `SELECT yv.*, yc.title AS channel_title
+     FROM youtube_videos yv
+     JOIN youtube_channels yc ON yc.id = yv.channel_id
+     ${where}
+     ORDER BY yv.published_at DESC, yv.id DESC LIMIT ?`
+  ).all(...params).map(parseYoutubeVideo);
+}
+
+export function getYoutubeVideo(id) {
+  return parseYoutubeVideo(db.prepare(
+    `SELECT yv.*, yc.title AS channel_title
+     FROM youtube_videos yv JOIN youtube_channels yc ON yc.id = yv.channel_id
+     WHERE yv.id = ?`
+  ).get(id));
+}
+
+export function getYoutubeVideoByYoutubeId(youtubeVideoId) {
+  return parseYoutubeVideo(db.prepare(`SELECT * FROM youtube_videos WHERE youtube_video_id = ?`).get(youtubeVideoId));
+}
+
+export function insertYoutubeVideoSnapshot(videoId, stats = {}) {
+  db.prepare(
+    `INSERT INTO youtube_video_snapshots (video_id, view_count, like_count, comment_count)
+     VALUES (?, ?, ?, ?)`
+  ).run(videoId, stats.view_count ?? null, stats.like_count ?? null, stats.comment_count ?? null);
+}
+
+export function updateYoutubeVideoStatuses(id, statuses = {}) {
+  const sets = [];
+  const params = [];
+  for (const key of ['ingestion_status', 'transcript_status', 'analysis_status']) {
+    if (statuses[key]) { sets.push(`${key} = ?`); params.push(statuses[key]); }
+  }
+  if (sets.length === 0) return getYoutubeVideo(id);
+  params.push(id);
+  db.prepare(`UPDATE youtube_videos SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...params);
+  return getYoutubeVideo(id);
+}
+
+export function createContentDocument({ source_type, source_id, provider_name, language, raw_text, source_format, authorization_status }) {
+  const res = db.prepare(
+    `INSERT INTO content_documents
+       (source_type, source_id, provider_name, language, raw_text, source_format, authorization_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(source_type, source_id, provider_name, language ?? null, raw_text, source_format ?? null, authorization_status ?? 'unknown');
+  return res.lastInsertRowid;
+}
+
+export function insertContentSegments(documentId, segments) {
+  const stmt = db.prepare(
+    `INSERT OR REPLACE INTO content_segments
+       (document_id, segment_index, start_seconds, end_seconds, text, token_count)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  const tx = db.transaction((rows) => {
+    for (const row of rows) {
+      stmt.run(
+        documentId,
+        row.segment_index,
+        row.start_seconds ?? null,
+        row.end_seconds ?? null,
+        row.text,
+        row.token_count ?? Math.ceil(row.text.split(/\s+/).filter(Boolean).length)
+      );
+    }
+  });
+  tx(segments);
+}
+
+export function listContentDocumentsForVideo(videoId) {
+  return db.prepare(
+    `SELECT * FROM content_documents WHERE source_type = 'youtube_video' AND source_id = ? ORDER BY id DESC`
+  ).all(videoId);
+}
+
+export function listContentSegmentsForVideo(videoId) {
+  return db.prepare(
+    `SELECT cs.*, cd.provider_name, cd.language, cd.source_format
+     FROM content_segments cs
+     JOIN content_documents cd ON cd.id = cs.document_id
+     WHERE cd.source_type = 'youtube_video' AND cd.source_id = ?
+     ORDER BY cd.id DESC, cs.segment_index ASC`
+  ).all(videoId);
+}
+
+export function listAssets() {
+  return db.prepare(`SELECT * FROM assets WHERE is_active = 1 ORDER BY asset_type, symbol`).all().map(parseAsset);
+}
+
+export function listAssetAliases() {
+  return db.prepare(
+    `SELECT aa.*, a.symbol, a.canonical_name, a.asset_type
+     FROM asset_aliases aa JOIN assets a ON a.id = aa.asset_id
+     WHERE a.is_active = 1 ORDER BY length(aa.alias) DESC`
+  ).all();
+}
+
+export function getAsset(id) {
+  return parseAsset(db.prepare(`SELECT * FROM assets WHERE id = ?`).get(id));
+}
+
+export function getAssetBySymbol(symbol) {
+  return parseAsset(db.prepare(`SELECT * FROM assets WHERE symbol = ?`).get(String(symbol || '').toUpperCase()));
+}
+
+export function createAssetMention(input) {
+  const res = db.prepare(
+    `INSERT OR IGNORE INTO asset_mentions (
+       asset_id, source_type, source_id, video_id, channel_id, segment_id, mention_text,
+       surrounding_text, mention_start_seconds, mention_end_seconds, event_time,
+       detection_method, entity_confidence
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.asset_id,
+    input.source_type,
+    input.source_id,
+    input.video_id ?? null,
+    input.channel_id ?? null,
+    input.segment_id ?? null,
+    input.mention_text,
+    input.surrounding_text ?? null,
+    input.mention_start_seconds ?? null,
+    input.mention_end_seconds ?? null,
+    input.event_time,
+    input.detection_method ?? 'hybrid',
+    input.entity_confidence
+  );
+  if (res.changes > 0) return res.lastInsertRowid;
+  const existing = db.prepare(
+    `SELECT id FROM asset_mentions
+     WHERE asset_id = ? AND source_type = ? AND source_id = ? AND mention_text = ?
+       AND (mention_start_seconds IS ? OR mention_start_seconds = ?)
+     ORDER BY id DESC LIMIT 1`
+  ).get(input.asset_id, input.source_type, input.source_id, input.mention_text, input.mention_start_seconds ?? null, input.mention_start_seconds ?? null);
+  return existing?.id ?? null;
+}
+
+export function listAssetMentions({ videoId, channelId, assetId, limit = 500 } = {}) {
+  const where = [];
+  const params = [];
+  if (videoId) { where.push('am.video_id = ?'); params.push(videoId); }
+  if (channelId) { where.push('am.channel_id = ?'); params.push(channelId); }
+  if (assetId) { where.push('am.asset_id = ?'); params.push(assetId); }
+  params.push(limit);
+  return db.prepare(
+    `SELECT am.*, a.symbol, a.canonical_name, a.asset_type, yc.title AS channel_title, yv.title AS video_title,
+            mc.direction, mc.mention_type, mc.mention_quality_score, mc.summary,
+            mc.pump_risk_score, mc.relevance_score, mc.conviction_score
+     FROM asset_mentions am
+     JOIN assets a ON a.id = am.asset_id
+     LEFT JOIN youtube_channels yc ON yc.id = am.channel_id
+     LEFT JOIN youtube_videos yv ON yv.id = am.video_id
+     LEFT JOIN mention_classifications mc ON mc.id = (
+       SELECT id FROM mention_classifications WHERE mention_id = am.id ORDER BY id DESC LIMIT 1
+     )
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY am.event_time DESC, am.id DESC LIMIT ?`
+  ).all(...params);
+}
+
+export function getAssetMention(id) {
+  return db.prepare(
+    `SELECT am.*, a.symbol, a.canonical_name, a.asset_type, yc.title AS channel_title, yv.title AS video_title
+     FROM asset_mentions am
+     JOIN assets a ON a.id = am.asset_id
+     LEFT JOIN youtube_channels yc ON yc.id = am.channel_id
+     LEFT JOIN youtube_videos yv ON yv.id = am.video_id
+     WHERE am.id = ?`
+  ).get(id) || null;
+}
+
+export function createMentionClassification(input) {
+  const res = db.prepare(
+    `INSERT INTO mention_classifications (
+       mention_id, direction, conviction_score, relevance_score, directness_score,
+       sponsorship_risk_score, pump_risk_score, time_horizon, mention_type, summary,
+       evidence, should_create_signal, mention_quality_score, model_name, model_version,
+       prompt_version, raw_model_output, is_manual_override
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.mention_id,
+    input.direction,
+    input.conviction_score,
+    input.relevance_score,
+    input.directness_score,
+    input.sponsorship_risk_score,
+    input.pump_risk_score,
+    input.time_horizon ?? 'unknown',
+    input.mention_type,
+    input.summary,
+    JSON.stringify(input.evidence ?? []),
+    boolInt(input.should_create_signal),
+    input.mention_quality_score ?? null,
+    input.model_name ?? null,
+    input.model_version ?? null,
+    input.prompt_version ?? null,
+    input.raw_model_output ? JSON.stringify(input.raw_model_output) : null,
+    boolInt(input.is_manual_override)
+  );
+  return parseMentionClassification(db.prepare(`SELECT * FROM mention_classifications WHERE id = ?`).get(res.lastInsertRowid));
+}
+
+export function listMentionClassifications(mentionId) {
+  return db.prepare(`SELECT * FROM mention_classifications WHERE mention_id = ? ORDER BY id DESC`)
+    .all(mentionId)
+    .map(parseMentionClassification);
+}
+
+export function createYoutubeBacktestRun({ name, strategy_config, start_date, end_date, status = 'queued' }) {
+  const res = db.prepare(
+    `INSERT INTO youtube_backtest_runs (name, strategy_config, start_date, end_date, status)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(name, JSON.stringify(strategy_config ?? {}), start_date ?? null, end_date ?? null, status);
+  return res.lastInsertRowid;
+}
+
+export function updateYoutubeBacktestRun(id, { status, completed_at } = {}) {
+  db.prepare(
+    `UPDATE youtube_backtest_runs SET status = COALESCE(?, status), completed_at = COALESCE(?, completed_at) WHERE id = ?`
+  ).run(status ?? null, completed_at ?? null, id);
+}
+
+export function insertYoutubeBacktestSignalResult(input) {
+  db.prepare(
+    `INSERT INTO youtube_backtest_signal_results (
+       backtest_run_id, signal_event_id, mention_id, asset_id, entry_time, entry_price,
+       exit_1h_price, exit_6h_price, exit_24h_price, exit_7d_price, exit_30d_price,
+       exit_90d_price, return_1h, return_6h, return_24h, return_7d, return_30d,
+       return_90d, max_drawdown_30d, max_runup_30d, volume_change_24h,
+       benchmark_return_30d, result_metadata
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.backtest_run_id,
+    input.signal_event_id ?? null,
+    input.mention_id ?? null,
+    input.asset_id,
+    input.entry_time,
+    input.entry_price ?? null,
+    input.exit_1h_price ?? null,
+    input.exit_6h_price ?? null,
+    input.exit_24h_price ?? null,
+    input.exit_7d_price ?? null,
+    input.exit_30d_price ?? null,
+    input.exit_90d_price ?? null,
+    input.return_1h ?? null,
+    input.return_6h ?? null,
+    input.return_24h ?? null,
+    input.return_7d ?? null,
+    input.return_30d ?? null,
+    input.return_90d ?? null,
+    input.max_drawdown_30d ?? null,
+    input.max_runup_30d ?? null,
+    input.volume_change_24h ?? null,
+    input.benchmark_return_30d ?? null,
+    JSON.stringify(input.result_metadata ?? {})
+  );
+}
+
+function parseBacktestRun(row) {
+  if (!row) return null;
+  return { ...row, strategy_config: JSON.parse(row.strategy_config) };
+}
+
+export function listYoutubeBacktestRuns() {
+  return db.prepare(`SELECT * FROM youtube_backtest_runs ORDER BY id DESC LIMIT 100`).all().map(parseBacktestRun);
+}
+
+export function getYoutubeBacktestRun(id) {
+  const run = parseBacktestRun(db.prepare(`SELECT * FROM youtube_backtest_runs WHERE id = ?`).get(id));
+  if (!run) return null;
+  const results = db.prepare(
+    `SELECT r.*, a.symbol, a.canonical_name, am.mention_text
+     FROM youtube_backtest_signal_results r
+     JOIN assets a ON a.id = r.asset_id
+     LEFT JOIN asset_mentions am ON am.id = r.mention_id
+     WHERE r.backtest_run_id = ? ORDER BY r.id ASC`
+  ).all(id).map((r) => ({ ...r, result_metadata: jsonOrNull(r.result_metadata) ?? {} }));
+  return { ...run, results };
+}
+
+export function replaceCreatorAlphaMetric(input) {
+  db.prepare(
+    `INSERT INTO creator_alpha_metrics (
+       channel_id, asset_type, direction, mention_type, sample_size, avg_return_1h,
+       avg_return_6h, avg_return_24h, avg_return_7d, avg_return_30d, avg_return_90d,
+       win_rate_24h, win_rate_7d, win_rate_30d, median_return_30d, volatility_30d,
+       pump_dump_rate, fade_score, alpha_score, label
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.channel_id,
+    input.asset_type ?? null,
+    input.direction ?? null,
+    input.mention_type ?? null,
+    input.sample_size,
+    input.avg_return_1h ?? null,
+    input.avg_return_6h ?? null,
+    input.avg_return_24h ?? null,
+    input.avg_return_7d ?? null,
+    input.avg_return_30d ?? null,
+    input.avg_return_90d ?? null,
+    input.win_rate_24h ?? null,
+    input.win_rate_7d ?? null,
+    input.win_rate_30d ?? null,
+    input.median_return_30d ?? null,
+    input.volatility_30d ?? null,
+    input.pump_dump_rate ?? null,
+    input.fade_score ?? null,
+    input.alpha_score ?? null,
+    input.label ?? null
+  );
+}
+
+export function getCreatorAlpha(channelId) {
+  return db.prepare(
+    `SELECT * FROM creator_alpha_metrics WHERE channel_id = ? ORDER BY calculated_at DESC, id DESC LIMIT 20`
+  ).all(channelId);
+}
+
+export function upsertInfluenceSignalEvent(input) {
+  db.prepare(
+    `INSERT OR IGNORE INTO influence_signal_events (
+       source_type, source_id, module_key, asset_id, event_time, direction, confidence,
+       strength_score, actionability_score, suggested_action, title, explanation, evidence, status
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    input.source_type,
+    input.source_id,
+    input.module_key,
+    input.asset_id,
+    input.event_time,
+    input.direction,
+    input.confidence,
+    input.strength_score,
+    input.actionability_score,
+    input.suggested_action,
+    input.title,
+    input.explanation,
+    JSON.stringify(input.evidence ?? {}),
+    input.status ?? 'active'
+  );
+  return db.prepare(
+    `SELECT * FROM influence_signal_events
+     WHERE source_type = ? AND source_id = ? AND module_key = ? AND asset_id = ? AND direction = ?`
+  ).get(input.source_type, input.source_id, input.module_key, input.asset_id, input.direction);
+}
+
+export function listInfluenceSignals({ moduleKey, limit = 100 } = {}) {
+  const params = [];
+  let where = '';
+  if (moduleKey) { where = 'WHERE ise.module_key = ?'; params.push(moduleKey); }
+  params.push(limit);
+  return db.prepare(
+    `SELECT ise.*, a.symbol, a.canonical_name, a.asset_type
+     FROM influence_signal_events ise
+     JOIN assets a ON a.id = ise.asset_id
+     ${where}
+     ORDER BY ise.id DESC LIMIT ?`
+  ).all(...params).map(parseInfluenceSignal);
+}
+
+export function getInfluenceSignal(id) {
+  return parseInfluenceSignal(db.prepare(
+    `SELECT ise.*, a.symbol, a.canonical_name, a.asset_type
+     FROM influence_signal_events ise JOIN assets a ON a.id = ise.asset_id
+     WHERE ise.id = ?`
+  ).get(id));
+}
+
+export function updateInfluenceSignal(id, input) {
+  const existing = getInfluenceSignal(id);
+  if (!existing) return null;
+  db.prepare(
+    `UPDATE influence_signal_events SET status = COALESCE(?, status), suggested_action = COALESCE(?, suggested_action)
+     WHERE id = ?`
+  ).run(input.status ?? null, input.suggested_action ?? null, id);
+  return getInfluenceSignal(id);
+}
+
+export function getYoutubeDashboardStats() {
+  const one = (sql) => db.prepare(sql).get();
+  return {
+    videosAnalyzedToday: one(`SELECT COUNT(*) AS n FROM youtube_videos WHERE date(created_at) = date('now')`)?.n ?? 0,
+    newAssetMentions: one(`SELECT COUNT(*) AS n FROM asset_mentions WHERE date(created_at) = date('now')`)?.n ?? 0,
+    highQualityBullishMentions: one(
+      `SELECT COUNT(*) AS n FROM mention_classifications WHERE direction = 'bullish' AND mention_quality_score >= 70`
+    )?.n ?? 0,
+    highQualityBearishMentions: one(
+      `SELECT COUNT(*) AS n FROM mention_classifications WHERE direction = 'bearish' AND mention_quality_score >= 70`
+    )?.n ?? 0,
+    highPumpRiskMentions: one(`SELECT COUNT(*) AS n FROM mention_classifications WHERE pump_risk_score >= 70`)?.n ?? 0,
+    channelsTracked: one(`SELECT COUNT(*) AS n FROM youtube_channels WHERE tracking_enabled = 1`)?.n ?? 0,
+    topCreators: db.prepare(
+      `SELECT yc.id, yc.title, cam.alpha_score, cam.sample_size, cam.label
+       FROM creator_alpha_metrics cam JOIN youtube_channels yc ON yc.id = cam.channel_id
+       ORDER BY cam.alpha_score DESC LIMIT 5`
+    ).all(),
+    trendingAssets: db.prepare(
+      `SELECT a.id, a.symbol, a.canonical_name, COUNT(*) AS mentions
+       FROM asset_mentions am JOIN assets a ON a.id = am.asset_id
+       GROUP BY a.id ORDER BY mentions DESC LIMIT 10`
+    ).all(),
+  };
 }
