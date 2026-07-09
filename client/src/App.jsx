@@ -2,11 +2,13 @@ import { useState } from 'react'
 import Dashboard from './views/Dashboard.jsx'
 import Backtest from './views/Backtest.jsx'
 import Politicians from './views/Politicians.jsx'
+import Trades from './views/Trades.jsx'
 import SignalLog from './views/SignalLog.jsx'
 import StatusBar from './components/StatusBar.jsx'
 
 const VIEWS = {
   dashboard: ['Dashboard', Dashboard],
+  trades: ['Trades', Trades],
   backtest: ['Backtesting', Backtest],
   politicians: ['Politicians', Politicians],
   log: ['Signal Log', SignalLog],

@@ -1,0 +1,211 @@
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { api } from '../api.js'
+
+export default function Trades() {
+  const [rows, setRows] = useState([])
+  const [filters, setFilters] = useState({ since: '', minScore: '', recommendation: '', politician: '', ticker: '' })
+  const [expanded, setExpanded] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const load = async () => {
+    setError(null)
+    const data = await api.trades({ ...filters, limit: 250 })
+    setRows(data)
+  }
+
+  useEffect(() => {
+    load().catch((e) => setError(e.message)).finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const scoreOne = async (tradeKey) => {
+    try {
+      await api.scoreTrade(tradeKey)
+      await load()
+      setExpanded(tradeKey)
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const politicians = useMemo(() => [...new Set(rows.map((r) => r.politician).filter(Boolean))].sort(), [rows])
+
+  return (
+    <section style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div>
+          <h3 style={{ marginTop: 0 }}>Congress Trade Feed</h3>
+          <p style={{ color: '#a1a1aa', fontSize: '0.9em', margin: 0 }}>
+            Archived disclosures joined to explainable copy-worthiness scores and do-not-copy warnings.
+          </p>
+        </div>
+        <button onClick={() => load().catch((e) => setError(e.message))}>Refresh</button>
+      </div>
+
+      <FilterBar filters={filters} setFilters={setFilters} politicians={politicians} onApply={() => load().catch((e) => setError(e.message))} />
+      {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+      {loading ? <p>Loading trades...</p> : <TradeTable rows={rows} expanded={expanded} setExpanded={setExpanded} scoreOne={scoreOne} />}
+    </section>
+  )
+}
+
+function FilterBar({ filters, setFilters, politicians, onApply }) {
+  const set = (key, value) => setFilters((f) => ({ ...f, [key]: value }))
+  return (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'end', margin: '16px 0' }}>
+      <Label label="Since">
+        <input type="date" value={filters.since} onChange={(e) => set('since', e.target.value)} />
+      </Label>
+      <Label label="Min score">
+        <input type="number" min="0" max="100" value={filters.minScore} onChange={(e) => set('minScore', e.target.value)} style={{ width: 90 }} />
+      </Label>
+      <Label label="Recommendation">
+        <select value={filters.recommendation} onChange={(e) => set('recommendation', e.target.value)}>
+          <option value="">Any</option>
+          <option value="copy-candidate">Copy candidate</option>
+          <option value="watchlist">Watchlist</option>
+          <option value="avoid">Avoid</option>
+          <option value="manual-review">Manual review</option>
+        </select>
+      </Label>
+      <Label label="Politician">
+        <input list="politicians" value={filters.politician} onChange={(e) => set('politician', e.target.value)} placeholder="Any" />
+        <datalist id="politicians">{politicians.map((p) => <option key={p} value={p} />)}</datalist>
+      </Label>
+      <Label label="Ticker">
+        <input value={filters.ticker} onChange={(e) => set('ticker', e.target.value.toUpperCase())} placeholder="Any" style={{ width: 90 }} />
+      </Label>
+      <button onClick={onApply}>Apply</button>
+    </div>
+  )
+}
+
+function Label({ label, children }) {
+  return (
+    <label style={{ display: 'grid', gap: 4, color: '#a1a1aa', fontSize: '0.78em' }}>
+      {label}
+      {children}
+    </label>
+  )
+}
+
+function TradeTable({ rows, expanded, setExpanded, scoreOne }) {
+  if (rows.length === 0) return <p style={{ color: '#a1a1aa' }}>No archived trades match these filters.</p>
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Disclosure</th><th>Politician</th><th>Ticker</th><th>Dir</th><th>Amount</th><th>Lag</th><th>Score</th><th>Recommendation</th><th>Warnings</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <Fragment key={r.trade_key}>
+            <tr>
+              <td>{r.disclosure_date || '-'}</td>
+              <td>{r.politician}</td>
+              <td>{r.ticker}</td>
+              <td style={{ color: r.type === 'buy' ? '#86efac' : '#fca5a5' }}>{r.type}</td>
+              <td>{r.amount_range || (r.amount_mid ? `$${Number(r.amount_mid).toLocaleString()}` : '-')}</td>
+              <td>{lag(r)}</td>
+              <td>{r.score == null ? <span style={{ color: '#a1a1aa' }}>unscored</span> : <ScoreBadge score={r.score} />}</td>
+              <td><Recommendation value={r.recommendation} /></td>
+              <td><Warnings warnings={r.warnings || []} /></td>
+              <td style={{ whiteSpace: 'nowrap' }}>
+                <button onClick={() => setExpanded(expanded === r.trade_key ? null : r.trade_key)} style={{ marginRight: 6 }}>
+                  {expanded === r.trade_key ? 'Hide' : 'Details'}
+                </button>
+                {r.score == null && <button onClick={() => scoreOne(r.trade_key)}>Score</button>}
+              </td>
+            </tr>
+            {expanded === r.trade_key && (
+              <tr>
+                <td colSpan={10}>
+                  <FactorBreakdown row={r} />
+                </td>
+              </tr>
+            )}
+          </Fragment>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function ScoreBadge({ score }) {
+  const color = score >= 75 ? '#22c55e' : score >= 55 ? '#eab308' : '#ef4444'
+  return <span style={{ ...chip, borderColor: color, color }}>{Number(score).toFixed(1)}</span>
+}
+
+function Recommendation({ value }) {
+  if (!value) return <span style={{ color: '#a1a1aa' }}>-</span>
+  const color = value === 'copy-candidate' ? '#86efac' : value === 'watchlist' ? '#fde68a' : value === 'manual-review' ? '#93c5fd' : '#fca5a5'
+  return <span style={{ ...chip, color, borderColor: color }}>{value}</span>
+}
+
+function Warnings({ warnings }) {
+  if (!warnings.length) return <span style={{ color: '#a1a1aa' }}>-</span>
+  return (
+    <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+      {warnings.map((w) => (
+        <span key={w.code} title={w.message} style={{ ...chip, color: w.severity === 'critical' ? '#fca5a5' : '#fde68a' }}>
+          {w.code}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+function FactorBreakdown({ row }) {
+  const factors = Object.entries(row.factors || {})
+  return (
+    <div style={{ background: '#0f1115', border: '1px solid #26282f', borderRadius: 8, padding: 12 }}>
+      {factors.length === 0 ? (
+        <p style={{ color: '#a1a1aa' }}>No score persisted yet. Use Score to compute one on demand.</p>
+      ) : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ color: '#a1a1aa' }}>
+            Confidence {Math.round((row.confidence ?? 0) * 100)}% | scored {row.score_computed_at || 'unknown'}
+          </div>
+          {factors.map(([name, f]) => (
+            <div key={name}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <strong>{labelize(name)}</strong>
+                <span>{f.score}/100 | weight {f.weight}{f.hasData ? '' : ' | no data'}</span>
+              </div>
+              <div style={{ height: 7, background: '#26282f', borderRadius: 999, overflow: 'hidden', margin: '5px 0' }}>
+                <div style={{ width: `${Math.max(0, Math.min(100, f.score))}%`, height: '100%', background: f.score >= 75 ? '#22c55e' : f.score >= 55 ? '#eab308' : '#ef4444' }} />
+              </div>
+              <div style={{ color: '#a1a1aa', fontSize: '0.88em' }}>{f.detail}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function lag(row) {
+  if (!row.transaction_date || !row.disclosure_date) return '-'
+  const days = Math.floor((new Date(`${row.disclosure_date}T00:00:00Z`) - new Date(`${row.transaction_date}T00:00:00Z`)) / 86400_000)
+  return Number.isFinite(days) ? `${days}d` : '-'
+}
+
+function labelize(value) {
+  return value.replace(/[A-Z]/g, (m) => ` ${m.toLowerCase()}`).replace(/^./, (m) => m.toUpperCase())
+}
+
+const card = {
+  background: '#16181d',
+  border: '1px solid #26282f',
+  borderRadius: 10,
+  padding: '16px 20px',
+}
+
+const chip = {
+  border: '1px solid #3f3f46',
+  borderRadius: 999,
+  padding: '2px 7px',
+  fontSize: '0.78em',
+}

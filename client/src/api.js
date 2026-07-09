@@ -36,6 +36,18 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
     }),
   drift: (tradeKey) => req(`/api/intel/drift/${encodeURIComponent(tradeKey)}`),
+  trades: (params = {}) => {
+    const qs = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') qs.set(key, value)
+    }
+    return req(`/api/intel/trades?${qs.toString()}`)
+  },
+  scoreTrade: (tradeKey) =>
+    req(`/api/intel/score/${encodeURIComponent(tradeKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }),
   reviewQueue: (status = 'pending') => req(`/api/review-queue?status=${status}`),
   resolveReview: (id, status) =>
     req(`/api/review-queue/${id}/resolve`, {

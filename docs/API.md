@@ -134,6 +134,30 @@ Recomputes all politician stats from `congress_trades`, using cached market-data
 { "ticker": "NVDA", "sinceTransactionPct": 3.1, "sinceDisclosurePct": 1.2 }
 ```
 
+### `POST /api/intel/score/:tradeKey`
+
+Computes or refreshes the deterministic copy-worthiness score for one archived congress trade and persists it in `trade_scores`. Body is optional; `{ "force": true }` recomputes even when the input hash has not changed.
+
+```json
+{ "trade_key": "Jane Doe|NVDA|2026-06-20|buy|$50,001 - $100,000",
+  "score": 82.4, "confidence": 0.85, "recommendation": "copy-candidate",
+  "factors": { "freshness": { "score": 95, "weight": 25, "hasData": true, "detail": "..." } },
+  "warnings": [] }
+```
+
+### `GET /api/intel/trades?since=&minScore=&recommendation=&politician=&ticker=`
+
+Archive feed joined to persisted scores, newest first. Filters are optional; `recommendation` is one of `copy-candidate`, `watchlist`, `avoid`, or `manual-review`.
+
+```json
+[
+  { "trade_key": "Jane Doe|NVDA|2026-06-20|buy|$50,001 - $100,000",
+    "politician": "Jane Doe", "ticker": "NVDA", "type": "buy",
+    "amount_mid": 75000, "score": 82.4, "confidence": 0.85,
+    "recommendation": "copy-candidate", "warnings": [] }
+]
+```
+
 ## Backtesting
 
 ### `GET /api/politicians`

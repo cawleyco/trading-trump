@@ -91,6 +91,10 @@ Pure lag math: `disclosureLagDays` (trade → disclosure), `publishLagDays` (tra
 
 `buildPoliticianStats` (pure, with injected price/sector lookups) turns a member's archived **buys** (options and parse-confidence &lt; 0.8 excluded) into a tear-sheet row: entry at the disclosure-date close, forward returns at +7/30/90/180 days, win rates, average amount, median disclosure lag, per-sector 30-day returns, ticker concentration (HHI), and a recent (last-12-month) average. `refreshAllPoliticianStats` computes every politician then assigns `edge_score` — the percentile rank of `avg_return_90d` among members with ≥10 measurable 90-day buys; fewer than that leaves `edge_score` **null** (unknown, not average), so "proven good", "proven bad", and "not enough data" stay distinct. Rows persist in `politician_stats`. It runs nightly at 06:00 ET (`node-cron`) and on demand via `POST /api/intel/refresh-stats`; `GET /api/intel/politicians` lists the rows and `GET /api/intel/politicians/:name` returns one profile plus recent trades. Returns rely on the shared `marketData` cache, so a full refresh can take minutes.
 
+### Copy-worthiness scores (`server/intel/copyScore.js`, `scoreRunner.js`)
+
+Every archived congress trade can be scored deterministically into `trade_scores`: 0-100 composite score, 0-1 confidence, recommendation (`copy-candidate` / `watchlist` / `avoid` / `manual-review`), factor breakdown JSON, and warning JSON. Factors are freshness, politician edge, conviction, already-moved drift, 30-day same-ticker cluster, liquidity, and a neutral committee-relevance stub until the knowledge graph phase. `scoreTrade()` gathers the inputs (stats row, market-data drift/ADV, archive cluster counts), hashes them to skip unchanged recomputes, and persists the result. Recent trades rescore nightly at 06:30 ET; `POST /api/intel/score/:tradeKey` scores on demand; `GET /api/intel/trades` serves the archive joined with scores for the Trades view. `CONGRESS_MIN_COPY_SCORE` is an optional disabled-by-default gate: when set, the congress poller scores each new trade before signal creation and skips low-score, `avoid`, or `manual-review` trades.
+
 ## Signal sources
 
 ### Congress (`server/sources/congressPoller.js` + `congressData.js` + `senateEfd.js`)
@@ -100,6 +104,7 @@ Pure lag math: `disclosureLagDays` (trade → disclosure), `publishLagDays` (tra
 - Each new, unseen trade becomes a signal: politician purchase → `buy`, sale → `sell`.
 - **Archive**: every fetched trade (seen or not) is upserted into the `congress_trades` table *before* the dedup check — the full-row historical archive that scoring, profiles, and the backtester read from. `archiveTrade()` (in `congressData.js`) parses the amount band (`server/lib/amountRange.js` → `amount_min/max/mid`) and tags the source. Idempotent by `trade_key`.
 - **Dedup**: a key of `politician|ticker|date|type|amount` in the `seen_congress_trades` table ensures each disclosed trade is *traded* exactly once, across restarts. (The archive and the dedup set use the same key but serve different purposes — the archive keeps everything, dedup gates signal creation.)
+- **Score gate (optional)**: each new archived row is scored before signal creation. By default the score is advisory only; setting `CONGRESS_MIN_COPY_SCORE` skips signals below the threshold or recommended `avoid` / `manual-review`.
 - **Staleness guard**: disclosures older than `CONGRESS_MAX_DISCLOSURE_AGE_DAYS` are skipped.
 - **First-run seeding**: the first poll after startup only marks trades as seen, it does not trade them.
 - **Backfill**: `npm run backfill [-- --start YYYY-MM-DD --end YYYY-MM-DD]` (`scripts/backfill-congress.js`) populates the archive from historical disclosures (default: 3 years back). Idempotent — re-runs insert 0 new rows. Backfilled rows set `first_seen_at` to the disclosure date as a best-available publish-time estimate; live-poller rows carry a true `first_seen_at`.
@@ -145,7 +150,7 @@ All backtest kinds persist params + full results in the `backtests` table for in
 
 ## Web server & dashboard (`server/index.js`, `client/`)
 
-Express serves the JSON API and the built React app on `127.0.0.1:PORT` (localhost only, no auth). See [API.md](API.md) for every endpoint. The dashboard is plain-JS React + Vite + Recharts with three views (Dashboard, Backtesting, Signal Log) and the always-visible status bar / kill switch. It's a pure API client — anything the dashboard does, you can also do with `curl`.
+Express serves the JSON API and the built React app on `127.0.0.1:PORT` (localhost only, no auth). See [API.md](API.md) for every endpoint. The dashboard is plain-JS React + Vite + Recharts with views for Dashboard, Trades, Backtesting, Politicians, and Signal Log plus the always-visible status bar / kill switch. It's a pure API client — anything the dashboard does, you can also do with `curl`.
 
 ## Persistence (`server/db.js`)
 
@@ -164,6 +169,7 @@ SQLite (`trading.db`, WAL mode). Tables:
 | `ticker_meta` | Ticker → company name, SEC CIK, SIC code, and coarse sector; populated from SEC EDGAR, refreshed weekly |
 | `review_queue` | Low-confidence filings (parse confidence &lt; 0.8) held for human review, with reason and approved/rejected status |
 | `politician_stats` | Per-politician tear-sheet: forward returns by horizon, win rates, sector breakdown, concentration, and `edge_score`; refreshed nightly |
+| `trade_scores` | Persisted copy-worthiness score per archived trade: composite score, confidence, recommendation, factor details, warnings, and input hash |
 | `backtests` | Saved backtest params + results (congress / tweet / leaderboard / walk-forward) |
 
 Schema migrations (adding fund columns etc.) run automatically and idempotently at startup — v1 databases upgrade in place, existing rows attributed to fund `default`.
