@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
+import { HelpLink } from '../components/intel/components.jsx'
 
 export default function Trades() {
   const initialFilters = () => {
@@ -45,7 +46,7 @@ export default function Trades() {
     <section style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div>
-          <h3 style={{ marginTop: 0 }}>Congress Trade Feed</h3>
+          <h3 style={{ marginTop: 0 }}>Congress Trade Feed <HelpLink slug="trades" /></h3>
           <p style={{ color: '#a1a1aa', fontSize: '0.9em', margin: 0 }}>
             Archived disclosures joined to explainable copy-worthiness scores and do-not-copy warnings.
           </p>

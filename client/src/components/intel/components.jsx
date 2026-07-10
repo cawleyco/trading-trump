@@ -1,11 +1,29 @@
 import { useState } from 'react'
+import { navigate } from '../../lib/navigate.js'
 
-export function PageHeader({ eyebrow, title, description, actions, meta }) {
+export function HelpLink({ slug }) {
+  return (
+    <button
+      type="button"
+      className="intel-help-link"
+      aria-label="Open guide"
+      title="How to use this page"
+      onClick={() => navigate(`/app/guide/${slug}`)}
+    >
+      ?
+    </button>
+  )
+}
+
+export function PageHeader({ eyebrow, title, description, actions, meta, helpSlug }) {
   return (
     <header className="intel-page-header">
       <div>
         {eyebrow && <div className="intel-eyebrow">{eyebrow}</div>}
-        <h1>{title}</h1>
+        <h1>
+          {title}
+          {helpSlug && <> <HelpLink slug={helpSlug} /></>}
+        </h1>
         {description && <p>{description}</p>}
         {meta && <div className="intel-meta-row">{meta}</div>}
       </div>

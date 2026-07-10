@@ -11,6 +11,7 @@
     "dev:client": "npm --prefix client run dev",
     "backfill": "node scripts/backfill-congress.js",
     "smoke": "node scripts/smoke.js",
+    "cache:stats": "node scripts/cache-stats.js",
     "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {

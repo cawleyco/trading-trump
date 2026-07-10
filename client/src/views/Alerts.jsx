@@ -40,6 +40,7 @@ export default function Alerts() {
     <>
       <PageHeader
         eyebrow="System"
+        helpSlug="alerts"
         title="Alerts"
         description="Rules evaluate at natural moments — a trade is scored, a strategy matches, a post is classified, the calendar refreshes — and route explanatory, deduplicated alerts through macOS and Discord."
         meta="Every alert states the why · dedup prevents repeats"

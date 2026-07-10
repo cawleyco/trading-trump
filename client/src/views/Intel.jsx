@@ -44,6 +44,7 @@ export default function Intel() {
     <>
       <PageHeader
         eyebrow="Intelligence dashboards"
+        helpSlug="intel"
         title="Intel"
         description="Cross-source aggregates over the Congress-trade archive: activity, sector and committee heatmaps, conflict-risk exposure, disclosure quality, and copy performance."
         meta="Read-only · aggregates recompute on each load"

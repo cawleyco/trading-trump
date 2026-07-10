@@ -3,6 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts'
 import { api } from '../api.js'
+import { HelpLink } from '../components/intel/components.jsx'
 
 export default function Backtest() {
   const [kind, setKind] = useState('congress')
@@ -188,7 +189,7 @@ export default function Backtest() {
   return (
     <div>
       <section style={card}>
-        <h3>Research Presets</h3>
+        <h3>Research Presets <HelpLink slug="backtests" /></h3>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <Field label="Load setup">
             <select value="" onChange={(e) => {

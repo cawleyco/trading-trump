@@ -626,6 +626,11 @@ if (!hasColumn('congress_trades', 'politician_id')) {
   db.exec(`ALTER TABLE congress_trades ADD COLUMN politician_id TEXT`);
 }
 
+// card_hash lets cardRunner skip the LLM polish when the card text is unchanged
+if (!hasColumn('thesis_cards', 'card_hash')) {
+  db.exec(`ALTER TABLE thesis_cards ADD COLUMN card_hash TEXT`);
+}
+
 if (!hasColumn('daily_pnl', 'fund')) {
   // PK is changing from (trade_date) to (trade_date, fund): rebuild the table
   db.exec(`
@@ -1408,16 +1413,17 @@ export function getThesisCard(tradeKey) {
   return parseThesisCardRow(db.prepare(`SELECT * FROM thesis_cards WHERE trade_key = ?`).get(tradeKey));
 }
 
-export function upsertThesisCard({ tradeKey, card, polished, scoreComputedAt }) {
+export function upsertThesisCard({ tradeKey, card, polished, scoreComputedAt, cardHash }) {
   db.prepare(
-    `INSERT INTO thesis_cards (trade_key, card, polished, score_computed_at, computed_at)
-     VALUES (?, ?, ?, ?, datetime('now'))
+    `INSERT INTO thesis_cards (trade_key, card, polished, score_computed_at, card_hash, computed_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(trade_key) DO UPDATE SET
        card = excluded.card,
        polished = excluded.polished,
        score_computed_at = excluded.score_computed_at,
+       card_hash = excluded.card_hash,
        computed_at = datetime('now')`
-  ).run(tradeKey, JSON.stringify(card ?? {}), polished ?? null, scoreComputedAt ?? null);
+  ).run(tradeKey, JSON.stringify(card ?? {}), polished ?? null, scoreComputedAt ?? null, cardHash ?? null);
   return getThesisCard(tradeKey);
 }
 
@@ -2416,6 +2422,18 @@ export function listMentionClassifications(mentionId) {
   return db.prepare(`SELECT * FROM mention_classifications WHERE mention_id = ? ORDER BY id DESC`)
     .all(mentionId)
     .map(parseMentionClassification);
+}
+
+/** Latest LLM (non-manual) classification for a mention at a given model + prompt version. */
+export function getLatestAutoMentionClassification(mentionId, modelVersion, promptVersion) {
+  return parseMentionClassification(
+    db.prepare(
+      `SELECT * FROM mention_classifications
+        WHERE mention_id = ? AND is_manual_override = 0
+          AND model_version = ? AND prompt_version = ?
+        ORDER BY id DESC LIMIT 1`
+    ).get(mentionId, modelVersion, promptVersion)
+  );
 }
 
 export function createYoutubeBacktestRun({ name, strategy_config, start_date, end_date, status = 'queued' }) {

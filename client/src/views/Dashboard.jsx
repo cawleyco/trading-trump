@@ -56,6 +56,7 @@ export default function Dashboard() {
     <div>
       <PageHeader
         eyebrow="Overview"
+        helpSlug="overview"
         title="Public Influence Intelligence Terminal"
         description="Track public signals, inspect the evidence, and separate copyable edge from noisy attention."
         meta={`Mode: ${status.tradingMode ?? 'unknown'} · ${funds.length} fund${funds.length === 1 ? '' : 's'} monitored · Signal detected, edge not guaranteed`}

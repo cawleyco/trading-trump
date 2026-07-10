@@ -15,6 +15,7 @@ export default function InfluenceLayout({ path, children }) {
     <section>
       <PageHeader
         eyebrow="Influence / YouTube"
+        helpSlug="youtube"
         title="YouTube Influence"
         description="Track creator mentions, sentiment, market impact, and realistic post-mention follow-through."
         meta={`MVP source: ${influenceModules[0].label} · Pump-risk elevated signals require review`}

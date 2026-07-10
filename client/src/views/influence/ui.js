@@ -8,7 +8,4 @@ export const card = {
 
 export const muted = { color: 'var(--color-text-muted)' }
 
-export function navigate(path) {
-  window.history.pushState({}, '', path)
-  window.dispatchEvent(new PopStateEvent('popstate'))
-}
+export { navigate } from '../../lib/navigate.js'

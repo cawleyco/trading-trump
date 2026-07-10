@@ -1,5 +1,4 @@
-import { getDailyBars, getMinuteBars } from '../alpacaClient.js';
-import { _computeAdv } from '../marketData.js';
+import { _computeAdv, getDailyBarsCached, getMinuteBarsCached } from '../marketData.js';
 import { log } from '../logger.js';
 
 // Shared simulation core: given planned entries with exit rules, fetch price
@@ -13,12 +12,9 @@ const barsCache = new Map();
 async function getBarsCached(ticker, startDate, endDate) {
   const key = `${ticker}|${startDate}|${endDate}`;
   if (!barsCache.has(key)) {
-    try {
-      barsCache.set(key, await getDailyBars(ticker, startDate, endDate));
-    } catch (err) {
-      log.warn('backtest', `No bars for ${ticker}: ${err.message}`);
-      barsCache.set(key, []);
-    }
+    const bars = await getDailyBarsCached(ticker, startDate, endDate);
+    if (bars == null) log.warn('backtest', `No bars for ${ticker}`);
+    barsCache.set(key, bars ?? []);
   }
   return barsCache.get(key);
 }
@@ -170,12 +166,7 @@ async function simulateIntraday(plan, notionalPerTrade, today, costOpts = NO_COS
   // Fetch a generous window: post time + hold + 4 days (covers weekends —
   // a Saturday post enters at Monday's open)
   const endIso = new Date(Math.min(postMs + plan.holdHours * 3600_000 + 4 * 86400_000, Date.now())).toISOString();
-  let bars;
-  try {
-    bars = await getMinuteBars(plan.ticker, plan.entryTimestamp, endIso);
-  } catch (err) {
-    bars = [];
-  }
+  const bars = (await getMinuteBarsCached(plan.ticker, plan.entryTimestamp, endIso)) ?? [];
   if (bars.length < 2) {
     // No minute data (too old / thin ticker): fall back to daily with a flag
     const daily = await simulateDaily(

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { HelpLink } from '../components/intel/components.jsx'
 
 const emptyDefinition = {
   source: 'congress',
@@ -179,7 +180,7 @@ export default function Strategies() {
   return (
     <div>
       <section style={card}>
-        <h3>{form.id ? 'Edit Strategy' : 'New Strategy'}</h3>
+        <h3>{form.id ? 'Edit Strategy' : 'New Strategy'} <HelpLink slug="strategies" /></h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
           <Field label="Name">
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />

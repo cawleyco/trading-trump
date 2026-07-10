@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
+import { HelpLink } from '../components/intel/components.jsx'
 
 const DEFAULT_DAYS = 90
 
@@ -92,7 +93,7 @@ export default function Calendar() {
     <section style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div>
-          <h3 style={{ marginTop: 0 }}>Political Market Calendar</h3>
+          <h3 style={{ marginTop: 0 }}>Political Market Calendar <HelpLink slug="calendar" /></h3>
           <p style={{ color: '#a1a1aa', fontSize: '0.9em', margin: 0 }}>
             Hearings, bill actions, LDA filing deadlines, and elections linked to sectors and recent Congress trades.
           </p>

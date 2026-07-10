@@ -1,8 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 import { log } from '../logger.js';
-import { createMentionClassification } from '../db.js';
+import { createMentionClassification, getLatestAutoMentionClassification } from '../db.js';
 import { mentionQualityScore } from './mentionQuality.js';
+import { logLlmUsage } from '../lib/llmUsage.js';
 
 const PROMPT_VERSION = 'youtube-mention-v1';
 const anthropic = config.anthropicApiKey
@@ -91,7 +92,9 @@ export async function classifyYoutubeMention(context) {
     const resp = await anthropic.messages.create({
       model: config.sentimentModel,
       max_tokens: 700,
-      system: SYSTEM_PROMPT,
+      // cache_control is inert below the model's minimum cacheable prefix
+      // (4096 tokens on Haiku 4.5) but activates automatically if the prompt grows.
+      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       messages: [{
         role: 'user',
         content: `Input:
@@ -106,6 +109,7 @@ export async function classifyYoutubeMention(context) {
 - Mention location seconds: ${context.mentionStartSeconds ?? ''}`,
       }],
     });
+    logLlmUsage('youtube-classifier', resp.usage);
     const text = resp.content.find((b) => b.type === 'text')?.text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
@@ -117,6 +121,14 @@ export async function classifyYoutubeMention(context) {
 }
 
 export async function classifyAndStoreYoutubeMention(mention, context = {}) {
+  // Never pay for the same classification twice: reuse the stored result for
+  // this mention + model + prompt version unless the caller forces a re-run.
+  if (!context.manualClassification && !context.force) {
+    const existing = getLatestAutoMentionClassification(
+      mention.id, config.sentimentModel, PROMPT_VERSION
+    );
+    if (existing) return { ...existing, reused: true };
+  }
   const raw = context.manualClassification || await classifyYoutubeMention({
     ...context,
     assetSymbol: mention.symbol,

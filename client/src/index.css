@@ -688,3 +688,208 @@ pre {
   .intel-score-grid { grid-template-columns: 1fr; }
   .intel-dossier-main { align-items: flex-start; }
 }
+
+/* ---- Guide section ---- */
+
+.guide-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.guide-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 14px 16px;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.guide-card:hover:not(:disabled) {
+  border-color: var(--color-accent-secondary);
+  background: var(--color-bg-hover);
+}
+
+.guide-card strong { color: var(--color-text-primary); }
+
+.guide-card span {
+  color: var(--color-text-muted);
+  font-size: 0.85em;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.guide-layout {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.guide-toc {
+  position: sticky;
+  top: 16px;
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.guide-toc button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 5px 8px;
+  border-radius: var(--radius-xs);
+  color: var(--color-text-secondary);
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.guide-toc button:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.guide-toc button.is-active {
+  background: rgba(245, 177, 76, 0.09);
+  color: var(--color-accent-primary);
+}
+
+.guide-toc-home {
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding-bottom: 10px !important;
+  border-radius: 0 !important;
+  color: var(--color-text-muted) !important;
+}
+
+.guide-toc-label {
+  font-size: 0.68em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+
+.guide-article {
+  flex: 1;
+  min-width: 0;
+  padding: 20px 26px;
+}
+
+.guide-article > :first-child { margin-top: 0; }
+
+.guide-article p,
+.guide-article li {
+  color: var(--color-text-secondary);
+  line-height: 1.65;
+  max-width: 74ch;
+}
+
+.guide-article h2 {
+  color: var(--color-text-primary);
+  font-size: 1.05em;
+  letter-spacing: 0.02em;
+  margin: 1.8em 0 0.6em;
+  padding-top: 1.1em;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.guide-article h3 {
+  color: var(--color-text-primary);
+  font-size: 0.95em;
+  margin: 1.4em 0 0.5em;
+}
+
+.guide-article code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0.1em 0.35em;
+}
+
+.guide-article pre {
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+
+.guide-article pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.guide-article blockquote {
+  margin: 1em 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--color-warning);
+  background: rgba(245, 177, 76, 0.06);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.guide-article blockquote p { margin: 0; color: var(--color-text-primary); }
+
+.guide-article table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.88em;
+}
+
+.guide-article th,
+.guide-article td {
+  text-align: left;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  vertical-align: top;
+}
+
+.guide-article th {
+  color: var(--color-text-muted);
+  font-size: 0.82em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.intel-help-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-strong);
+  background: none;
+  color: var(--color-text-muted);
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.intel-help-link:hover:not(:disabled) {
+  border-color: var(--color-accent-secondary);
+  color: var(--color-accent-secondary);
+  background: none;
+}
+
+@media (max-width: 920px) {
+  .guide-layout { flex-direction: column; }
+  .guide-toc { position: static; flex-basis: auto; width: 100%; }
+}

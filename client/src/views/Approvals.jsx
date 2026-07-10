@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { HelpLink } from '../components/intel/components.jsx'
 
 export default function Approvals() {
   const [status, setStatus] = useState('pending')
@@ -33,7 +34,7 @@ export default function Approvals() {
   return (
     <div>
       <section style={card}>
-        <h3>Manual Approvals</h3>
+        <h3>Manual Approvals <HelpLink slug="approvals" /></h3>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <label>Status</label>
           <select value={status} onChange={(e) => setStatus(e.target.value)}>

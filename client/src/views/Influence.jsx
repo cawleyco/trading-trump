@@ -57,6 +57,7 @@ function InfluenceLanding() {
     <>
       <PageHeader
         eyebrow="Influence"
+        helpSlug="youtube"
         title="Public Influence Modules"
         description="Gateway for political, creator, social, and filing intelligence. Every module must show evidence before actionability."
         meta="Enabled: politicians and YouTube · Future modules staged as disabled"

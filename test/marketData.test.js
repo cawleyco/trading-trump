@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { _computeDrift, _computeAdv, _firstCloseOnOrAfter } from '../server/marketData.js'
+import { _computeDrift, _computeAdv, _firstCloseOnOrAfter, _barsTtl, _minuteBarsTtl } from '../server/marketData.js'
 
 const bar = (date, close, volume) => ({ date, open: close, close, volume })
 
@@ -48,4 +48,21 @@ test('_firstCloseOnOrAfter picks the first trading day ≥ date', () => {
   assert.equal(_firstCloseOnOrAfter(bars, '2026-01-03'), 105) // weekend → next trading day
   assert.equal(_firstCloseOnOrAfter(bars, '2026-01-07'), null) // past the data
   assert.equal(_firstCloseOnOrAfter(null, '2026-01-02'), null)
+})
+
+test('_barsTtl: historical ranges never expire, ranges touching today keep 1h', () => {
+  const nowMs = Date.parse('2026-07-10T15:00:00Z')
+  assert.equal(_barsTtl('2026-07-09', nowMs), null) // ended before today → immutable
+  assert.equal(_barsTtl('2020-01-01', nowMs), null)
+  assert.equal(_barsTtl('2026-07-10', nowMs), 3600_000) // ends today → mutable
+  assert.equal(_barsTtl('2026-07-11', nowMs), 3600_000)
+  assert.equal(_barsTtl('2026-07-09T23:59:00Z', nowMs), null) // ISO timestamps truncate to date
+})
+
+test('_minuteBarsTtl: ranges ending >24h ago never expire', () => {
+  const nowMs = Date.parse('2026-07-10T15:00:00Z')
+  assert.equal(_minuteBarsTtl('2026-07-09T14:00:00Z', nowMs), null)
+  assert.equal(_minuteBarsTtl('2026-07-09T16:00:00Z', nowMs), 3600_000) // within 24h
+  assert.equal(_minuteBarsTtl('2026-07-10T14:59:00Z', nowMs), 3600_000)
+  assert.equal(_minuteBarsTtl('not-a-date', nowMs), 3600_000) // unparseable → safe short TTL
 })

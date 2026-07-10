@@ -10,6 +10,7 @@ import Approvals from './views/Approvals.jsx'
 import SignalLog from './views/SignalLog.jsx'
 import Alerts from './views/Alerts.jsx'
 import Influence from './views/Influence.jsx'
+import Guide from './views/Guide.jsx'
 import AppShell from './components/intel/AppShell.jsx'
 import { EmptyState, PageHeader, SectionPanel } from './components/intel/components.jsx'
 
@@ -27,6 +28,7 @@ const VIEWS = {
   assets: ['Assets', AssetsPlaceholder],
   research: ['Research', ResearchPlaceholder],
   alerts: ['Alerts', Alerts],
+  guide: ['Guide', Guide],
   dataSources: ['Data Sources', DataSourcesPlaceholder],
   settings: ['Settings', SettingsPlaceholder],
 }
@@ -45,6 +47,7 @@ const VIEW_PATHS = {
   assets: '/app/assets',
   research: '/app/research',
   alerts: '/app/alerts',
+  guide: '/app/guide',
   dataSources: '/app/data-sources',
   settings: '/app/settings',
 }
@@ -63,6 +66,7 @@ function viewFromPath(path) {
   if (path.startsWith('/app/assets')) return 'assets'
   if (path.startsWith('/app/research')) return 'research'
   if (path.startsWith('/app/alerts')) return 'alerts'
+  if (path.startsWith('/app/guide')) return 'guide'
   if (path.startsWith('/app/data-sources')) return 'dataSources'
   if (path.startsWith('/app/settings')) return 'settings'
   return 'overview'

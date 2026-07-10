@@ -37,6 +37,7 @@ const NAV_GROUPS = [
     label: 'SYSTEM',
     items: [
       { key: 'alerts', label: 'Alerts', path: '/app/alerts', icon: 'AL' },
+      { key: 'guide', label: 'Guide', path: '/app/guide', icon: 'GD' },
       { key: 'data-sources', label: 'Data Sources', path: '/app/data-sources', icon: 'DS', enabled: false },
       { key: 'settings', label: 'Settings', path: '/app/settings', icon: 'SE', enabled: false },
     ],
@@ -144,5 +145,6 @@ function moduleContext(path) {
   if (path.startsWith('/app/signals')) return 'Normalized Signals'
   if (path.startsWith('/app/backtests')) return 'Backtest Lab'
   if (path.startsWith('/app/strategies')) return 'Strategy Review'
+  if (path.startsWith('/app/guide')) return 'Guide'
   return 'Overview'
 }

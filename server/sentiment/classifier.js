@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 import { log } from '../logger.js';
+import { logLlmUsage } from '../lib/llmUsage.js';
 
 const anthropic = config.anthropicApiKey
   ? new Anthropic({ apiKey: config.anthropicApiKey })
@@ -99,9 +100,13 @@ export async function classifyPost(postText) {
     const resp = await anthropic.messages.create({
       model: config.sentimentModel,
       max_tokens: 500,
-      system: SYSTEM_PROMPT,
+      // cache_control is inert below the model's minimum cacheable prefix
+      // (4096 tokens on Haiku 4.5; this prompt is far smaller) but costs
+      // nothing and activates automatically if the prompt grows.
+      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: `Post:\n"""\n${postText}\n"""` }],
     });
+    logLlmUsage('sentiment-classifier', resp.usage);
     const text = resp.content.find((b) => b.type === 'text')?.text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {

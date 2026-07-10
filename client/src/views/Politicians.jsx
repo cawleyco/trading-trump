@@ -88,6 +88,7 @@ export default function Politicians() {
     <div>
       <PageHeader
         eyebrow="Influence / Politicians"
+        helpSlug="politicians"
         title="Politician Dossiers"
         description="Historical disclosure-entry returns, disclosure lag, concentration, and edge scoring for measurable public trades."
         meta="Neutral coverage · disclosure lag reduces actionability"

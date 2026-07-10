@@ -13,8 +13,10 @@ import {
   upsertThesisCard,
 } from '../db.js';
 import { driftSincePct } from '../marketData.js';
+import { config } from '../config.js';
+import { stableHash } from '../cache/computeCache.js';
 import { scoreTrade } from './scoreRunner.js';
-import { buildThesisCard, polishCard } from './thesisCard.js';
+import { buildThesisCard, polishCard, POLISH_PROMPT_VERSION } from './thesisCard.js';
 import { computeRelevance } from './relevance.js';
 
 async function buildCardContext(trade) {
@@ -43,11 +45,22 @@ async function buildCardContext(trade) {
 }
 
 /**
+ * A rescore usually moves score_computed_at without changing the card text.
+ * When the hash of card + model + prompt version matches the cached row, the
+ * previous polish is reused instead of paying Claude again; changing the
+ * model or prompt version re-polishes. Returns the reusable polish or null.
+ */
+export function _reusablePolish(cached, cardHash, force = false) {
+  if (force || !cached || cached.card_hash !== cardHash) return null;
+  return cached.polished ?? null;
+}
+
+/**
  * Return the thesis card for a trade, building (and scoring, if needed) on demand.
  * Cached in thesis_cards; the cache is reused only while it is at least as fresh as
  * the trade's persisted score. Pass { force: true } to always rebuild.
  */
-export async function getOrBuildThesisCard(tradeKey, { force = false } = {}) {
+export async function getOrBuildThesisCard(tradeKey, { force = false, polishFn = polishCard } = {}) {
   const trade = getCongressTradeByKey(tradeKey);
   if (!trade) throw new Error(`unknown trade key "${tradeKey}"`);
 
@@ -64,11 +77,15 @@ export async function getOrBuildThesisCard(tradeKey, { force = false } = {}) {
 
   const ctx = await buildCardContext(trade);
   const card = buildThesisCard(trade, score, ctx);
-  const polished = await polishCard(card); // null unless THESIS_LLM=true and it succeeds
+  const cardHash = stableHash({ card, model: config.thesis.model, prompt: POLISH_PROMPT_VERSION });
+  const polished =
+    _reusablePolish(cached, cardHash, force) ??
+    (await polishFn(card)); // null unless THESIS_LLM=true and it succeeds
   const saved = upsertThesisCard({
     tradeKey,
     card,
     polished,
+    cardHash,
     scoreComputedAt: score.computed_at,
   });
   return { ...saved, cached: false };

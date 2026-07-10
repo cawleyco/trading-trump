@@ -13,6 +13,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 import { log } from '../logger.js';
+import { logLlmUsage } from '../lib/llmUsage.js';
 import { disclosureLagDays } from './freshness.js';
 
 function round(value, digits = 1) {
@@ -172,6 +173,9 @@ function getClient() {
   return anthropic;
 }
 
+// Bump when POLISH_SYSTEM changes so cardRunner re-polishes existing cards.
+export const POLISH_PROMPT_VERSION = 'polish-v1';
+
 const POLISH_SYSTEM = `You are a markets analyst. Rewrite the given thesis-card bullet points as a concise 4-sentence analyst note in plain English. Do not add any facts, numbers, tickers, or recommendations that are not present in the input. Do not speculate. Return only the note text, no preamble.`;
 
 /**
@@ -190,9 +194,12 @@ export async function polishCard(card) {
     const resp = await client.messages.create({
       model: config.thesis.model,
       max_tokens: 400,
-      system: POLISH_SYSTEM,
+      // cache_control is inert below the model's minimum cacheable prefix
+      // (4096 tokens on Haiku 4.5) but activates automatically if the prompt grows.
+      system: [{ type: 'text', text: POLISH_SYSTEM, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: JSON.stringify(card, null, 2) }],
     });
+    logLlmUsage('thesis-polish', resp.usage);
     const text = resp.content.find((b) => b.type === 'text')?.text?.trim();
     return text || null;
   } catch (err) {

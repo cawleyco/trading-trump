@@ -32,6 +32,7 @@ export default function SignalLog() {
     <section>
       <PageHeader
         eyebrow="Signals"
+        helpSlug="signals"
         title="Normalized Signal Feed"
         description="Every signal is treated as an auditable intelligence object: action, confidence, risk, evidence, and decision trail."
         meta={`${signals.length} signals loaded · Manual review recommended when evidence is thin`}

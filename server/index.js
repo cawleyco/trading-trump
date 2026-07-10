@@ -131,6 +131,8 @@ import { ManualTranscriptProvider } from './influence/transcripts.js';
 import { detectAndStoreYoutubeMentions } from './influence/youtubeMentionDetection.js';
 import { classifyAndStoreYoutubeMention, normalizeClassification } from './influence/youtubeMentionClassifier.js';
 import { generateYoutubeSignals } from './influence/youtubeSignals.js';
+import { defaultCache } from './cache/computeCache.js';
+import { llmUsageTotals } from './lib/llmUsage.js';
 
 const app = express();
 app.use(express.json({ limit: '5mb' }));
@@ -1115,6 +1117,8 @@ app.post('/api/influence/youtube/mentions/:id/reclassify', async (req, res) => {
     videoDescription: video?.description,
     channelTitle: mention.channel_title,
     hasPaidProductPlacement: video?.has_paid_product_placement,
+    // Repeat calls reuse the stored classification; {"force": true} re-runs the LLM.
+    force: req.body?.force === true,
   });
   if (!classification) return res.status(400).json({ error: 'classification unavailable' });
   res.json(classification);
@@ -1196,6 +1200,21 @@ app.patch('/api/influence/signals/:id', (req, res) => {
   res.json(signal);
 });
 
+// ---------- compute cache admin ----------
+app.get('/api/cache/stats', async (req, res) => {
+  const cache = await defaultCache();
+  res.json({ ...cache.stats(), llm: llmUsageTotals() });
+});
+
+app.post('/api/cache/purge', async (req, res) => {
+  const cache = await defaultCache();
+  const { namespace, keepVersion } = req.body || {};
+  const deleted = namespace
+    ? cache.purgeNamespace(namespace, { keepVersion })
+    : cache.purgeExpired();
+  res.json({ deleted, namespace: namespace || null });
+});
+
 // ---------- static frontend (production build) ----------
 const clientDist = path.join(config.projectRoot, 'client', 'dist');
 if (fs.existsSync(clientDist)) {
@@ -1228,6 +1247,11 @@ app.listen(config.port, '127.0.0.1', () => {
   startCongressPoller();
   startTruthSocialPoller();
   startPositionManager();
+
+  // Sweep expired compute-cache rows once per boot
+  defaultCache()
+    .then((cache) => cache.purgeExpired())
+    .catch((err) => log.error('server', `Compute cache purge failed: ${err.message}`));
 
   // SEC ticker universe (name/CIK/sector lookups) — background, best-effort
   ensureTickerUniverse();

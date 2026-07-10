@@ -33,14 +33,14 @@ const BENCHMARK_SYMBOL = 'SPY';
 export const alpacaPriceProvider = {
   async minuteBars(symbol, startIso, endIso) {
     try {
-      const { getMinuteBars } = await import('../alpacaClient.js');
-      return await getMinuteBars(symbol, startIso, endIso);
+      const { getMinuteBarsCached } = await import('../marketData.js');
+      return await getMinuteBarsCached(symbol, startIso, endIso);
     } catch (err) {
       log.warn('youtube-backtest', `minute bars ${symbol} failed: ${err.message}`);
       return null;
     }
   },
-  // Cached (1h TTL) and null-safe already.
+  // Persistently cached and null-safe already.
   dailyCloses: getDailyCloses,
 };
 
