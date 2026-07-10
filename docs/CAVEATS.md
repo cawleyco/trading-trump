@@ -14,12 +14,31 @@ Read this before going live. Read it again before setting `ALPACA_PAPER=false`.
 - **Taxes**: frequent trading in a taxable account generates short-term capital gains and possible wash-sale complications. Every fill is in `trading.db` — export it for your records at tax time.
 - **Day-trading rules**: frequent same-day round trips in a small margin account can trigger pattern-day-trader restrictions. Check Alpaca's current rules on this before running aggressive settings — do not assume.
 
+## Intelligence-layer limitations (scores, stats, dashboards)
+
+Phases 1–11 add a lot of derived numbers — copy scores, politician edge stats, relevance, conflict-risk indices, aggregate heatmaps. They organize the evidence; they do **not** manufacture edge. Read them as prompts for your own judgment, not verdicts.
+
+- **The copy score is backward-looking and heuristic.** It blends freshness, historical politician edge, trade size, clustering, and committee relevance into a 0–100 number with fixed weights (`server/intel/copyScore.js`). None of those factors is proven to predict forward returns; the weights are hand-chosen, not fitted. A 90 means "checks the boxes we decided mattered," not "will make money." The `warnings` and the thesis card exist precisely so you never act on the number alone.
+- **Politician edge stats suffer survivorship and small-sample bias.** `politician_stats` is computed from trades that resolved to a known ticker with price history; delisted/renamed names drop out (same survivorship gap as backtests), so a member's realized record can look better than reality. Members with few trades get noisy win rates and edge scores — the profile shows the trade count for exactly this reason. `edge_score` is a relative ranking within the current archive, not an absolute skill measure, and it shifts as the archive grows.
+- **Relevance and conflict-risk are association, not causation.** Committee/bill/lobbying/contract links (`server/intel/relevance.js`, the Intel "exposed stocks" tab) show that a politician is *positioned* to know something — never that a specific trade used non-public information. Treat a high conflict-risk index as "worth a closer look," not an accusation.
+- **Aggregate dashboards inherit every upstream gap.** The Intel heatmaps and "most active" tables are only as complete as ticker/sector resolution and bioguide linkage. Trades whose ticker didn't resolve to a sector, or whose politician didn't link to a committee, are silently absent from those grids — so a quiet cell can mean "no data," not "no activity."
+
+### Fantasy vs. realistic backtests
+
+The backtester runs in two spirits, and conflating them is the easiest way to fool yourself:
+
+- **Fantasy** — entry at the **transaction** date (what a politician's own trade returned) with no costs. Useful only as a theoretical ceiling; you cannot trade on information you don't have yet.
+- **Realistic** — entry at the **disclosure** date (the earliest you could actually copy), ideally with the slippage/spread/fee modeling and intraday fills enabled. This is the number to trust.
+
+The compare-modes view exists to show the gap between the two, which for congressional copying is usually large. Any strategy that only looks good in fantasy mode does not work. Always read the SPY benchmark line alongside the return.
+
 ## Legal / terms-of-service
 
 - **Truth Social scraping is a gray area.** There is no official API; the bot uses the platform's public Mastodon-style endpoints, unauthenticated. This may violate their ToS, may be rate-limited or IP-blocked at any time, and may simply stop working after a platform update. The bot degrades gracefully (logs errors, keeps running), but expect this source to be the first thing that breaks. The historical post archive used by the tweet backtester is a third-party GitHub project that could also go stale.
 - **Senate eFD scraping** targets a public government website that publishes this data by law. The scraper accepts the site's access agreement, fetches politely in small batches, and caches for an hour. Still: it can rate-limit you (typically a temporary 403), and a site redesign will break the parser.
 - **Congressional trading may be banned.** Multiple bills propose prohibiting members of Congress from trading stocks. If one passes, the congress signal source dries up permanently. The system is built so that source can die without affecting the sentiment source or the core engine.
-- **This is a personal-use tool.** Trading on behalf of others, pooling money, or selling signals crosses into regulated activity. Don't.
+- **This is a personal-use tool — and the mode ladder enforces that posture.** Fully automatic execution (`action.mode: "auto"`) is refused unless a fund explicitly opts in (`funds.json "allowAutoStrategies": true`) *and* `TRADING_MODE=live`; everything below that (research/watch, paper, manual approval) is the default. See `GET /api/posture` and the startup log for each fund's current rung.
+- **Doing this for other people is a different legal universe.** In plain English: the moment you trade someone else's money, pool funds, publish these scores/cards as recommendations, or charge for signals, you are likely acting as an investment adviser and/or broker. That is registration territory (RIA/BD obligations, disclosures, recordkeeping, fiduciary duty) enforced by the SEC and state regulators — not something a hobby project satisfies. This tool is built and licensed for **your own** research and **your own** account. Keep it that way, or talk to a securities lawyer first.
 
 ## Operational gotchas
 

@@ -32,8 +32,13 @@ Per-fund fields:
 | `risk` | env defaults | Per-fund risk limits; any omitted field falls back to the `.env` value |
 | `sentimentConfidenceThreshold` | env default | This fund's own bar for acting on sentiment signals |
 | `autoExit` | off | `{ stopLossPct, takeProfitPct, maxHoldDays }` — automatic position closing (any subset) |
+| `allowAutoStrategies` | `false` | Opt-in for fully-automatic strategy execution. A strategy with `action.mode: "auto"` is refused at save time unless its target fund sets this **and** `TRADING_MODE=live` (the top rung of the mode ladder — see below). |
 
 Rules enforced at startup: fund names must be unique, key env vars must resolve, and **two funds must not share a key pair** — the circuit breaker measures whole-account equity, so one Alpaca account = one fund.
+
+### Mode ladder (Phase 12)
+
+Automation is a ladder: **research/watch → paper → manual approval → semi-auto**. A strategy's `action.mode` picks the rung (`watch`, `paper`, `manual`, `auto`). Only `auto` is gated: it requires `allowAutoStrategies: true` on the target fund **and** `TRADING_MODE=live`, or the save is rejected. `GET /api/posture` and the startup log report each fund's current rung and active strategy count.
 
 `funds.json` is git-ignored. The `HALT` file and `TRADING_MODE=dry_run` remain **global**: dry-run simulates orders for every fund regardless of its keys.
 

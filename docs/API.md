@@ -42,6 +42,21 @@ curl -X POST localhost:3000/api/halt -H 'Content-Type: application/json' -d '{"f
 
 Body: `{ "fund": "name" }` resets that fund's kill-switch events; omit `fund` to reset **all** funds *and* remove the global `HALT` file. Think before calling it.
 
+### `GET /api/posture`
+
+Mode-ladder compliance posture per fund (Phase 12). `autoStrategiesEffective` is `true` only when the fund opts in (`funds.json "allowAutoStrategies": true`) **and** `TRADING_MODE=live`. The startup log prints the same summary; the UI status bar shows it per fund.
+
+```json
+{ "tradingMode": "dry_run",
+  "funds": [
+    { "name": "default", "account": "paper", "tradingMode": "dry_run",
+      "sources": ["congress", "sentiment"],
+      "allowAutoStrategies": false, "autoStrategiesEffective": false,
+      "activeStrategies": 2 }
+  ]
+}
+```
+
 ## Signals
 
 ### `GET /api/signals?limit=100`
@@ -243,6 +258,38 @@ Deterministic, template-based thesis card for one archived trade. Scores the tra
     "suggestedAction": "copy-candidate" }
 }
 ```
+
+## Intelligence dashboards, watchlists & alerts (Phase 11)
+
+### Aggregate dashboards — `GET /api/intel/agg/...`
+
+Read-only aggregates over the archive; each backs one tab of the **Intel** view. All recompute on request.
+
+| Endpoint | Query | Returns |
+| --- | --- | --- |
+| `GET /api/intel/agg/most-active` | `days` (30), `limit` (25) | Per-ticker buy/sell counts, distinct politicians, net sentiment, avg copy score |
+| `GET /api/intel/agg/sector-heatmap` | `days` (90) | Matrix `{ rows: sectors, cols: weeks, cells }` of net buys − sells |
+| `GET /api/intel/agg/committee-heatmap` | `days` (180) | Matrix `{ rows: committees, cols: sectors, cells }` of trade counts (needs bioguide + membership links) |
+| `GET /api/intel/agg/exposed-stocks` | `days` (180), `limit` (25) | Tickers ranked by a `riskIndex` (0–100) composed of trades + lobbying + contracts |
+| `GET /api/intel/agg/disclosure-quality` | `minTrades` (3) | The filing-speed leaderboard, embedded here |
+| `GET /api/intel/agg/copy-performance` | `limit` (10) | Disclosure-basis backtest returns vs SPY (`alphaPct`) + a per-strategy match summary |
+
+### Watchlists — `/api/watchlist`
+
+- `GET /api/watchlist?kind=` — all watched items (optionally filtered by `kind`).
+- `GET /api/watchlist/activity?limit=25` — recent trades and calendar events touching watched items, each tagged with the matching watch.
+- `POST /api/watchlist` — `{ kind, value, note? }`; `kind` ∈ `ticker|politician|sector|committee`. Upserts on `(kind, value)`; tickers are upper-cased.
+- `DELETE /api/watchlist/:id` — remove one item.
+
+### Alert rules & feed — `/api/alerts`
+
+- `GET /api/alerts/rules` — `{ rules, ruleTypes, channels }`.
+- `POST /api/alerts/rules` — `{ ruleType, params, channel }`. `ruleType` ∈ `high-score-trade | watchlist-activity | cluster | committee-relevant | stale-warning | strategy-match | tweet-catalyst`; `channel` ∈ `macos | discord | all`. `params` is rule-specific JSON, e.g. `{"minScore": 85}` or `{"clusterCount": 3, "windowDays": 30}`.
+- `PUT /api/alerts/rules/:id` — patch `{ params?, channel?, enabled? }`.
+- `DELETE /api/alerts/rules/:id` — delete a rule (its sent-alert history is detached, not removed).
+- `GET /api/alerts/feed?limit=100` — recently fired alerts (deduped by `dedup_key`).
+
+Rules evaluate at natural pipeline moments — a trade is scored, a strategy matches, the events collector runs — and route explanatory, deduplicated messages through `notifier.js`. Every alert states the *why*, built from the same detail strings as the thesis card.
 
 ## Backtesting
 

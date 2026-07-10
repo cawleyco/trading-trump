@@ -8,7 +8,11 @@ Personal automated trading system with two signal sources feeding one risk-manag
 Plus:
 - **Multiple funds** — each fund is one Alpaca account (paper or live) with its own risk limits, signal routing, kill switch, circuit breaker, and optional auto-exit rules (stop-loss / take-profit / max-hold), so a fake-money fund and a real-money fund run side by side.
 - A **backtester** for both strategies — per-politician runs, an all-politicians leaderboard, tweet backtests with full classifier visibility, intraday (minute-bar) simulation, stop-loss/take-profit exits, and a SPY benchmark overlay on every result.
+- An **intelligence layer** over the Congress archive — data-quality/freshness scoring, politician alpha profiles, an explainable copy-worthiness score with thesis cards, a committee/bill/lobbying/contract relevance graph, a political-market calendar, and a strategy builder with manual-approval and auto-trading guardrails.
+- **Intel dashboards, watchlists & alerts** — aggregate views (most-active, sector/committee heatmaps, conflict-risk exposure, disclosure quality, copy performance), watchlists across tickers/politicians/sectors/committees, and a rule-based alert engine that fires explanatory, deduplicated notifications at natural pipeline moments.
+- A **backtester** for both strategies — per-politician runs, an all-politicians leaderboard, tweet backtests with full classifier visibility, intraday (minute-bar) simulation, stop-loss/take-profit exits, and a SPY benchmark overlay on every result.
 - A **local web dashboard** with per-fund status chips and kill switches, live positions, a realized-P&L-by-source chart, and a full audit log of every decision.
+- A **compliance mode ladder** (research → paper → manual → semi-auto): auto-execution is refused unless a fund opts in *and* the process runs live, with per-fund posture in the status bar (`GET /api/posture`).
 - **Notifications** (macOS + optional Discord) on orders, halts, and failures, and a **launchd installer** to keep the bot running.
 
 > **This is not investment advice. Neither strategy has proven edge — that's what the backtester is for, and past results still don't guarantee future ones. Automated trading can lose real money quickly. Read [docs/CAVEATS.md](docs/CAVEATS.md) before going live.**

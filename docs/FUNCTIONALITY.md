@@ -112,6 +112,18 @@ The graph is stored in plain SQLite tables, not a graph database. `refreshLegisl
 
 The event collector stores upcoming/recent political catalysts in `events`: Congress.gov committee meetings for tracked committees when `CONGRESS_GOV_API_KEY` is configured, bill actions from the existing `bills` table, static Senate LDA quarterly filing deadlines, and manually maintained federal election dates from `server/lib/electionDates.json`. Earnings remain a reserved event type for a future data source. Every event carries sector tags and a derived `related_tickers` list: tickers in those sectors that appeared in Congress trades during the prior 90 days. The collector runs at startup and daily at 05:15 ET; each source skips independently on missing data or config. `GET /api/intel/events` powers the Calendar view, grouped by week with links back to matching recent trades.
 
+### Aggregate dashboards (`server/intel/aggregates.js`)
+
+Six read-only SQL aggregates over the archive back the **Intel** view's tabs (`GET /api/intel/agg/*`): most bought/sold tickers with net sentiment and average copy score; a sector × week net-buys heatmap; a committee × sector trade-count heatmap (via membership joins); politically exposed stocks ranked by a composite `riskIndex` blending trades, lobbying filings, and federal contracts; the filing-speed leaderboard; and copy performance (disclosure-basis backtest returns vs SPY plus a per-strategy match summary). Pure helpers (`sinceDaysAgo`, `buildMatrix`, `conflictRiskIndex`) are unit-tested; everything recomputes on request.
+
+### Watchlists (`watchlist` table, `server/db.js`)
+
+Watched entities of kind `ticker | politician | sector | committee` with CRUD at `/api/watchlist`. `GET /api/watchlist/activity` returns recent Congress trades and calendar events touching watched items, each tagged with the matching watch. The client `WatchButton` (Intel + Politicians rows) adds items and the Dashboard `WatchlistPanel` manages them and shows the activity feed.
+
+### Alert rules engine (`server/intel/alertEngine.js`, `alert_rules`/`alerts_sent` tables)
+
+Rules (`high-score-trade`, `watchlist-activity`, `cluster`, `committee-relevant`, `stale-warning`, `strategy-match`, `tweet-catalyst`) evaluate at natural pipeline moments — a newly-seen trade is scored (`congressPoller`), a strategy matches (`strategyEngine`), and the events collector runs (`index.js`). `evaluateRule()` is pure and unit-tested; the `dispatch*` entrypoints enrich from the DB, dedupe via `alerts_sent.dedup_key`, and route through `notifier.js` (now `channel`-aware: `macos | discord | all`). Every message states the *why*, built from the same detail strings as the thesis card. Managed and viewed in the **Alerts** view; `GET /api/alerts/feed` is the in-app feed.
+
 ## Signal sources
 
 ### Congress (`server/sources/congressPoller.js` + `congressData.js` + `senateEfd.js`)
@@ -184,7 +196,9 @@ All backtest kinds persist params + full results in the `backtests` table for in
 
 ## Web server & dashboard (`server/index.js`, `client/`)
 
-Express serves the JSON API and the built React app on `127.0.0.1:PORT` (localhost only, no auth). See [API.md](API.md) for every endpoint. The dashboard is plain-JS React + Vite + Recharts with views for Dashboard, Trades, Backtesting, Politicians, and Signal Log plus the always-visible status bar / kill switch. It's a pure API client — anything the dashboard does, you can also do with `curl`.
+Express serves the JSON API and the built React app on `127.0.0.1:PORT` (localhost only, no auth). See [API.md](API.md) for every endpoint. The dashboard is plain-JS React + Vite + Recharts with views for Dashboard, Trades, Intel, Calendar, Strategies, Approvals, Backtesting, Politicians, Influence, Alerts, and Signal Log plus the always-visible status bar / kill switch. It's a pure API client — anything the dashboard does, you can also do with `curl`. A persistent footer disclaims the tool as research, not advice.
+
+**Mode ladder (Phase 12, `server/config.js`).** Automation runs research/watch → paper → manual → semi-auto. `assertStrategyModeAllowed()` refuses saving an `auto`-mode strategy unless its target fund sets `allowAutoStrategies: true` **and** `TRADING_MODE=live`. `GET /api/posture` and the startup log report each fund's rung, account, auto-strategy state, and active strategy count; the status bar surfaces it per fund.
 
 ## Persistence (`server/db.js`)
 

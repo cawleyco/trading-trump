@@ -83,6 +83,10 @@ export default function AppShell({ path, onNavigate, children }) {
         <main className="intel-main">
           <StatusBar />
           {children}
+          <footer className="intel-disclaimer">
+            Research tool. Not investment advice. Congressional disclosure data is delayed 30–45+ days and may
+            contain errors. Built for personal use — see <code>docs/CAVEATS.md</code>.
+          </footer>
         </main>
       </div>
     </div>
