@@ -4,6 +4,7 @@ import {
 } from 'recharts'
 import { api } from '../api.js'
 import { HelpLink } from '../components/intel/components.jsx'
+import { InvestButton, PromoteButton } from '../components/InvestButton.jsx'
 
 export default function Backtest() {
   const [kind, setKind] = useState('congress')
@@ -425,6 +426,7 @@ function describeParams(h) {
 
 function LeaderboardResults({ result, onPick }) {
   const { leaderboard, politiciansConsidered } = result.results
+  const notional = result.params?.notionalPerTrade || result.results?.notionalPerTrade || 500
   return (
     <section style={{ ...card, marginTop: 24 }}>
       <h3>Leaderboard — {leaderboard.length} of {politiciansConsidered} politicians qualified</h3>
@@ -448,7 +450,14 @@ function LeaderboardResults({ result, onPick }) {
               <td style={{ color: r.returnPct < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)' }}>
                 {r.returnPct >= 0 ? '+' : ''}{r.returnPct}%
               </td>
-              <td><button onClick={() => onPick(r.politician)}>Full backtest</button></td>
+              <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button onClick={() => onPick(r.politician)}>Full backtest</button>
+                <PromoteButton
+                  from={{ kind: 'congress-backtest', politician: r.politician, notionalPerTrade: notional }}
+                  defaultName={`Copy ${r.politician}`}
+                  defaultNotional={notional}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -581,6 +590,9 @@ function CompareResults({ compare }) {
 function Results({ result }) {
   const { summary, curve, trades, warning, classifications, benchmark, entryBasis } = result.results
   const r = result.results
+  const notional = result.params?.notionalPerTrade ?? null
+  const politician = result.params?.politician
+  const canPromote = result.kind === 'congress' || (!!politician && result.kind !== 'tweet')
 
   // Merge strategy + benchmark curves into one dataset for the chart
   const chartData = (() => {
@@ -606,16 +618,29 @@ function Results({ result }) {
       {entryBasis && entryBasis !== 'transaction' && (
         <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8em', margin: '0 0 4px' }}>Entry basis: {entryBasis}</p>
       )}
-      <h3>
-        Result: {summary.totalPnl >= 0 ? '+' : ''}${summary.totalPnl.toLocaleString()}
-        {' '}({summary.returnPct >= 0 ? '+' : ''}{summary.returnPct}% on ${summary.totalInvested.toLocaleString()} deployed)
-        {benchmark && (
-          <span style={{ fontSize: '0.75em', color: 'var(--color-text-muted)', fontWeight: 400 }}>
-            {' '}vs SPY {benchmark.returnPct >= 0 ? '+' : ''}{benchmark.returnPct}%
-            {' '}({summary.returnPct >= benchmark.returnPct ? 'beat' : 'trailed'} the market)
-          </span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <h3 style={{ marginTop: 0 }}>
+          Result: {summary.totalPnl >= 0 ? '+' : ''}${summary.totalPnl.toLocaleString()}
+          {' '}({summary.returnPct >= 0 ? '+' : ''}{summary.returnPct}% on ${summary.totalInvested.toLocaleString()} deployed)
+          {benchmark && (
+            <span style={{ fontSize: '0.75em', color: 'var(--color-text-muted)', fontWeight: 400 }}>
+              {' '}vs SPY {benchmark.returnPct >= 0 ? '+' : ''}{benchmark.returnPct}%
+              {' '}({summary.returnPct >= benchmark.returnPct ? 'beat' : 'trailed'} the market)
+            </span>
+          )}
+        </h3>
+        {canPromote && (
+          <PromoteButton
+            from={{
+              kind: 'congress-backtest',
+              politician,
+              notionalPerTrade: notional,
+            }}
+            defaultName={politician ? `Copy ${politician}` : ''}
+            defaultNotional={notional || 500}
+          />
         )}
-      </h3>
+      </div>
       <p style={{ color: 'var(--color-text-muted)' }}>
         {summary.totalTrades} trades · {summary.wins}W/{summary.losses}L · {summary.winRate}% win rate
         {summary.skipped > 0 && ` · ${summary.skipped} skipped (no price data)`}
@@ -650,7 +675,7 @@ function Results({ result }) {
         <summary style={{ cursor: 'pointer' }}>Per-trade breakdown ({trades.length})</summary>
         <table style={{ marginTop: 8 }}>
           <thead>
-            <tr><th>Ticker</th><th>Entry</th><th>Exit</th><th>Entry $</th><th>Exit $</th><th>P&L</th><th>Exit via</th><th>Detail</th></tr>
+            <tr><th>Ticker</th><th>Entry</th><th>Exit</th><th>Entry $</th><th>Exit $</th><th>P&L</th><th>Exit via</th><th>Detail</th><th></th></tr>
           </thead>
           <tbody>
             {trades.map((t, i) => (
@@ -665,6 +690,21 @@ function Results({ result }) {
                 </td>
                 <td>{t.skipped ? '—' : (t.exitReason || 'time')}{t.fellBackToDaily ? ' (daily)' : ''}</td>
                 <td style={{ maxWidth: 340, color: 'var(--color-text-muted)', fontSize: '0.9em' }}>{t.label}</td>
+                <td>
+                  {!t.skipped && t.ticker && (
+                    <InvestButton
+                      ticker={t.ticker}
+                      direction={t.direction || t.side || 'buy'}
+                      notionalUsd={notional}
+                      origin={{
+                        kind: 'backtest',
+                        backtestId: result.id,
+                        label: result.kind || 'backtest',
+                        surface: 'backtest',
+                      }}
+                    />
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -693,8 +733,14 @@ function Results({ result }) {
                     {c.tickers.length === 0
                       ? <span style={{ color: 'var(--color-text-disabled)' }}>no impact</span>
                       : c.tickers.map((t, i) => (
-                          <div key={i} style={{ color: t.traded ? 'var(--color-bullish)' : 'var(--color-warning)' }}>
-                            {t.direction} {t.ticker} @ {t.confidence}{t.traded ? '' : ' (below threshold)'}
+                          <div key={i} style={{ color: t.traded ? 'var(--color-bullish)' : 'var(--color-warning)', display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <span>{t.direction} {t.ticker} @ {t.confidence}{t.traded ? '' : ' (below threshold)'}</span>
+                            <InvestButton
+                              ticker={t.ticker}
+                              direction={t.direction || 'buy'}
+                              notionalUsd={notional}
+                              origin={{ kind: 'backtest', backtestId: result.id, label: 'tweet backtest', surface: 'backtest' }}
+                            />
                           </div>
                         ))}
                   </td>

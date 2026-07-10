@@ -5,6 +5,7 @@ import {
 import { api } from '../api.js'
 import { DossierHeader, PageHeader, SectionPanel } from '../components/intel/components.jsx'
 import { WatchButton } from '../components/intel/Watchlist.jsx'
+import { InvestButton } from '../components/InvestButton.jsx'
 
 export default function Politicians() {
   const [rows, setRows] = useState([])
@@ -328,7 +329,7 @@ function RecentTrades({ trades }) {
       ) : (
         <table style={{ marginTop: 10 }}>
           <thead>
-            <tr><th>Disclosure</th><th>Ticker</th><th>Dir</th><th>Amount</th><th>Owner</th><th>Quality</th></tr>
+            <tr><th>Disclosure</th><th>Ticker</th><th>Dir</th><th>Amount</th><th>Owner</th><th>Quality</th><th></th></tr>
           </thead>
           <tbody>
             {trades.map((t) => (
@@ -339,6 +340,13 @@ function RecentTrades({ trades }) {
                 <td>{t.amount_range || (t.amount_mid ? `$${Number(t.amount_mid).toLocaleString()}` : '—')}</td>
                 <td>{t.owner || '—'}</td>
                 <td>{t.is_option ? 'option' : t.parse_confidence < 0.8 ? 'review' : 'ok'}</td>
+                <td>
+                  <InvestButton
+                    ticker={t.ticker}
+                    direction={t.type || 'buy'}
+                    origin={{ kind: 'politicians', tradeKey: t.trade_key, surface: 'politicians', politician: t.politician }}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>

@@ -79,6 +79,49 @@ Body: `{ "ticker": "AAPL", "direction": "buy", "source": "congress", "confidence
 
 Response is one outcome per fund evaluated: `[{ "fund": "dry-run", "approved": true, "simulated": true, "notionalUsd": 100, "signalId": 7 }]` — or `[]` when no enabled fund subscribes to the source.
 
+### Invest from research
+
+One-shot trades from any research surface. Always `source: "manual"` with provenance in `rawReference.origin`. Requires a target `fund` (`onlyFund` routing — funds do not need `"manual"` in `sources`).
+
+### `GET /api/invest/funds`
+
+Enabled funds for the Invest/Promote modals: `{ funds: [{ name, paper, maxTradeNotionalUsd, maxTradePctEquity, sources }], tradingMode, signalRouting }`.
+
+### `POST /api/invest/preview`
+
+Ephemeral risk-check preview — **no** `signals` / `decisions` / `orders` rows.
+
+Body: `{ "ticker": "AAPL", "direction": "buy", "fund": "dry-run", "notionalUsd": 50, "origin": { "kind": "backtest", "backtestId": 12 }, "rationale": "optional" }`
+
+Response includes `approved`, `reason`, `checks`, `notionalUsd` (capped), `maxNotionalUsd`, `tradingMode`, `isLive`, and a normalized `signal` summary.
+
+### `POST /api/invest/confirm`
+
+Same body as preview. Persists a `manual` signal and runs `processSignal` for that fund. In `dry_run` records a simulated order; in `live` submits to Alpaca.
+
+### `POST /api/strategies/promote`
+
+Creates a congress strategy from a backtest context. Tweet/YouTube kinds are rejected.
+
+Body: `{ "name": "Copy Pelosi", "mode": "manual", "fund": "dry-run", "notionalUsd": 250, "from": { "kind": "congress-backtest", "politician": "Nancy Pelosi" } }`  
+Or clone filters: `{ "from": { "kind": "strategy-backtest", "strategyId": 3 }, "mode": "manual", "fund": "dry-run" }`.
+
+Response: `{ strategy, routing, routingWarning }` — `routingWarning` is set when `SIGNAL_ROUTING` is not `strategies`.
+
+## Strategies & approvals
+
+### `GET /api/strategies` / `POST /api/strategies` / `PUT /api/strategies/:id` / `DELETE /api/strategies/:id`
+
+Strategy CRUD. Definitions use the congress filter DSL (`validateStrategyDefinition`). `auto` mode requires fund `allowAutoStrategies` and `TRADING_MODE=live`.
+
+### `POST /api/strategies/:id/backtest`
+
+Historical filter + simulate for one strategy.
+
+### `GET /api/approvals` / `POST /api/approvals/:id/approve` / `POST /api/approvals/:id/reject`
+
+Manual-approval queue for strategy `mode: manual`.
+
 ### `GET /api/attribution`
 
 Realized P&L per fund per signal source, FIFO-matched from fills:

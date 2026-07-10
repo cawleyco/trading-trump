@@ -36,6 +36,25 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  investFunds: () => req('/api/invest/funds'),
+  investPreview: (body) =>
+    req('/api/invest/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  investConfirm: (body) =>
+    req('/api/invest/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  promoteStrategy: (body) =>
+    req('/api/strategies/promote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   filingSpeed: (minTrades = 3) => req(`/api/intel/filing-speed?minTrades=${minTrades}`),
   aggMostActive: (days = 30, limit = 25) => req(`/api/intel/agg/most-active?days=${days}&limit=${limit}`),
   aggSectorHeatmap: (days = 90) => req(`/api/intel/agg/sector-heatmap?days=${days}`),

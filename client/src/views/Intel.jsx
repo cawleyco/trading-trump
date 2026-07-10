@@ -8,6 +8,7 @@ import {
   LoadingSkeleton,
 } from '../components/intel/components.jsx'
 import { WatchButton } from '../components/intel/Watchlist.jsx'
+import { InvestButton } from '../components/InvestButton.jsx'
 
 const TABS = [
   { key: 'most-active', label: 'Most active' },
@@ -107,7 +108,12 @@ function MostActive({ rows }) {
         { key: 'netSentiment', label: 'Net', numeric: true, render: (r) => <span style={{ color: netColor(r.netSentiment) }}>{r.netSentiment > 0 ? `+${r.netSentiment}` : r.netSentiment}</span> },
         { key: 'politicianCount', label: 'Politicians', numeric: true },
         { key: 'avgScore', label: 'Avg score', numeric: true, render: (r) => (r.avgScore == null ? '-' : num(r.avgScore, 1)) },
-        { key: 'watch', label: '', render: (r) => <WatchButton kind="ticker" value={r.ticker} /> },
+        { key: 'watch', label: '', render: (r) => (
+          <span style={{ display: 'inline-flex', gap: 6 }}>
+            <WatchButton kind="ticker" value={r.ticker} />
+            <InvestButton ticker={r.ticker} direction={r.netSentiment < 0 ? 'sell' : 'buy'} origin={{ kind: 'intel', surface: 'most-active' }} />
+          </span>
+        ) },
       ]}
       rows={rows}
     />
@@ -129,7 +135,12 @@ function ExposedStocks({ rows }) {
         { key: 'lobbyingCount', label: 'Lobbying', numeric: true },
         { key: 'contractCount', label: 'Contracts', numeric: true },
         { key: 'avgScore', label: 'Avg score', numeric: true, render: (r) => (r.avgScore == null ? '-' : num(r.avgScore, 1)) },
-        { key: 'watch', label: '', render: (r) => <WatchButton kind="ticker" value={r.ticker} /> },
+        { key: 'watch', label: '', render: (r) => (
+          <span style={{ display: 'inline-flex', gap: 6 }}>
+            <WatchButton kind="ticker" value={r.ticker} />
+            <InvestButton ticker={r.ticker} origin={{ kind: 'intel', surface: 'exposed-stocks' }} />
+          </span>
+        ) },
       ]}
       rows={rows}
     />

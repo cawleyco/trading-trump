@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { HelpLink } from '../components/intel/components.jsx'
+import { InvestButton } from '../components/InvestButton.jsx'
 
 export default function Approvals() {
   const [status, setStatus] = useState('pending')
@@ -69,6 +70,12 @@ export default function Approvals() {
             </div>
             {approval.status === 'pending' && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <InvestButton
+                  ticker={approval.ticker || approval.proposed?.ticker}
+                  direction={approval.proposed?.direction || approval.type || 'buy'}
+                  notionalUsd={approval.proposed?.notionalUsd}
+                  origin={{ kind: 'approval', surface: 'approvals', tradeKey: approval.trade_key }}
+                />
                 <button onClick={() => resolve(approval, 'approve')} disabled={busyId === approval.id} style={{ borderColor: 'var(--color-bullish)' }}>
                   {busyId === approval.id ? 'Working...' : 'Approve'}
                 </button>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { HelpLink } from '../components/intel/components.jsx'
+import { PromoteButton } from '../components/InvestButton.jsx'
 
 const emptyDefinition = {
   source: 'congress',
@@ -305,7 +306,18 @@ export default function Strategies() {
 
       {backtest && (
         <section style={card}>
-          <h3>Strategy Backtest Result</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <h3 style={{ marginTop: 0 }}>Strategy Backtest Result</h3>
+            <PromoteButton
+              from={{
+                kind: 'strategy-backtest',
+                strategyId: backtest.results?.strategy?.id,
+                notionalPerTrade: backtest.results?.strategy?.definition?.action?.notionalUsd,
+              }}
+              defaultName={`${backtest.results?.strategy?.name || 'Strategy'} (promoted)`}
+              defaultNotional={backtest.results?.strategy?.definition?.action?.notionalUsd || 500}
+            />
+          </div>
           <p>
             {backtest.results.strategy.name}: {backtest.results.summary.totalTrades} simulated trades,
             return {backtest.results.summary.returnPct?.toFixed?.(2) ?? backtest.results.summary.returnPct}%,

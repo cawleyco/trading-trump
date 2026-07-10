@@ -8,6 +8,7 @@ import {
   SignalCard,
 } from '../components/intel/components.jsx'
 import { normalizeSignal } from '../components/intel/signalUtils.js'
+import { InvestButton } from '../components/InvestButton.jsx'
 
 export default function SignalLog() {
   const [signals, setSignals] = useState([])
@@ -222,6 +223,12 @@ function ReviewQueue() {
                 <td>{it.parse_confidence}</td>
                 <td style={{ maxWidth: 300, color: 'var(--color-text-muted)' }}>{it.reason}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>
+                  <InvestButton
+                    ticker={it.ticker}
+                    direction={it.type || 'buy'}
+                    origin={{ kind: 'trades', tradeKey: it.trade_key, surface: 'review-queue' }}
+                    style={{ marginRight: 6 }}
+                  />
                   <button onClick={() => setExpanded(expanded === it.id ? null : it.id)} style={{ marginRight: 6 }}>
                     {expanded === it.id ? 'Hide' : 'Filing'}
                   </button>

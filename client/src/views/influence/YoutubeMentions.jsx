@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
 import { DirectionBadge, PumpRiskBadge } from './InfluenceLayout.jsx'
 import { card, muted } from './ui.js'
+import { InvestButton } from '../../components/InvestButton.jsx'
 
 export default function YoutubeMentions() {
   const [mentions, setMentions] = useState([])
@@ -42,7 +43,15 @@ export default function YoutubeMentions() {
                 <td>{m.mention_quality_score == null ? '—' : m.mention_quality_score.toFixed(0)}</td>
                 <td><PumpRiskBadge score={m.pump_risk_score} /></td>
                 <td style={{ ...muted, maxWidth: 360 }}>{m.summary || m.surrounding_text}</td>
-                <td><button onClick={() => classify(m.id)} disabled={busy === m.id}>Classify</button></td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <InvestButton
+                    ticker={m.symbol}
+                    direction={m.direction === 'bearish' ? 'sell' : 'buy'}
+                    origin={{ kind: 'influence', surface: 'youtube-mentions' }}
+                    style={{ marginRight: 6 }}
+                  />
+                  <button onClick={() => classify(m.id)} disabled={busy === m.id}>Classify</button>
+                </td>
               </tr>
             ))}
           </tbody>

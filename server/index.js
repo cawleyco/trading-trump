@@ -105,6 +105,12 @@ import {
   processSignal,
 } from './riskManager.js';
 import { makeTradeSignal } from './signal.js';
+import {
+  confirmInvest,
+  listInvestFunds,
+  previewInvest,
+  promoteStrategyFromResearch,
+} from './invest.js';
 import { notify } from './notifier.js';
 import { startCongressPoller } from './sources/congressPoller.js';
 import { startTruthSocialPoller } from './sources/truthSocialPoller.js';
@@ -262,6 +268,40 @@ app.post('/api/test-signal', async (req, res) => {
       rawReference: { manual: true },
     });
     res.json(await processSignal(signal, { onlyFund: req.body.fund || undefined }));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ---------- invest from research (preview → confirm) ----------
+app.get('/api/invest/funds', (_req, res) => {
+  res.json({
+    funds: listInvestFunds(),
+    tradingMode: config.tradingMode,
+    signalRouting: config.signals.routing,
+  });
+});
+
+app.post('/api/invest/preview', async (req, res) => {
+  try {
+    res.json(await previewInvest(req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/invest/confirm', async (req, res) => {
+  try {
+    res.json(await confirmInvest(req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/strategies/promote', (req, res) => {
+  try {
+    const result = promoteStrategyFromResearch(req.body || {});
+    res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

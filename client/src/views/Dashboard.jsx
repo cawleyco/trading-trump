@@ -12,6 +12,7 @@ import {
 } from '../components/intel/components.jsx'
 import { normalizeSignal } from '../components/intel/signalUtils.js'
 import { WatchlistPanel } from '../components/intel/Watchlist.jsx'
+import { InvestButton } from '../components/InvestButton.jsx'
 
 const LINE_COLORS = ['var(--color-accent-blue)', 'var(--color-bullish)', 'var(--color-warning)', 'var(--color-fade)', 'var(--color-accent-secondary)', 'var(--color-risk)']
 
@@ -172,9 +173,14 @@ export default function Dashboard() {
           </SectionPanel>
 
           <SectionPanel title="Pipeline Test" description={`Fire a manual signal at fund "${fund.name}" through the risk pipeline.`}>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <input value={testTicker} onChange={(e) => setTestTicker(e.target.value.toUpperCase())} style={{ width: 90 }} />
             <button onClick={fireTestSignal}>Send test signal</button>
+            <InvestButton
+              ticker={testTicker}
+              origin={{ kind: 'pipeline', surface: 'dashboard-pipeline' }}
+              label="Invest…"
+            />
           </div>
           {testResult && (
             <pre style={{ fontSize: '0.75em', background: 'var(--color-bg-panel)', padding: 10, borderRadius: 6, overflow: 'auto' }}>
@@ -290,7 +296,7 @@ export function SignalTable({ signals, onAudit }) {
         <tr>
           <th>Time</th><th><DefinitionLabel>Source</DefinitionLabel></th><th>Ticker</th><th>Dir</th><th><DefinitionLabel definition="Signal confidence from the source classifier or scoring pipeline.">Conf</DefinitionLabel></th>
           <th><DefinitionLabel definition="How directly the text or disclosure appears connected to market-moving information.">Relevance</DefinitionLabel></th><th>Fund</th><th>Decision</th><th>Order</th><th>Why</th>
-          {onAudit && <th></th>}
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -323,8 +329,23 @@ export function SignalTable({ signals, onAudit }) {
                 )}
               </td>
               {onAudit && (
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <InvestButton
+                    ticker={s.ticker}
+                    direction={s.direction || 'buy'}
+                    origin={{ kind: 'signal', signalId: s.id, surface: 'dashboard' }}
+                    style={{ marginRight: 6 }}
+                  />
+                  <button onClick={() => onAudit(s)}>Audit</button>
+                </td>
+              )}
+              {!onAudit && (
                 <td>
-                  <button onClick={() => onAudit(s)} style={{ whiteSpace: 'nowrap' }}>Audit</button>
+                  <InvestButton
+                    ticker={s.ticker}
+                    direction={s.direction || 'buy'}
+                    origin={{ kind: 'signal', signalId: s.id, surface: 'dashboard' }}
+                  />
                 </td>
               )}
             </tr>

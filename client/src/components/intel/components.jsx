@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { navigate } from '../../lib/navigate.js'
+import { InvestButton } from '../InvestButton.jsx'
 
 const TERM_DEFINITIONS = {
   actionability: 'A 0-100 estimate of whether the signal is ready to act on now. It blends market relevance, confidence, freshness, risk checks, and whether enough evidence exists.',
@@ -169,10 +170,17 @@ export function RiskBadge({ score }) {
   return <span className={`intel-badge risk-${tone}`}>RISK {Number.isFinite(n) ? n.toFixed(0) : '-'}</span>
 }
 
-export function AssetTicker({ symbol, name }) {
+export function AssetTicker({ symbol, name, investOrigin, direction = 'buy' }) {
   return (
-    <span className="intel-ticker">
+    <span className="intel-ticker" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
       {symbol || '-'}{name ? <small>{name}</small> : null}
+      {symbol && symbol !== '-' && (
+        <InvestButton
+          ticker={symbol}
+          direction={direction}
+          origin={investOrigin || { kind: 'intel', surface: 'asset-ticker' }}
+        />
+      )}
     </span>
   )
 }
@@ -219,7 +227,7 @@ export function SignalCard({
           <SourceBadge sourceType={sourceType} sourceName={sourceName} />
           <DirectionBadge direction={direction} />
         </div>
-        <AssetTicker symbol={assetSymbol} name={assetName} />
+        <AssetTicker symbol={assetSymbol} name={assetName} direction={direction === 'sell' || direction === 'bearish' ? 'sell' : 'buy'} investOrigin={{ kind: 'signal', surface: 'signal-card' }} />
       </div>
       <div className="intel-signal-title-row">
         <h3>{title}</h3>

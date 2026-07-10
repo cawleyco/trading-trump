@@ -6,6 +6,7 @@ import {
   IntelligenceTable,
   EmptyState,
 } from '../components/intel/components.jsx'
+import { InvestButton } from '../components/InvestButton.jsx'
 
 const RULE_HELP = {
   'high-score-trade': 'Fires when a scored trade\'s copy score ≥ minScore. Params: {"minScore": 85}',
@@ -91,6 +92,20 @@ export default function Alerts() {
               { key: 'sent_at', label: 'When', render: (r) => r.sent_at },
               { key: 'rule_type', label: 'Rule', mono: true, render: (r) => r.rule_type || '(deleted)' },
               { key: 'message', label: 'Message' },
+              {
+                key: 'invest',
+                label: '',
+                render: (r) => {
+                  const ticker = tickerFromAlert(r)
+                  if (!ticker) return null
+                  return (
+                    <InvestButton
+                      ticker={ticker}
+                      origin={{ kind: 'alert', alertId: r.id, surface: 'alerts' }}
+                    />
+                  )
+                },
+              },
             ]}
             rows={feed}
           />
@@ -98,6 +113,13 @@ export default function Alerts() {
       </SectionPanel>
     </>
   )
+}
+
+function tickerFromAlert(row) {
+  const fromKey = String(row.dedup_key || '').split(':').find((part) => /^[A-Z][A-Z.]{0,9}$/.test(part))
+  if (fromKey) return fromKey
+  const match = String(row.message || '').match(/\b([A-Z]{1,5}(?:\.[A-Z])?)\b/)
+  return match?.[1] || null
 }
 
 async function toggle(rule, reload, setError) {

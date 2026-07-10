@@ -22,6 +22,7 @@ Plus:
 | Doc | What's in it |
 |---|---|
 | [docs/USAGE.md](docs/USAGE.md) | **How to use** — setup, running, every dashboard feature, the recommended path to live trading, emergency stops, maintenance |
+| [docs/INVEST_FROM_RESEARCH.md](docs/INVEST_FROM_RESEARCH.md) | **Invest / Promote** — bridge from backtests & research surfaces into the live risk pipeline |
 | [docs/CAVEATS.md](docs/CAVEATS.md) | **Things to watch out for** — financial/legal risks, operational gotchas, cost control, troubleshooting table |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every `.env` setting, what it defaults to, and what it controls |
 | [docs/FUNCTIONALITY.md](docs/FUNCTIONALITY.md) | What every module does — signal pipeline, risk checks in order, data sources, backtest mechanics, database schema |

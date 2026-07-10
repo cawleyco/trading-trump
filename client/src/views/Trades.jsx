@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 import { HelpLink } from '../components/intel/components.jsx'
+import { InvestButton } from '../components/InvestButton.jsx'
 
 export default function Trades() {
   const initialFilters = () => {
@@ -124,6 +125,12 @@ function TradeTable({ rows, expanded, setExpanded, scoreOne }) {
               <td><Recommendation value={r.recommendation} /></td>
               <td><Warnings warnings={r.warnings || []} /></td>
               <td style={{ whiteSpace: 'nowrap' }}>
+                <InvestButton
+                  ticker={r.ticker}
+                  direction={r.type || 'buy'}
+                  origin={{ kind: 'thesis', tradeKey: r.trade_key, surface: 'trades', politician: r.politician }}
+                  style={{ marginRight: 6 }}
+                />
                 <button onClick={() => setExpanded(expanded === r.trade_key ? null : r.trade_key)} style={{ marginRight: 6 }}>
                   {expanded === r.trade_key ? 'Hide' : 'Details'}
                 </button>

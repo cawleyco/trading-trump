@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../../api.js'
 import { SectionPanel } from './components.jsx'
+import { InvestButton } from '../InvestButton.jsx'
 
 const KIND_LABEL = { ticker: 'Ticker', politician: 'Politician', sector: 'Sector', committee: 'Committee' }
 
@@ -84,13 +85,20 @@ export function WatchlistPanel() {
         ) : (
           <div style={{ display: 'grid', gap: 6 }}>
             {activity.trades.map((t) => (
-              <a key={t.trade_key} href={`/app/trades?ticker=${encodeURIComponent(t.ticker)}`} style={activityRow}>
-                <span style={{ color: 'var(--color-text-muted)', minWidth: 88 }}>{t.disclosure_date || '—'}</span>
-                <span>
-                  {t.politician} · <strong style={{ color: t.type === 'buy' ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{t.type}</strong> {t.ticker}
-                  {t.amount_range ? ` · ${t.amount_range}` : ''}
-                </span>
-              </a>
+              <div key={t.trade_key} style={{ ...activityRow, justifyContent: 'space-between' }}>
+                <a href={`/app/trades?ticker=${encodeURIComponent(t.ticker)}`} style={{ ...activityRow, flex: 1, textDecoration: 'none', color: 'inherit', padding: 0, border: 'none' }}>
+                  <span style={{ color: 'var(--color-text-muted)', minWidth: 88 }}>{t.disclosure_date || '—'}</span>
+                  <span>
+                    {t.politician} · <strong style={{ color: t.type === 'buy' ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{t.type}</strong> {t.ticker}
+                    {t.amount_range ? ` · ${t.amount_range}` : ''}
+                  </span>
+                </a>
+                <InvestButton
+                  ticker={t.ticker}
+                  direction={t.type || 'buy'}
+                  origin={{ kind: 'watchlist', tradeKey: t.trade_key, surface: 'watchlist' }}
+                />
+              </div>
             ))}
             {activity.events.map((ev) => (
               <div key={`ev-${ev.id}`} style={activityRow}>

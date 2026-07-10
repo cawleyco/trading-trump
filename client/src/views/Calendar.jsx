@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 import { HelpLink } from '../components/intel/components.jsx'
+import { InvestButton } from '../components/InvestButton.jsx'
 
 const DEFAULT_DAYS = 90
 
@@ -184,9 +185,12 @@ function TickerRow({ tickers }) {
       <span style={labelStyle}>Tickers</span>
       <span style={tokens}>
         {tickers.map((ticker) => (
-          <a key={ticker} href={`/app/trades?ticker=${encodeURIComponent(ticker)}`} style={{ ...chip, color: 'var(--color-accent-blue)', textDecoration: 'none' }}>
-            {ticker}
-          </a>
+          <span key={ticker} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+            <a href={`/app/trades?ticker=${encodeURIComponent(ticker)}`} style={{ ...chip, color: 'var(--color-accent-blue)', textDecoration: 'none' }}>
+              {ticker}
+            </a>
+            <InvestButton ticker={ticker} origin={{ kind: 'calendar', surface: 'calendar' }} />
+          </span>
         ))}
       </span>
     </div>

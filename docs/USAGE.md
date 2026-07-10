@@ -65,6 +65,8 @@ The topbar includes a **Theme** selector (Terminal, Paper, Midnight, Contrast). 
 - **Open Positions** — live from that fund's Alpaca account with unrealized P&L.
 - **Limits** — the fund's effective risk limits, sources, sentiment threshold, and auto-exit rules, so you can confirm what the bot thinks its caps are.
 - **Pipeline Test** — fires a manual buy signal at the selected fund through the *real* risk pipeline. In dry-run it simulates; in live mode it places a real order, so treat it accordingly.
+- **Invest** — on almost every ticker surface (backtests, trades, intel, alerts, watchlists, calendar, YouTube, signal cards, etc.). Opens a two-step modal: configure fund/direction/size → **Preview risk checks** (no DB writes) → **Confirm**. Trades are audited as `source: manual` with an `origin` pointing back to the research surface. Size pre-fills from backtest `$/trade` when available and is always capped by the fund's risk limits. Last-used fund is remembered; defaults to a paper fund.
+- **Promote** — on congress / strategy backtest results (not tweet or YouTube). Creates a live strategy from the backtest filters; you always pick mode (default **manual**) and fund. If `SIGNAL_ROUTING` is still `legacy`, the UI warns that the strategy will sit idle until you switch routing.
 - **Realized P&L by source** — cumulative realized P&L from closed positions, attributed to the signal source that opened them (per fund). This chart answers "is congress-copying or sentiment actually making me money?" It appears once positions have been closed.
 - **Recent Signals** — the last signals with per-fund decision (✅/❌), order status, and reasoning.
 
@@ -92,7 +94,7 @@ Backtests **every** politician with at least *min trades* in the period and rank
 
 **Stop-loss % / Take-profit %** (all except leaderboard) — optional exit levels checked bar by bar: exit at the level when crossed intrabar, at the open when the price gaps past it, and stop-before-target when both hit in the same bar (conservative).
 
-**Results** show total P&L, win rate, a cumulative P&L chart with a **SPY benchmark overlay** (the same dollars deployed into SPY on the same dates — the honest "should I have just bought the index?" line), an expandable per-trade table (entry/exit, prices, P&L, exit reason), and for tweet backtests an expandable **"What the classifier said"** table showing every post's ticker calls with confidences — near-misses below your threshold are highlighted, so an empty result is always explainable. Trades that couldn't be simulated are listed as "skipped" with the reason — excluded from totals rather than silently guessed.
+**Results** show total P&L, win rate, a cumulative P&L chart with a **SPY benchmark overlay** (the same dollars deployed into SPY on the same dates — the honest "should I have just bought the index?" line), an expandable per-trade table (entry/exit, prices, P&L, exit reason) with **Invest** on each trade, **Promote** on congress results, and for tweet backtests an expandable **"What the classifier said"** table showing every post's ticker calls with confidences — near-misses below your threshold are highlighted, so an empty result is always explainable. Trades that couldn't be simulated are listed as "skipped" with the reason — excluded from totals rather than silently guessed.
 
 Every backtest is saved; the **Past Backtests** table reloads any previous run instantly without recomputing.
 

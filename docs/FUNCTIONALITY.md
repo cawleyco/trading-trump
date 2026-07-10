@@ -9,7 +9,13 @@ signal source → makeTradeSignal() → processSignal() ─┬→ fund A: [check
                                                      └→ fund B: [checks] → order/rejection
 ```
 
-A signal is stored once, then **fans out to every enabled fund subscribed to its source** (per `funds.json`); each fund runs the full check list with its own limits and records its own decision. The pipeline never throws on a rejected signal — rejection is a normal, logged outcome.
+Manual research follow-through uses the same path via `source: 'manual'` (`server/invest.js`):
+`POST /api/invest/preview` → `previewSignal()` (ephemeral checks, no DB writes) →
+`POST /api/invest/confirm` → `processSignal(..., { onlyFund, requestedNotionalUsd })`.
+Congress/strategy backtests can also `POST /api/strategies/promote` to create a strategy
+(default mode `manual`) without flipping `SIGNAL_ROUTING` automatically.
+
+A signal is stored once, then **fans out to every enabled fund subscribed to its source** (per `funds.json`); each fund runs the full check list with its own limits and records its own decision. The pipeline never throws on a rejected signal — rejection is a normal, logged outcome. Manual invest and auto-exit always target a single fund via `onlyFund`.
 
 ### `server/signal.js` — TradeSignal
 
@@ -17,19 +23,21 @@ The single normalized shape both sources emit:
 
 | Field | Meaning |
 |---|---|
-| `source` | `congress`, `sentiment`, or `auto-exit` |
+| `source` | `congress`, `sentiment`, `auto-exit`, or `manual` |
 | `ticker` | Uppercased, validated (letters + dots, e.g. `BRK.B`) |
 | `direction` | `buy` or `sell` |
 | `confidence` | 0–1 (sentiment only; null for congress) |
 | `rationale` | Human-readable "why" for the audit log |
-| `rawReference` | The original source payload (filing row / post + classification), stored as JSON |
+| `rawReference` | The original source payload (filing row / post + classification), stored as JSON. Manual invests store `{ manual: true, origin: { kind, ... } }`. |
 | `eventTimestamp` | When the underlying event happened (disclosure date / post time) |
 
 Invalid signals (bad ticker, direction, confidence out of range) throw at creation and never reach the risk manager.
 
 ### `server/riskManager.js` — the gatekeeper
 
-For each target fund, `processSignal` runs these checks **in order**; the first failure rejects the signal for that fund with that reason:
+`evaluateSignalForFund` / `previewSignal` run the same checks without writing rows.
+`processSignal` persists the signal, then for each target fund runs these checks **in order**; the first failure rejects the signal for that fund with that reason.
+Optional `requestedNotionalUsd` is capped by the fund's max notional / % equity.
 
 1. **Halted?** — global `HALT` file or this fund's untripped circuit-breaker event.
 2. **Confidence gate** — sentiment signals below the fund's `sentimentConfidenceThreshold` are rejected here (each fund sets its own bar).

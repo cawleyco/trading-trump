@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
 import { DirectionBadge } from './InfluenceLayout.jsx'
 import { card, muted } from './ui.js'
+import { InvestButton } from '../../components/InvestButton.jsx'
 
 export default function YoutubeSignals() {
   const [signals, setSignals] = useState([])
@@ -18,7 +19,7 @@ export default function YoutubeSignals() {
       {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       {signals.length === 0 ? <p style={muted}>No signals generated yet.</p> : (
         <table>
-          <thead><tr><th>Time</th><th>Asset</th><th>Direction</th><th>Strength</th><th>Action</th><th>Explanation</th></tr></thead>
+          <thead><tr><th>Time</th><th>Asset</th><th>Direction</th><th>Strength</th><th>Action</th><th>Explanation</th><th></th></tr></thead>
           <tbody>
             {signals.map((s) => (
               <tr key={s.id}>
@@ -28,6 +29,13 @@ export default function YoutubeSignals() {
                 <td>{s.strength_score.toFixed(0)}</td>
                 <td>{s.suggested_action}</td>
                 <td style={{ ...muted, maxWidth: 460 }}>{s.explanation}</td>
+                <td>
+                  <InvestButton
+                    ticker={s.symbol}
+                    direction={s.direction === 'bearish' || s.suggested_action === 'avoid' ? 'sell' : 'buy'}
+                    origin={{ kind: 'influence', surface: 'youtube-signals', signalId: s.id }}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>

@@ -1,11 +1,11 @@
 // Normalized trade signal shared by every signal source and the backtester.
 
-const SOURCES = ['congress', 'sentiment', 'auto-exit'];
+const SOURCES = ['congress', 'sentiment', 'auto-exit', 'manual'];
 const DIRECTIONS = ['buy', 'sell'];
 
 /**
  * @param {object} raw
- * @param {'congress'|'sentiment'} raw.source
+ * @param {'congress'|'sentiment'|'auto-exit'|'manual'} raw.source
  * @param {string} raw.ticker           e.g. "NVDA"
  * @param {'buy'|'sell'} raw.direction
  * @param {number} [raw.confidence]     0..1, required for sentiment

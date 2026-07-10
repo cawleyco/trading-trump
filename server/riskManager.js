@@ -193,28 +193,30 @@ const liveDeps = {
 };
 
 /**
- * Evaluate a signal for ONE fund: run every safety check, persist the
- * decision, and (if approved) submit or simulate the order.
+ * Run every safety check for one fund without writing to the DB.
+ * Used by previewSignal and by processSignalForFund before persistence.
  */
-async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
+export async function evaluateSignalForFund(signal, fund, deps = liveDeps, { requestedNotionalUsd } = {}) {
   const checks = [];
   const recordCheck = (check, result) => {
-    checks.push({ check, pass: !!result.pass, detail: result.detail });
+    checks.push({ check, pass: !!result.pass, detail: result.detail, skipped: !!result.skipped });
     return result;
   };
-  const reject = (reason) => {
-    insertDecision({ signalId, fund: fund.name, approved: false, reason, checks });
-    log.info('risk', `[${fund.name}] REJECTED ${signal.ticker} ${signal.direction}: ${reason}`, { signalId });
-    return { fund: fund.name, approved: false, reason, signalId };
-  };
+  const reject = (reason) => ({
+    fund: fund.name,
+    approved: false,
+    reason,
+    checks,
+    notionalUsd: null,
+    maxNotionalUsd: null,
+    equity: null,
+  });
 
   try {
-    // 1. Kill switches (global HALT file + this fund's circuit breaker)
     const haltReason = fundHaltReason(fund.name);
     recordCheck('halt', { pass: !haltReason, detail: haltReason || 'not halted' });
     if (haltReason) return reject(haltReason);
 
-    // 2. Confidence gating with this fund's own threshold
     if (
       signal.source === 'sentiment' &&
       (signal.confidence ?? 0) < fund.sentimentConfidenceThreshold
@@ -231,18 +233,15 @@ async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
       ? { pass: true, detail: `confidence ${signal.confidence} >= fund threshold ${fund.sentimentConfidenceThreshold}` }
       : { pass: true, detail: 'skipped: non-sentiment signal' });
 
-    // 3. Market hours
     const marketOpen = await deps.isMarketOpen();
     recordCheck('market-open', { pass: marketOpen, detail: marketOpen ? 'market is open' : 'market is closed' });
     if (!marketOpen) return reject('market is closed');
 
-    // 4. Refresh this fund's P&L and re-check the breaker with fresh numbers
     await deps.refreshFundPnl(fund);
     const freshHaltReason = fundHaltReason(fund.name);
     recordCheck('daily-pnl-circuit-breaker', { pass: !freshHaltReason, detail: freshHaltReason || 'daily loss within limits' });
     if (freshHaltReason) return reject(freshHaltReason);
 
-    // 5. Symbol tradable on Alpaca?
     const asset = await deps.getTradableAsset(signal.ticker);
     recordCheck('tradable', {
       pass: !!asset,
@@ -254,9 +253,9 @@ async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
     const account = await client.getAccount();
     const equity = Number(account.equity);
     const positions = await client.getPositions();
-    const maxBuyNotional = Math.min(fund.risk.maxTradeNotionalUsd, (fund.risk.maxTradePctEquity / 100) * equity);
+    const pctCap = (fund.risk.maxTradePctEquity / 100) * equity;
+    const maxBuyNotional = Math.min(fund.risk.maxTradeNotionalUsd, pctCap);
 
-    // 6. Sells only close existing long positions — this system never shorts.
     const position = positions.find((p) => p.symbol === signal.ticker);
     if (signal.direction === 'sell' && !position) {
       recordCheck('no-shorting', { pass: false, detail: `no open position in ${signal.ticker} to sell` });
@@ -266,7 +265,6 @@ async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
       ? { pass: true, detail: `open ${signal.ticker} position exists` }
       : { pass: true, detail: 'skipped: buy signal' });
 
-    // 7. Exposure caps (buys only; auto-exit sells always reduce exposure)
     if (signal.direction === 'buy') {
       if (positions.length >= fund.risk.maxOpenPositions) {
         recordCheck('max-open-positions', { pass: false, detail: `${positions.length}/${fund.risk.maxOpenPositions} positions open` });
@@ -294,12 +292,15 @@ async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
         marketValue: Number(p.market_value),
         sector: getTickerMeta(p.symbol)?.sector ?? null,
       }));
+      const sectorBuyNotional = requestedNotionalUsd != null
+        ? Math.min(maxBuyNotional, Number(requestedNotionalUsd))
+        : maxBuyNotional;
       const sectorResult = recordCheck('max-sector-exposure', checkSectorExposure({
         capPct: riskValue(fund, 'maxSectorExposurePct'),
         tickerSector: targetMeta?.sector ?? null,
         positions: positionsWithSectors,
         equity,
-        buyNotionalUsd: maxBuyNotional,
+        buyNotionalUsd: sectorBuyNotional,
       }));
       if (!sectorResult.pass && !sectorResult.skipped) return reject(sectorResult.detail);
 
@@ -360,14 +361,14 @@ async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
     }));
     if (!minAutoResult.pass && !minAutoResult.skipped) return reject(minAutoResult.detail);
 
-    // 8. Position sizing: smaller of hard $ cap and % of equity
-    const pctCap = (fund.risk.maxTradePctEquity / 100) * equity;
-    let notionalUsd = Math.min(fund.risk.maxTradeNotionalUsd, pctCap);
+    let notionalUsd = maxBuyNotional;
+    if (requestedNotionalUsd != null && Number.isFinite(Number(requestedNotionalUsd))) {
+      notionalUsd = Math.min(notionalUsd, Math.max(0, Number(requestedNotionalUsd)));
+    }
     if (signal.direction === 'sell') {
-      // Close up to the whole position, never more than we hold
       notionalUsd = signal.source === 'auto-exit'
         ? Math.abs(Number(position.market_value))
-        : Math.min(Math.abs(Number(position.market_value)), notionalUsd * 10);
+        : Math.min(Math.abs(Number(position.market_value)), Math.max(notionalUsd, maxBuyNotional) * 10);
     }
     const sizingPass = notionalUsd >= 1;
     recordCheck('position-sizing', {
@@ -376,16 +377,46 @@ async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
     });
     if (!sizingPass) return reject(`computed notional $${notionalUsd.toFixed(2)} below $1 minimum`);
 
+    return {
+      fund: fund.name,
+      approved: true,
+      reason: `passed all checks; sized at $${notionalUsd.toFixed(2)}`,
+      checks,
+      notionalUsd,
+      maxNotionalUsd: maxBuyNotional,
+      equity,
+      client,
+    };
+  } catch (err) {
+    log.error('risk', `[${fund.name}] error evaluating signal for ${signal.ticker}: ${err.message}`);
+    return reject(`error during processing: ${err.message}`);
+  }
+}
+
+/**
+ * Evaluate a signal for ONE fund: run every safety check, persist the
+ * decision, and (if approved) submit or simulate the order.
+ */
+async function processSignalForFund(signal, signalId, fund, deps = liveDeps, { requestedNotionalUsd } = {}) {
+  const evaluation = await evaluateSignalForFund(signal, fund, deps, { requestedNotionalUsd });
+  const { checks, notionalUsd, client, ...rest } = evaluation;
+
+  if (!evaluation.approved) {
+    insertDecision({ signalId, fund: fund.name, approved: false, reason: evaluation.reason, checks });
+    log.info('risk', `[${fund.name}] REJECTED ${signal.ticker} ${signal.direction}: ${evaluation.reason}`, { signalId });
+    return { fund: fund.name, approved: false, reason: evaluation.reason, signalId, checks };
+  }
+
+  try {
     const decisionId = insertDecision({
       signalId,
       fund: fund.name,
       approved: true,
-      reason: `passed all checks; sized at $${notionalUsd.toFixed(2)}`,
+      reason: evaluation.reason,
       notionalUsd,
       checks,
     });
 
-    // 9. Dry-run gate — the last line before real money moves
     if (!deps.isLive) {
       insertOrder({
         decisionId,
@@ -396,7 +427,7 @@ async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
         status: 'simulated',
       });
       log.info('risk', `[${fund.name}] DRY RUN — would ${signal.direction} $${notionalUsd.toFixed(2)} of ${signal.ticker}`, { signalId });
-      return { fund: fund.name, approved: true, simulated: true, notionalUsd, signalId };
+      return { fund: fund.name, approved: true, simulated: true, notionalUsd, signalId, checks };
     }
 
     const order = await client.submitNotionalOrder({
@@ -421,19 +452,66 @@ async function processSignalForFund(signal, signalId, fund, deps = liveDeps) {
       'Order submitted',
       `[${fund.name}] ${signal.direction} $${notionalUsd.toFixed(2)} ${signal.ticker} (${signal.source})`
     );
-    return { fund: fund.name, approved: true, simulated: false, notionalUsd, signalId, alpacaOrderId: order.id };
+    return {
+      fund: fund.name,
+      approved: true,
+      simulated: false,
+      notionalUsd,
+      signalId,
+      alpacaOrderId: order.id,
+      checks,
+      ...rest,
+    };
   } catch (err) {
+    const reason = `error during processing: ${err.message}`;
+    insertDecision({ signalId, fund: fund.name, approved: false, reason, checks });
     log.error('risk', `[${fund.name}] error processing signal for ${signal.ticker}: ${err.message}`, { signalId });
-    return reject(`error during processing: ${err.message}`);
+    return { fund: fund.name, approved: false, reason, signalId, checks };
   }
+}
+
+function resolveTargetFunds(signal, { onlyFund, _funds } = {}) {
+  return (_funds ?? enabledFunds).filter((f) => {
+    if (onlyFund) return f.name === onlyFund;
+    if (signal.source === 'auto-exit' || signal.source === 'manual') return false;
+    return f.sources.includes(signal.source);
+  });
+}
+
+/**
+ * Run risk checks without persisting signals/decisions/orders.
+ * Requires `onlyFund` — previews are always single-fund.
+ */
+export async function previewSignal(signal, { onlyFund, requestedNotionalUsd, _deps, _funds } = {}) {
+  if (!onlyFund) throw new Error('previewSignal requires onlyFund');
+  const targets = resolveTargetFunds(signal, { onlyFund, _funds });
+  if (targets.length === 0) {
+    return {
+      fund: onlyFund,
+      approved: false,
+      reason: `fund "${onlyFund}" not found/enabled`,
+      checks: [],
+      notionalUsd: null,
+      maxNotionalUsd: null,
+      tradingMode: config.tradingMode,
+      isLive: config.isLive,
+    };
+  }
+  const evaluation = await evaluateSignalForFund(signal, targets[0], _deps ?? liveDeps, { requestedNotionalUsd });
+  const { client: _client, ...safe } = evaluation;
+  return {
+    ...safe,
+    tradingMode: config.tradingMode,
+    isLive: (_deps ?? liveDeps).isLive,
+  };
 }
 
 /**
  * Persist a signal and fan it out to every enabled fund subscribed to its
- * source. `onlyFund` restricts routing (used by auto-exit and test signals).
+ * source. `onlyFund` restricts routing (used by auto-exit, test, and invest).
  * Returns one outcome per fund evaluated.
  */
-export async function processSignal(signal, { onlyFund, _deps, _funds } = {}) {
+export async function processSignal(signal, { onlyFund, requestedNotionalUsd, _deps, _funds } = {}) {
   const signalId = insertSignal({
     source: signal.source,
     ticker: signal.ticker,
@@ -443,12 +521,7 @@ export async function processSignal(signal, { onlyFund, _deps, _funds } = {}) {
     rawReference: signal.rawReference,
   });
 
-  const targets = (_funds ?? enabledFunds).filter((f) => {
-    if (onlyFund) return f.name === onlyFund;
-    // auto-exit signals are always fund-targeted; never fan out
-    if (signal.source === 'auto-exit') return false;
-    return f.sources.includes(signal.source);
-  });
+  const targets = resolveTargetFunds(signal, { onlyFund, _funds });
 
   if (targets.length === 0) {
     insertDecision({
@@ -462,7 +535,7 @@ export async function processSignal(signal, { onlyFund, _deps, _funds } = {}) {
 
   const outcomes = [];
   for (const fund of targets) {
-    outcomes.push(await processSignalForFund(signal, signalId, fund, _deps ?? liveDeps));
+    outcomes.push(await processSignalForFund(signal, signalId, fund, _deps ?? liveDeps, { requestedNotionalUsd }));
   }
   return outcomes;
 }
