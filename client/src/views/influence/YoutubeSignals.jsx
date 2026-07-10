@@ -15,7 +15,7 @@ export default function YoutubeSignals() {
     <section style={card}>
       <h3>YouTube Research Signals</h3>
       <p style={muted}>These are market-intelligence signals only. They are not sent to the live order pipeline.</p>
-      {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       {signals.length === 0 ? <p style={muted}>No signals generated yet.</p> : (
         <table>
           <thead><tr><th>Time</th><th>Asset</th><th>Direction</th><th>Strength</th><th>Action</th><th>Explanation</th></tr></thead>

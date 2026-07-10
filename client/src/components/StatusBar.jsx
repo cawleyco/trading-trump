@@ -20,7 +20,7 @@ export default function StatusBar() {
   }, [])
 
   if (error) {
-    return <div style={bar('rgba(224, 90, 90, 0.16)')}>Cannot reach bot server: {error}</div>
+    return <div style={bar('var(--color-status-error-bg)')}>Cannot reach bot server: {error}</div>
   }
   if (!status) return <div style={bar('var(--color-bg-elevated)')}>Loading status...</div>
 
@@ -28,7 +28,7 @@ export default function StatusBar() {
 
   return (
     <div style={{ marginTop: 16 }}>
-      <div style={{ ...bar(live ? 'rgba(249, 115, 22, 0.14)' : 'rgba(56, 193, 114, 0.12)'), marginTop: 0 }}>
+      <div style={{ ...bar(live ? 'var(--color-status-live-bg)' : 'var(--color-status-dry-bg)'), marginTop: 0 }}>
         <strong>{live ? 'LIVE MODE' : 'DRY RUN'}</strong>
         {status.globallyHalted && <strong style={{ color: 'var(--color-bearish)' }}> - GLOBAL HALT FILE PRESENT</strong>}
         <span style={{ flex: 1 }} />
@@ -64,11 +64,11 @@ function FundChip({ fund, posture, live, onChange }) {
 
   const dayPnl = fund.dailyPnl ? fund.dailyPnl.realized_pnl + fund.dailyPnl.unrealized_pnl : 0
   const bg = fund.halted
-    ? 'rgba(224, 90, 90, 0.16)'
+    ? 'var(--color-status-error-bg)'
     : fund.error
-      ? 'rgba(245, 177, 76, 0.14)'
+      ? 'var(--color-accent-soft)'
       : !fund.paper && live
-        ? 'rgba(249, 115, 22, 0.14)'
+        ? 'var(--color-status-live-bg)'
         : 'var(--color-bg-panel)'
 
   return (
@@ -102,7 +102,7 @@ function FundChip({ fund, posture, live, onChange }) {
       <span style={{ flex: 1 }} />
       {fund.halted
         ? <button onClick={onResume}>Reset & Resume</button>
-        : <button onClick={onHalt} style={{ background: 'rgba(224, 90, 90, 0.18)', borderColor: 'var(--color-bearish)' }}>Halt</button>}
+        : <button onClick={onHalt} style={{ background: 'var(--color-badge-avoid-bg)', borderColor: 'var(--color-bearish)' }}>Halt</button>}
     </div>
   )
 }

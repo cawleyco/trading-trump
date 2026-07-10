@@ -63,7 +63,7 @@ export function WatchlistPanel() {
 
   return (
     <SectionPanel title="Watchlist" description="Latest archive activity touching your watched tickers, politicians, sectors, and committees.">
-      {error && <p style={{ color: 'var(--color-bearish, #f87171)' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       {items.length === 0 ? (
         <p className="intel-muted">Nothing watched yet. Add tickers, politicians, or sectors from the Intel and Politicians views.</p>
       ) : (
@@ -87,7 +87,7 @@ export function WatchlistPanel() {
               <a key={t.trade_key} href={`/app/trades?ticker=${encodeURIComponent(t.ticker)}`} style={activityRow}>
                 <span style={{ color: 'var(--color-text-muted)', minWidth: 88 }}>{t.disclosure_date || '—'}</span>
                 <span>
-                  {t.politician} · <strong style={{ color: t.type === 'buy' ? '#4ade80' : '#f87171' }}>{t.type}</strong> {t.ticker}
+                  {t.politician} · <strong style={{ color: t.type === 'buy' ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{t.type}</strong> {t.ticker}
                   {t.amount_range ? ` · ${t.amount_range}` : ''}
                 </span>
               </a>

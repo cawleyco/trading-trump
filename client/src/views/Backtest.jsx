@@ -324,7 +324,7 @@ export default function Backtest() {
             </>
           )}
 
-          <button onClick={run} disabled={running} style={{ borderColor: '#6366f1' }}>
+          <button onClick={run} disabled={running} style={{ borderColor: 'var(--color-accent-blue)' }}>
             {running ? 'Running…' : 'Run backtest'}
           </button>
           {kind === 'congress' && (
@@ -334,27 +334,27 @@ export default function Backtest() {
           )}
         </div>
         {(kind === 'congress' || kind === 'leaderboard' || kind === 'walk-forward') && entryBasis === 'transaction' && (
-          <p style={{ background: '#7f1d1d', borderRadius: 6, padding: '8px 12px', marginTop: 10 }}>
+          <p style={{ background: 'var(--color-status-error-bg)', borderRadius: 6, padding: '8px 12px', marginTop: 10 }}>
             ⚠️ Fantasy mode: assumes you knew on the trade date — not achievable. Upper bound only.
           </p>
         )}
         {kind === 'tweet' && (
-          <p style={{ color: '#a1a1aa', fontSize: '0.8em' }}>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>
             Each post is classified with a Claude API call — the post cap keeps cost bounded.
             Hours mode simulates on minute bars (falls back to daily when unavailable).
           </p>
         )}
         {kind === 'leaderboard' && (
-          <p style={{ color: '#a1a1aa', fontSize: '0.8em' }}>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>
             Backtests every politician with ≥ min trades in the period and ranks them by return. Can take a while — one price series per traded ticker.
           </p>
         )}
         {kind === 'walk-forward' && (
-          <p style={{ color: '#a1a1aa', fontSize: '0.8em' }}>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>
             Splits the range into folds, ranks politicians in each fold, then copies only that fold's top-N into the <em>next</em> fold — measuring out-of-sample return. High in-sample rank that flops out-of-sample is the overfitting tell.
           </p>
         )}
-        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       </section>
 
       {compare && <CompareResults compare={compare} />}
@@ -377,7 +377,7 @@ export default function Backtest() {
                 <tr key={h.id}>
                   <td>{h.id}</td>
                   <td>{h.kind}</td>
-                  <td style={{ color: '#a1a1aa', maxWidth: 480 }}>{describeParams(h)}</td>
+                  <td style={{ color: 'var(--color-text-muted)', maxWidth: 480 }}>{describeParams(h)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>{h.created_at}</td>
                   <td><button onClick={() => loadPast(h.id)}>View</button></td>
                 </tr>
@@ -428,7 +428,7 @@ function LeaderboardResults({ result, onPick }) {
   return (
     <section style={{ ...card, marginTop: 24 }}>
       <h3>Leaderboard — {leaderboard.length} of {politiciansConsidered} politicians qualified</h3>
-      <p style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
+      <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85em' }}>
         Ranked by return on deployed capital. Copying past winners does not guarantee future results.
       </p>
       <table>
@@ -442,10 +442,10 @@ function LeaderboardResults({ result, onPick }) {
               <td>{r.politician}</td>
               <td>{r.trades}{r.skipped > 0 ? ` (+${r.skipped} skipped)` : ''}</td>
               <td>{r.winRate}%</td>
-              <td style={{ color: r.totalPnl < 0 ? '#fca5a5' : '#86efac' }}>
+              <td style={{ color: r.totalPnl < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)' }}>
                 {r.totalPnl >= 0 ? '+' : ''}${r.totalPnl.toLocaleString()}
               </td>
-              <td style={{ color: r.returnPct < 0 ? '#fca5a5' : '#86efac' }}>
+              <td style={{ color: r.returnPct < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)' }}>
                 {r.returnPct >= 0 ? '+' : ''}{r.returnPct}%
               </td>
               <td><button onClick={() => onPick(r.politician)}>Full backtest</button></td>
@@ -478,18 +478,18 @@ function WalkForwardResults({ result }) {
       {agg && (
         <h4 style={{ margin: '4px 0 12px', fontWeight: 500 }}>
           Aggregate out-of-sample:{' '}
-          <span style={{ color: agg.returnPct < 0 ? '#fca5a5' : '#86efac' }}>
+          <span style={{ color: agg.returnPct < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)' }}>
             {agg.returnPct >= 0 ? '+' : ''}{agg.returnPct}%
           </span>
           {bench && (
-            <span style={{ fontSize: '0.8em', color: '#a1a1aa', fontWeight: 400 }}>
+            <span style={{ fontSize: '0.8em', color: 'var(--color-text-muted)', fontWeight: 400 }}>
               {' '}vs SPY {bench.returnPct >= 0 ? '+' : ''}{bench.returnPct}%
               {' '}({agg.returnPct >= bench.returnPct ? 'beat' : 'trailed'} the market)
             </span>
           )}
         </h4>
       )}
-      <p style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
+      <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85em' }}>
         Each fold ranks politicians in-sample, then copies only the top {topN} into the next (unseen) fold.
         Out-of-sample return is the honest estimate; a big drop from in-sample rank is overfitting.
       </p>
@@ -503,16 +503,16 @@ function WalkForwardResults({ result }) {
             <tr key={f.fold}>
               <td>{f.fold}</td>
               <td style={{ whiteSpace: 'nowrap', fontSize: '0.85em' }}>
-                {f.trainWindow.start}→{f.trainWindow.end} <span style={{ color: '#52525b' }}>then</span> {f.testWindow.start}→{f.testWindow.end}
+                {f.trainWindow.start}→{f.trainWindow.end} <span style={{ color: 'var(--color-text-disabled)' }}>then</span> {f.testWindow.start}→{f.testWindow.end}
               </td>
-              <td style={{ maxWidth: 260, color: '#a1a1aa', fontSize: '0.85em' }}>
-                {f.topPoliticians.length ? f.topPoliticians.join(', ') : <span style={{ color: '#52525b' }}>none qualified</span>}
+              <td style={{ maxWidth: 260, color: 'var(--color-text-muted)', fontSize: '0.85em' }}>
+                {f.topPoliticians.length ? f.topPoliticians.join(', ') : <span style={{ color: 'var(--color-text-disabled)' }}>none qualified</span>}
               </td>
               <td>{f.outOfSample.totalTrades}</td>
-              <td style={{ color: f.outOfSample.returnPct < 0 ? '#fca5a5' : '#86efac' }}>
+              <td style={{ color: f.outOfSample.returnPct < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)' }}>
                 {f.outOfSample.returnPct >= 0 ? '+' : ''}{f.outOfSample.returnPct}%
               </td>
-              <td style={{ color: '#a1a1aa' }}>{f.benchmark ? `${f.benchmark.returnPct >= 0 ? '+' : ''}${f.benchmark.returnPct}%` : '—'}</td>
+              <td style={{ color: 'var(--color-text-muted)' }}>{f.benchmark ? `${f.benchmark.returnPct >= 0 ? '+' : ''}${f.benchmark.returnPct}%` : '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -522,17 +522,17 @@ function WalkForwardResults({ result }) {
         <div style={{ height: 260, marginTop: 12 }}>
           <ResponsiveContainer>
             <LineChart data={chartData}>
-              <CartesianGrid stroke="#26282f" />
-              <XAxis dataKey="date" stroke="#a1a1aa" fontSize={11} />
-              <YAxis stroke="#a1a1aa" fontSize={11} tickFormatter={(v) => `$${v}`} />
+              <CartesianGrid stroke="var(--color-border-subtle)" />
+              <XAxis dataKey="date" stroke="var(--color-text-muted)" fontSize={11} />
+              <YAxis stroke="var(--color-text-muted)" fontSize={11} tickFormatter={(v) => `$${v}`} />
               <Tooltip
-                contentStyle={{ background: '#1f2229', border: '1px solid #3f3f46' }}
+                contentStyle={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-strong)' }}
                 formatter={(v, name) => [`$${v}`, name === 'spy' ? 'SPY (same $)' : 'Out-of-sample']}
               />
               <Legend formatter={(v) => (v === 'spy' ? 'SPY (same $)' : 'Out-of-sample')} />
-              <ReferenceLine y={0} stroke="#52525b" />
-              <Line type="monotone" dataKey="oos" stroke="#6366f1" dot={false} strokeWidth={2} connectNulls />
-              {benchCurve.length > 0 && <Line type="monotone" dataKey="spy" stroke="#eab308" dot={false} strokeWidth={2} strokeDasharray="6 3" connectNulls />}
+              <ReferenceLine y={0} stroke="var(--color-text-disabled)" />
+              <Line type="monotone" dataKey="oos" stroke="var(--color-accent-blue)" dot={false} strokeWidth={2} connectNulls />
+              {benchCurve.length > 0 && <Line type="monotone" dataKey="spy" stroke="var(--color-warning)" dot={false} strokeWidth={2} strokeDasharray="6 3" connectNulls />}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -549,16 +549,16 @@ function CompareResults({ compare }) {
       <td>{label}</td>
       <td>{s.totalTrades}</td>
       <td>{s.winRate}%</td>
-      <td style={{ color: s.returnPct < 0 ? '#fca5a5' : '#86efac' }}>
+      <td style={{ color: s.returnPct < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)' }}>
         {s.returnPct >= 0 ? '+' : ''}{s.returnPct}%
       </td>
-      <td style={{ color: '#a1a1aa', fontSize: '0.85em' }}>{note}</td>
+      <td style={{ color: 'var(--color-text-muted)', fontSize: '0.85em' }}>{note}</td>
     </tr>
   )
   return (
     <section style={{ ...card, marginTop: 24 }}>
       <h3>Fantasy vs realistic — the disclosure gap</h3>
-      <p style={{ background: '#7f1d1d', borderRadius: 6, padding: '8px 12px' }}>
+      <p style={{ background: 'var(--color-status-error-bg)', borderRadius: 6, padding: '8px 12px' }}>
         ⚠️ Transaction basis assumes you knew on the trade date — not achievable. Upper bound only.
       </p>
       <table>
@@ -571,7 +571,7 @@ function CompareResults({ compare }) {
         </tbody>
       </table>
       <p style={{ marginTop: 8 }}>
-        The disclosure lag costs <strong style={{ color: '#eab308' }}>{compare.gapPct >= 0 ? '' : '+'}{(-compare.gapPct).toFixed(2)} pts</strong> of return
+        The disclosure lag costs <strong style={{ color: 'var(--color-warning)' }}>{compare.gapPct >= 0 ? '' : '+'}{(-compare.gapPct).toFixed(2)} pts</strong> of return
         {' '}({t.returnPct}% → {d.returnPct}%).
       </p>
     </section>
@@ -596,27 +596,27 @@ function Results({ result }) {
   return (
     <section style={{ ...card, marginTop: 24 }}>
       {warning && (
-        <p style={{ background: '#7f1d1d', borderRadius: 6, padding: '8px 12px' }}>⚠️ {warning}</p>
+        <p style={{ background: 'var(--color-status-error-bg)', borderRadius: 6, padding: '8px 12px' }}>⚠️ {warning}</p>
       )}
       {entryBasis === 'transaction' && (
-        <p style={{ background: '#7f1d1d', borderRadius: 6, padding: '8px 12px' }}>
+        <p style={{ background: 'var(--color-status-error-bg)', borderRadius: 6, padding: '8px 12px' }}>
           ⚠️ Fantasy mode (transaction-date entry): assumes you knew on the trade date — not achievable. Upper bound only.
         </p>
       )}
       {entryBasis && entryBasis !== 'transaction' && (
-        <p style={{ color: '#a1a1aa', fontSize: '0.8em', margin: '0 0 4px' }}>Entry basis: {entryBasis}</p>
+        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8em', margin: '0 0 4px' }}>Entry basis: {entryBasis}</p>
       )}
       <h3>
         Result: {summary.totalPnl >= 0 ? '+' : ''}${summary.totalPnl.toLocaleString()}
         {' '}({summary.returnPct >= 0 ? '+' : ''}{summary.returnPct}% on ${summary.totalInvested.toLocaleString()} deployed)
         {benchmark && (
-          <span style={{ fontSize: '0.75em', color: '#a1a1aa', fontWeight: 400 }}>
+          <span style={{ fontSize: '0.75em', color: 'var(--color-text-muted)', fontWeight: 400 }}>
             {' '}vs SPY {benchmark.returnPct >= 0 ? '+' : ''}{benchmark.returnPct}%
             {' '}({summary.returnPct >= benchmark.returnPct ? 'beat' : 'trailed'} the market)
           </span>
         )}
       </h3>
-      <p style={{ color: '#a1a1aa' }}>
+      <p style={{ color: 'var(--color-text-muted)' }}>
         {summary.totalTrades} trades · {summary.wins}W/{summary.losses}L · {summary.winRate}% win rate
         {summary.skipped > 0 && ` · ${summary.skipped} skipped (no price data)`}
         {r.postsScanned != null &&
@@ -630,17 +630,17 @@ function Results({ result }) {
         <div style={{ height: 280 }}>
           <ResponsiveContainer>
             <LineChart data={chartData}>
-              <CartesianGrid stroke="#26282f" />
-              <XAxis dataKey="date" stroke="#a1a1aa" fontSize={11} />
-              <YAxis stroke="#a1a1aa" fontSize={11} tickFormatter={(v) => `$${v}`} />
+              <CartesianGrid stroke="var(--color-border-subtle)" />
+              <XAxis dataKey="date" stroke="var(--color-text-muted)" fontSize={11} />
+              <YAxis stroke="var(--color-text-muted)" fontSize={11} tickFormatter={(v) => `$${v}`} />
               <Tooltip
-                contentStyle={{ background: '#1f2229', border: '1px solid #3f3f46' }}
+                contentStyle={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-strong)' }}
                 formatter={(v, name) => [`$${v}`, name === 'spy' ? 'SPY (same $)' : 'Strategy']}
               />
               {benchmark && <Legend formatter={(v) => (v === 'spy' ? 'SPY (same $)' : 'Strategy')} />}
-              <ReferenceLine y={0} stroke="#52525b" />
-              <Line type="monotone" dataKey="strategy" stroke="#6366f1" dot={false} strokeWidth={2} connectNulls />
-              {benchmark && <Line type="monotone" dataKey="spy" stroke="#eab308" dot={false} strokeWidth={2} strokeDasharray="6 3" connectNulls />}
+              <ReferenceLine y={0} stroke="var(--color-text-disabled)" />
+              <Line type="monotone" dataKey="strategy" stroke="var(--color-accent-blue)" dot={false} strokeWidth={2} connectNulls />
+              {benchmark && <Line type="monotone" dataKey="spy" stroke="var(--color-warning)" dot={false} strokeWidth={2} strokeDasharray="6 3" connectNulls />}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -660,11 +660,11 @@ function Results({ result }) {
                 <td style={{ whiteSpace: 'nowrap' }}>{t.skipped ? '—' : String(t.exitDate).slice(0, 16).replace('T', ' ')}</td>
                 <td>{t.skipped ? '—' : t.entryPrice?.toFixed(2)}</td>
                 <td>{t.skipped ? '—' : t.exitPrice?.toFixed(2)}</td>
-                <td style={{ color: t.pnl < 0 ? '#fca5a5' : '#86efac' }}>
+                <td style={{ color: t.pnl < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)' }}>
                   {t.skipped ? t.skipReason : `${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}`}
                 </td>
                 <td>{t.skipped ? '—' : (t.exitReason || 'time')}{t.fellBackToDaily ? ' (daily)' : ''}</td>
-                <td style={{ maxWidth: 340, color: '#a1a1aa', fontSize: '0.9em' }}>{t.label}</td>
+                <td style={{ maxWidth: 340, color: 'var(--color-text-muted)', fontSize: '0.9em' }}>{t.label}</td>
               </tr>
             ))}
           </tbody>
@@ -684,21 +684,21 @@ function Results({ result }) {
               {classifications.map((c) => (
                 <tr key={c.postId}>
                   <td style={{ whiteSpace: 'nowrap' }}>{c.createdAt.slice(0, 16).replace('T', ' ')}</td>
-                  <td style={{ maxWidth: 320, color: '#a1a1aa', fontSize: '0.9em' }}>{c.text}</td>
-                  <td style={{ whiteSpace: 'nowrap', color: c.marketRelevant ? '#86efac' : '#a1a1aa' }}>
+                  <td style={{ maxWidth: 320, color: 'var(--color-text-muted)', fontSize: '0.9em' }}>{c.text}</td>
+                  <td style={{ whiteSpace: 'nowrap', color: c.marketRelevant ? 'var(--color-bullish)' : 'var(--color-text-muted)' }}>
                     <div>{c.relevanceType || '—'} @ {c.marketRelevance ?? '—'}</div>
-                    {c.sectors?.length > 0 && <div style={{ color: '#a1a1aa', fontSize: '0.9em' }}>{c.sectors.join(', ')}</div>}
+                    {c.sectors?.length > 0 && <div style={{ color: 'var(--color-text-muted)', fontSize: '0.9em' }}>{c.sectors.join(', ')}</div>}
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {c.tickers.length === 0
-                      ? <span style={{ color: '#52525b' }}>no impact</span>
+                      ? <span style={{ color: 'var(--color-text-disabled)' }}>no impact</span>
                       : c.tickers.map((t, i) => (
-                          <div key={i} style={{ color: t.traded ? '#86efac' : '#eab308' }}>
+                          <div key={i} style={{ color: t.traded ? 'var(--color-bullish)' : 'var(--color-warning)' }}>
                             {t.direction} {t.ticker} @ {t.confidence}{t.traded ? '' : ' (below threshold)'}
                           </div>
                         ))}
                   </td>
-                  <td style={{ maxWidth: 300, color: '#a1a1aa', fontSize: '0.9em' }}>{c.rationale}</td>
+                  <td style={{ maxWidth: 300, color: 'var(--color-text-muted)', fontSize: '0.9em' }}>{c.rationale}</td>
                 </tr>
               ))}
             </tbody>
@@ -759,13 +759,13 @@ function ResultQuality({ results, label = 'Result quality' }) {
 
   return (
     <div style={qualityBox}>
-      <div style={{ fontSize: '0.82em', color: '#a1a1aa', fontWeight: 700, marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: '0.82em', color: 'var(--color-text-muted)', fontWeight: 700, marginBottom: 8 }}>{label}</div>
       <div style={qualityGrid}>
         {checks.map((c) => (
           <div key={c.label} style={{ ...qualityItem, borderColor: toneColor(c.tone, 0.45) }}>
             <div style={{ color: toneColor(c.tone), fontWeight: 750 }}>{c.value}</div>
-            <div style={{ color: '#f3f4f6', fontSize: '0.78em', marginTop: 2 }}>{c.label}</div>
-            <div style={{ color: '#a1a1aa', fontSize: '0.76em', marginTop: 3 }}>{c.detail}</div>
+            <div style={{ color: 'var(--color-text-primary)', fontSize: '0.78em', marginTop: 2 }}>{c.label}</div>
+            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.76em', marginTop: 3 }}>{c.detail}</div>
           </div>
         ))}
       </div>
@@ -774,17 +774,19 @@ function ResultQuality({ results, label = 'Result quality' }) {
 }
 
 function toneColor(tone, alpha = 1) {
-  const colors = {
-    good: `rgba(134, 239, 172, ${alpha})`,
-    warn: `rgba(234, 179, 8, ${alpha})`,
-    bad: `rgba(252, 165, 165, ${alpha})`,
-  }
-  return colors[tone] || colors.warn
+  const pct = Math.round(Math.max(0, Math.min(1, alpha)) * 100)
+  const token = tone === 'good'
+    ? 'var(--color-bullish)'
+    : tone === 'bad'
+      ? 'var(--color-bearish)'
+      : 'var(--color-warning)'
+  if (pct >= 100) return token
+  return `color-mix(in srgb, ${token} ${pct}%, transparent)`
 }
 
 function Field({ label, children }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.8em', color: '#a1a1aa' }}>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.8em', color: 'var(--color-text-muted)' }}>
       {label}
       {children}
     </label>
@@ -792,8 +794,8 @@ function Field({ label, children }) {
 }
 
 const card = {
-  background: '#16181d',
-  border: '1px solid #26282f',
+  background: 'var(--color-bg-panel)',
+  border: '1px solid var(--color-border-subtle)',
   borderRadius: 8,
   padding: '16px 20px',
 }
@@ -801,10 +803,10 @@ const card = {
 const presetPill = {
   display: 'inline-flex',
   alignItems: 'stretch',
-  border: '1px solid #344255',
+  border: '1px solid var(--color-border-strong)',
   borderRadius: 6,
   overflow: 'hidden',
-  background: '#111821',
+  background: 'var(--color-bg-panel)',
 }
 
 const pillButton = {
@@ -816,19 +818,19 @@ const pillButton = {
 
 const deletePillButton = {
   borderWidth: '0 0 0 1px',
-  borderColor: '#344255',
+  borderColor: 'var(--color-border-strong)',
   borderRadius: 0,
   background: 'transparent',
   padding: '6px 8px',
-  color: '#a1a1aa',
+  color: 'var(--color-text-muted)',
 }
 
 const qualityBox = {
-  border: '1px solid #26282f',
+  border: '1px solid var(--color-border-subtle)',
   borderRadius: 8,
   padding: 12,
   margin: '12px 0',
-  background: '#111821',
+  background: 'var(--color-bg-panel)',
 }
 
 const qualityGrid = {
@@ -842,5 +844,5 @@ const qualityItem = {
   borderRadius: 6,
   padding: 10,
   minHeight: 86,
-  background: '#16181d',
+  background: 'var(--color-bg-panel)',
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
 import { muted, navigate } from './ui.js'
-import { SectionPanel } from '../../components/intel/components.jsx'
+import { DefinitionLabel, SectionPanel } from '../../components/intel/components.jsx'
 
 export default function YoutubeChannels() {
   const [channels, setChannels] = useState([])
@@ -77,7 +77,7 @@ export default function YoutubeChannels() {
           </label>
           <button disabled={busy === 'save'}>{busy === 'save' ? 'Saving…' : 'Add channel'}</button>
         </form>
-        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       </SectionPanel>
 
       <SectionPanel title="Creator Dossier Index" description="Creator alpha, sample size, and pump-risk determine whether a channel is useful or merely noisy.">
@@ -85,8 +85,8 @@ export default function YoutubeChannels() {
           <table>
             <thead>
               <tr>
-                <th>Channel</th><th>Category</th><th>Subscribers</th><th>Tracked?</th>
-                <th>Videos</th><th>Mentions</th><th>Alpha</th><th>Win 30d</th><th>Pump risk</th><th>Last synced</th><th>Actions</th>
+                <th><DefinitionLabel>Channel</DefinitionLabel></th><th><DefinitionLabel>Category</DefinitionLabel></th><th><DefinitionLabel>Subscribers</DefinitionLabel></th><th><DefinitionLabel>Tracked?</DefinitionLabel></th>
+                <th><DefinitionLabel>Videos</DefinitionLabel></th><th><DefinitionLabel>Mentions</DefinitionLabel></th><th><DefinitionLabel>Alpha</DefinitionLabel></th><th><DefinitionLabel>Win 30d</DefinitionLabel></th><th><DefinitionLabel>Pump risk</DefinitionLabel></th><th><DefinitionLabel>Last synced</DefinitionLabel></th><th><DefinitionLabel>Actions</DefinitionLabel></th>
               </tr>
             </thead>
             <tbody>
@@ -119,7 +119,7 @@ export default function YoutubeChannels() {
 }
 
 function Field({ label, children }) {
-  return <label style={{ display: 'grid', gap: 4, color: '#a1a1aa', fontSize: '0.85em' }}>{label}{children}</label>
+  return <label style={{ display: 'grid', gap: 4, color: 'var(--color-text-muted)', fontSize: '0.85em' }}>{label}{children}</label>
 }
 
 function formatRate(v) {

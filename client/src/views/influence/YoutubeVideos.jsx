@@ -51,7 +51,7 @@ export default function YoutubeVideos() {
           </Field>
           <button>Add video</button>
         </form>
-        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       </section>
 
       <section style={card}>
@@ -79,5 +79,5 @@ export default function YoutubeVideos() {
 }
 
 function Field({ label, children }) {
-  return <label style={{ display: 'grid', gap: 4, color: '#a1a1aa', fontSize: '0.85em' }}>{label}{children}</label>
+  return <label style={{ display: 'grid', gap: 4, color: 'var(--color-text-muted)', fontSize: '0.85em' }}>{label}{children}</label>
 }

@@ -1,10 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="terminal">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trading Bot</title>
+    <script>
+      (function () {
+        try {
+          var key = 'intel-theme'
+          var allowed = { terminal: 1, paper: 1, midnight: 1, contrast: 1 }
+          var stored = localStorage.getItem(key)
+          document.documentElement.dataset.theme = allowed[stored] ? stored : 'terminal'
+        } catch (e) {
+          document.documentElement.dataset.theme = 'terminal'
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

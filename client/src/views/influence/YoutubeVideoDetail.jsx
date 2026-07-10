@@ -69,14 +69,14 @@ export default function YoutubeVideoDetail({ videoId }) {
     }
   }
 
-  if (!video && error) return <section style={card}><p style={{ color: '#fca5a5' }}>{error}</p></section>
+  if (!video && error) return <section style={card}><p style={{ color: 'var(--color-bearish)' }}>{error}</p></section>
   if (!video) return <p>Loading video…</p>
 
   return (
     <div>
       <section style={card}>
         <button onClick={() => navigate('/app/influence/youtube/videos')} style={{ marginBottom: 10 }}>Back to videos</button>
-        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
         <h3>{video.title}</h3>
         <p style={muted}>{video.channel_title} · {video.published_at}</p>
         {video.thumbnail_url && <img src={video.thumbnail_url} alt="" style={{ maxWidth: 260, borderRadius: 8 }} />}
@@ -94,7 +94,7 @@ export default function YoutubeVideoDetail({ videoId }) {
       <section style={card}>
         <h3>Manual Transcript Upload</h3>
         <p style={muted}>Upload text, SRT, or VTT from an authorized/compliant source. The app does not scrape YouTube transcripts.</p>
-        {notice && <p style={{ color: '#86efac' }}>{notice}</p>}
+        {notice && <p style={{ color: 'var(--color-bullish)' }}>{notice}</p>}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
           <select value={format} onChange={(e) => setFormat(e.target.value)}>
             <option value="plain_text">plain text</option>
@@ -116,7 +116,7 @@ export default function YoutubeVideoDetail({ videoId }) {
           onChange={(e) => setTranscript(e.target.value)}
           disabled={busy === 'upload'}
           placeholder="Paste transcript text or SRT/VTT here"
-          style={{ width: '100%', minHeight: 140, background: '#1f2229', color: '#e4e4e7', border: '1px solid #3f3f46', borderRadius: 6, padding: 10 }}
+          style={{ width: '100%', minHeight: 140, background: 'var(--color-bg-elevated)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border-strong)', borderRadius: 6, padding: 10 }}
         />
       </section>
 
@@ -147,7 +147,7 @@ export default function YoutubeVideoDetail({ videoId }) {
         {video.segments.length === 0 ? <p style={muted}>No transcript segments yet.</p> : (
           <div style={{ display: 'grid', gap: 8 }}>
             {video.segments.slice(0, 80).map((s) => (
-              <div key={s.id} style={{ border: '1px solid #26282f', borderRadius: 8, padding: 10 }}>
+              <div key={s.id} style={{ border: '1px solid var(--color-border-subtle)', borderRadius: 8, padding: 10 }}>
                 <div style={{ ...muted, fontSize: '0.8em' }}>{s.start_seconds ?? '—'}s to {s.end_seconds ?? '—'}s</div>
                 <div>{s.text}</div>
               </div>

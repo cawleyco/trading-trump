@@ -112,7 +112,7 @@ export default function Politicians() {
             </p>
           </div>
         </div>
-        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
         {rows.length === 0 ? (
           <p className="intel-muted">No stats yet. Run a refresh after the congress archive has trades.</p>
         ) : (
@@ -169,11 +169,11 @@ function StatsTable({ rows, selected, onSelect, sortKey, asc, sortBy }) {
             onClick={() => onSelect(r.politician)}
             style={{
               cursor: 'pointer',
-              background: r.politician === selected ? 'rgba(245, 177, 76, 0.09)' : undefined,
+              background: r.politician === selected ? 'var(--color-accent-soft)' : undefined,
             }}
           >
             <td>{r.politician}</td>
-            <td>{r.edge_score == null ? <span style={{ color: '#a1a1aa' }}>unknown</span> : r.edge_score}</td>
+            <td>{r.edge_score == null ? <span style={{ color: 'var(--color-text-muted)' }}>unknown</span> : r.edge_score}</td>
             <td>{r.trade_count ?? 0}</td>
             <td>{pct(r.win_rate_30d)}</td>
             <td style={{ color: colorFor(r.avg_return_90d) }}>{pct(r.avg_return_90d, true)}</td>
@@ -222,31 +222,31 @@ function ProfileTearSheet({ profile, graph }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18, marginTop: 18 }}>
         <ChartCard title="Returns by horizon">
           <BarChart data={horizonData}>
-            <CartesianGrid stroke="#26282f" />
-            <XAxis dataKey="horizon" stroke="#a1a1aa" />
-            <YAxis stroke="#a1a1aa" tickFormatter={(v) => `${v}%`} />
+            <CartesianGrid stroke="var(--color-border-subtle)" />
+            <XAxis dataKey="horizon" stroke="var(--color-text-muted)" />
+            <YAxis stroke="var(--color-text-muted)" tickFormatter={(v) => `${v}%`} />
             <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, 'Average return']} />
-            <Bar dataKey="returnPct" fill="#6366f1" />
+            <Bar dataKey="returnPct" fill="var(--color-accent-blue)" />
           </BarChart>
         </ChartCard>
 
         <ChartCard title="Sector 30d returns">
           <BarChart data={sectorData}>
-            <CartesianGrid stroke="#26282f" />
-            <XAxis dataKey="sector" stroke="#a1a1aa" fontSize={10} interval={0} angle={-20} textAnchor="end" height={54} />
-            <YAxis stroke="#a1a1aa" tickFormatter={(v) => `${v}%`} />
+            <CartesianGrid stroke="var(--color-border-subtle)" />
+            <XAxis dataKey="sector" stroke="var(--color-text-muted)" fontSize={10} interval={0} angle={-20} textAnchor="end" height={54} />
+            <YAxis stroke="var(--color-text-muted)" tickFormatter={(v) => `${v}%`} />
             <Tooltip contentStyle={tooltipStyle} formatter={(v, name) => [name === 'avgReturn30d' ? `${v}%` : v, name === 'avgReturn30d' ? '30d return' : 'Trades']} />
-            <Bar dataKey="avgReturn30d" fill="#22c55e" />
+            <Bar dataKey="avgReturn30d" fill="var(--color-bullish)" />
           </BarChart>
         </ChartCard>
 
         <ChartCard title="Disclosure lag">
           <BarChart data={lagData}>
-            <CartesianGrid stroke="#26282f" />
-            <XAxis dataKey="label" stroke="#a1a1aa" fontSize={11} />
-            <YAxis stroke="#a1a1aa" tickFormatter={(v) => `${v}d`} />
+            <CartesianGrid stroke="var(--color-border-subtle)" />
+            <XAxis dataKey="label" stroke="var(--color-text-muted)" fontSize={11} />
+            <YAxis stroke="var(--color-text-muted)" tickFormatter={(v) => `${v}d`} />
             <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v} days`, 'Lag']} />
-            <Bar dataKey="days" fill="#eab308" />
+            <Bar dataKey="days" fill="var(--color-warning)" />
           </BarChart>
         </ChartCard>
       </div>
@@ -262,7 +262,7 @@ function PoliticianConnections({ graph }) {
     return (
       <details style={{ marginTop: 18 }}>
         <summary style={{ cursor: 'pointer' }}>Political connections</summary>
-        <p style={{ color: '#a1a1aa' }}>No graph context yet. Run graph refresh to link committees and bills.</p>
+        <p style={{ color: 'var(--color-text-muted)' }}>No graph context yet. Run graph refresh to link committees and bills.</p>
       </details>
     )
   }
@@ -294,7 +294,7 @@ function MiniList({ title, rows, empty, render, link }) {
     <div>
       <h4 style={{ margin: '0 0 6px' }}>{title}</h4>
       {visible.length === 0 ? (
-        <p style={{ color: '#a1a1aa', margin: 0 }}>{empty}</p>
+        <p style={{ color: 'var(--color-text-muted)', margin: 0 }}>{empty}</p>
       ) : (
         <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
           {visible.map((row, i) => {
@@ -310,7 +310,7 @@ function MiniList({ title, rows, empty, render, link }) {
 
 function ChartCard({ title, children }) {
   return (
-    <div style={{ border: '1px solid #26282f', borderRadius: 8, padding: 12, minHeight: 260 }}>
+    <div style={{ border: '1px solid var(--color-border-subtle)', borderRadius: 8, padding: 12, minHeight: 260 }}>
       <h4 style={{ margin: '0 0 8px' }}>{title}</h4>
       <div style={{ height: 210 }}>
         <ResponsiveContainer>{children}</ResponsiveContainer>
@@ -324,7 +324,7 @@ function RecentTrades({ trades }) {
     <details style={{ marginTop: 18 }} open>
       <summary style={{ cursor: 'pointer' }}>Recent archived trades ({trades.length})</summary>
       {trades.length === 0 ? (
-        <p style={{ color: '#a1a1aa' }}>No archived trades.</p>
+        <p style={{ color: 'var(--color-text-muted)' }}>No archived trades.</p>
       ) : (
         <table style={{ marginTop: 10 }}>
           <thead>
@@ -335,7 +335,7 @@ function RecentTrades({ trades }) {
               <tr key={t.trade_key}>
                 <td>{t.disclosure_date || '—'}</td>
                 <td>{t.ticker}</td>
-                <td style={{ color: t.type === 'buy' ? '#86efac' : '#fca5a5' }}>{t.type}</td>
+                <td style={{ color: t.type === 'buy' ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{t.type}</td>
                 <td>{t.amount_range || (t.amount_mid ? `$${Number(t.amount_mid).toLocaleString()}` : '—')}</td>
                 <td>{t.owner || '—'}</td>
                 <td>{t.is_option ? 'option' : t.parse_confidence < 0.8 ? 'review' : 'ok'}</td>
@@ -354,8 +354,8 @@ function pct(value, signed = false) {
 }
 
 function colorFor(value) {
-  if (value == null) return '#a1a1aa'
-  return value < 0 ? '#fca5a5' : '#86efac'
+  if (value == null) return 'var(--color-text-muted)'
+  return value < 0 ? 'var(--color-bearish)' : 'var(--color-bullish)'
 }
 
-const tooltipStyle = { background: '#1f2229', border: '1px solid #3f3f46' }
+const tooltipStyle = { background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-strong)' }

@@ -52,6 +52,8 @@ To stop the bot: `Ctrl-C` (or kill the process). State survives restarts — the
 
 ## 3. The dashboard
 
+The topbar includes a **Theme** selector (Terminal, Paper, Midnight, Contrast). The choice is stored in the browser (`localStorage`) and applies across the whole dashboard.
+
 ### Status bar (always visible, refreshes every 10 s)
 
 - **Mode banner**: 🟢 DRY RUN / 🔴 LIVE MODE, plus a global-halt warning if the `HALT` file exists.

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../api.js'
 import { StatCard } from './InfluenceLayout.jsx'
 import { card, muted, navigate } from './ui.js'
-import { SectionPanel, SignalCard } from '../../components/intel/components.jsx'
+import { DefinitionLabel, SectionPanel, SignalCard } from '../../components/intel/components.jsx'
 
 export default function YoutubeDashboard() {
   const [stats, setStats] = useState(null)
@@ -14,7 +14,7 @@ export default function YoutubeDashboard() {
     api.influenceSignals('youtube').then(setSignals).catch(() => {})
   }, [])
 
-  if (error) return <section style={card}><h3>YouTube Dashboard</h3><p style={{ color: '#fca5a5' }}>{error}</p></section>
+  if (error) return <section style={card}><h3>YouTube Dashboard</h3><p style={{ color: 'var(--color-bearish)' }}>{error}</p></section>
   if (!stats) return <p className="intel-muted">Loading Influence Signals...</p>
 
   return (
@@ -62,7 +62,7 @@ export default function YoutubeDashboard() {
           <p style={muted}>No detected mentions yet.</p>
         ) : (
           <table>
-            <thead><tr><th>Asset</th><th>Name</th><th>Mentions</th></tr></thead>
+            <thead><tr><th>Asset</th><th>Name</th><th><DefinitionLabel>Mentions</DefinitionLabel></th></tr></thead>
             <tbody>
               {stats.trendingAssets.map((a) => (
                 <tr key={a.id}><td style={{ fontFamily: 'var(--font-mono)' }}>{a.symbol}</td><td>{a.canonical_name}</td><td>{a.mentions}</td></tr>

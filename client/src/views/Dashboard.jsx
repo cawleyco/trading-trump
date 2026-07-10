@@ -4,6 +4,7 @@ import {
 } from 'recharts'
 import { api } from '../api.js'
 import {
+  DefinitionLabel,
   MetricCard,
   PageHeader,
   SectionPanel,
@@ -12,7 +13,7 @@ import {
 import { normalizeSignal } from '../components/intel/signalUtils.js'
 import { WatchlistPanel } from '../components/intel/Watchlist.jsx'
 
-const LINE_COLORS = ['#6366f1', '#22c55e', '#eab308', '#ec4899', '#06b6d4', '#f97316']
+const LINE_COLORS = ['var(--color-accent-blue)', 'var(--color-bullish)', 'var(--color-warning)', 'var(--color-fade)', 'var(--color-accent-secondary)', 'var(--color-risk)']
 
 export default function Dashboard() {
   const [status, setStatus] = useState(null)
@@ -75,7 +76,7 @@ export default function Dashboard() {
             <button
               key={f.name}
               onClick={() => setSelectedFund(f.name)}
-              style={f.name === fund.name ? { borderColor: 'var(--color-accent-primary)', background: 'rgba(245, 177, 76, 0.09)' } : {}}
+              style={f.name === fund.name ? { borderColor: 'var(--color-accent-primary)', background: 'var(--color-accent-soft)' } : {}}
             >
               {f.name}
             </button>
@@ -156,16 +157,16 @@ export default function Dashboard() {
           <SectionPanel title="Risk Limits" description={`Configured guardrails for ${fund.name}.`}>
           <table>
             <tbody>
-              <tr><td>Max per trade</td><td>${fund.risk.maxTradeNotionalUsd} / {fund.risk.maxTradePctEquity}% equity</td></tr>
-              <tr><td>Max open positions</td><td>{fund.risk.maxOpenPositions}</td></tr>
-              <tr><td>Max total exposure</td><td>${fund.risk.maxTotalExposureUsd}</td></tr>
-              <tr><td>Daily loss limit</td><td>${fund.risk.maxDailyLossUsd} / {fund.risk.maxDailyLossPct}%</td></tr>
-              <tr><td>Sources</td><td>{fund.sources.join(', ')}</td></tr>
-              <tr><td>Sentiment threshold</td><td>{fund.sentimentConfidenceThreshold}</td></tr>
-              <tr><td>Auto-exit</td><td>{fund.autoExit
+              <tr><td><DefinitionLabel>Max per trade</DefinitionLabel></td><td>${fund.risk.maxTradeNotionalUsd} / {fund.risk.maxTradePctEquity}% equity</td></tr>
+              <tr><td><DefinitionLabel>Max open positions</DefinitionLabel></td><td>{fund.risk.maxOpenPositions}</td></tr>
+              <tr><td><DefinitionLabel>Max total exposure</DefinitionLabel></td><td>${fund.risk.maxTotalExposureUsd}</td></tr>
+              <tr><td><DefinitionLabel>Daily loss limit</DefinitionLabel></td><td>${fund.risk.maxDailyLossUsd} / {fund.risk.maxDailyLossPct}%</td></tr>
+              <tr><td><DefinitionLabel>Sources</DefinitionLabel></td><td>{fund.sources.join(', ')}</td></tr>
+              <tr><td><DefinitionLabel>Sentiment threshold</DefinitionLabel></td><td>{fund.sentimentConfidenceThreshold}</td></tr>
+              <tr><td><DefinitionLabel>Auto-exit</DefinitionLabel></td><td>{fund.autoExit
                 ? `SL ${fund.autoExit.stopLossPct ?? '—'}% / TP ${fund.autoExit.takeProfitPct ?? '—'}% / max ${fund.autoExit.maxHoldDays ?? '—'}d`
                 : 'off'}</td></tr>
-              <tr><td>Account</td><td>{fund.paper ? 'paper' : 'LIVE'} ({status.tradingMode})</td></tr>
+              <tr><td><DefinitionLabel>Account</DefinitionLabel></td><td>{fund.paper ? 'paper' : 'LIVE'} ({status.tradingMode})</td></tr>
             </tbody>
           </table>
           </SectionPanel>
@@ -176,7 +177,7 @@ export default function Dashboard() {
             <button onClick={fireTestSignal}>Send test signal</button>
           </div>
           {testResult && (
-            <pre style={{ fontSize: '0.75em', background: '#16181d', padding: 10, borderRadius: 6, overflow: 'auto' }}>
+            <pre style={{ fontSize: '0.75em', background: 'var(--color-bg-panel)', padding: 10, borderRadius: 6, overflow: 'auto' }}>
               {JSON.stringify(testResult, null, 2)}
             </pre>
           )}
@@ -202,7 +203,7 @@ function FilingSpeedTable({ rows }) {
   }
   const th = (key, label) => (
     <th onClick={() => sortBy(key)} style={{ cursor: 'pointer', userSelect: 'none' }}>
-      {label}{sortKey === key ? (asc ? ' ▲' : ' ▼') : ''}
+      <DefinitionLabel>{label}</DefinitionLabel>{sortKey === key ? (asc ? ' ▲' : ' ▼') : ''}
     </th>
   )
 
@@ -260,7 +261,7 @@ function AttributionChart({ attribution }) {
             <CartesianGrid stroke="var(--color-border-subtle)" />
             <XAxis dataKey="week" stroke="var(--color-text-muted)" fontSize={11} />
             <YAxis stroke="var(--color-text-muted)" fontSize={11} tickFormatter={(v) => `$${v}`} />
-            <Tooltip contentStyle={{ background: '#111821', border: '1px solid #344255' }} />
+            <Tooltip contentStyle={{ background: 'var(--color-bg-panel)', border: '1px solid var(--color-border-strong)' }} />
             <Legend />
             <ReferenceLine y={0} stroke="var(--color-border-strong)" />
             {attribution.series.map((s, i) => (
@@ -282,13 +283,13 @@ function AttributionChart({ attribution }) {
 }
 
 export function SignalTable({ signals, onAudit }) {
-  if (signals.length === 0) return <p style={{ color: '#a1a1aa' }}>No signals yet</p>
+  if (signals.length === 0) return <p style={{ color: 'var(--color-text-muted)' }}>No signals yet</p>
   return (
     <table>
       <thead>
         <tr>
-          <th>Time</th><th>Source</th><th>Ticker</th><th>Dir</th><th>Conf</th>
-          <th>Relevance</th><th>Fund</th><th>Decision</th><th>Order</th><th>Why</th>
+          <th>Time</th><th><DefinitionLabel>Source</DefinitionLabel></th><th>Ticker</th><th>Dir</th><th><DefinitionLabel definition="Signal confidence from the source classifier or scoring pipeline.">Conf</DefinitionLabel></th>
+          <th><DefinitionLabel definition="How directly the text or disclosure appears connected to market-moving information.">Relevance</DefinitionLabel></th><th>Fund</th><th>Decision</th><th>Order</th><th>Why</th>
           {onAudit && <th></th>}
         </tr>
       </thead>
@@ -300,9 +301,9 @@ export function SignalTable({ signals, onAudit }) {
               <td style={{ whiteSpace: 'nowrap' }}>{s.created_at}</td>
               <td>{s.source}</td>
               <td>{s.ticker}</td>
-              <td style={{ color: s.direction === 'buy' ? '#86efac' : '#fca5a5' }}>{s.direction}</td>
+              <td style={{ color: s.direction === 'buy' ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{s.direction}</td>
               <td>{s.confidence ?? '—'}</td>
-              <td style={{ maxWidth: 160, color: '#a1a1aa', fontSize: '0.9em' }}>
+              <td style={{ maxWidth: 160, color: 'var(--color-text-muted)', fontSize: '0.9em' }}>
                 {relevance
                   ? (
                       <>
@@ -315,10 +316,10 @@ export function SignalTable({ signals, onAudit }) {
               <td>{s.fund ?? '—'}</td>
               <td>{s.approved == null ? '—' : s.approved ? '✅' : '❌'}</td>
               <td>{s.order_status ?? '—'}</td>
-              <td style={{ maxWidth: 420, color: '#a1a1aa' }}>
+              <td style={{ maxWidth: 420, color: 'var(--color-text-muted)' }}>
                 <div>{s.decision_reason || s.rationale}</div>
                 {s.crossSignal?.note && (
-                  <div style={{ marginTop: 4, color: '#93c5fd', fontSize: '0.9em' }}>{s.crossSignal.note}</div>
+                  <div style={{ marginTop: 4, color: 'var(--color-accent-blue)', fontSize: '0.9em' }}>{s.crossSignal.note}</div>
                 )}
               </td>
               {onAudit && (

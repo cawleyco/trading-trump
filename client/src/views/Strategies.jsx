@@ -250,11 +250,11 @@ export default function Strategies() {
           </Field>
         </div>
         <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-          <button onClick={save} style={{ borderColor: '#6366f1' }}>{form.id ? 'Update strategy' : 'Create strategy'}</button>
+          <button onClick={save} style={{ borderColor: 'var(--color-accent-blue)' }}>{form.id ? 'Update strategy' : 'Create strategy'}</button>
           {form.id && <button onClick={() => setForm(fromDefinition({ definition: emptyDefinition }))}>Cancel edit</button>}
         </div>
-        {message && <p style={{ color: '#86efac' }}>{message}</p>}
-        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+        {message && <p style={{ color: 'var(--color-bullish)' }}>{message}</p>}
+        {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       </section>
 
       <section style={card}>
@@ -279,10 +279,10 @@ export default function Strategies() {
           <div key={strategy.id} style={row}>
             <div>
               <strong>{strategy.name}</strong>
-              <span style={{ color: strategy.enabled ? '#86efac' : '#a1a1aa', marginLeft: 8 }}>
+              <span style={{ color: strategy.enabled ? 'var(--color-bullish)' : 'var(--color-text-muted)', marginLeft: 8 }}>
                 {strategy.enabled ? 'enabled' : 'disabled'}
               </span>
-              <div style={{ color: '#a1a1aa', fontSize: '0.85em' }}>
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85em' }}>
                 {describe(strategy.definition)}
               </div>
               {strategy.matches?.length > 0 && (
@@ -311,7 +311,7 @@ export default function Strategies() {
             return {backtest.results.summary.returnPct?.toFixed?.(2) ?? backtest.results.summary.returnPct}%,
             P&L ${backtest.results.summary.totalPnl?.toFixed?.(2) ?? backtest.results.summary.totalPnl}.
           </p>
-          <p style={{ color: '#a1a1aa' }}>{backtest.results.limitation}</p>
+          <p style={{ color: 'var(--color-text-muted)' }}>{backtest.results.limitation}</p>
         </section>
       )}
     </div>
@@ -332,11 +332,11 @@ function describe(definition) {
 function Field({ label, children }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ color: '#a1a1aa', fontSize: '0.8em' }}>{label}</span>
+      <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>{label}</span>
       {children}
     </label>
   )
 }
 
-const card = { background: '#18181b', border: '1px solid #27272a', borderRadius: 10, padding: 16, marginBottom: 16 }
-const row = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '12px 0', borderTop: '1px solid #27272a' }
+const card = { background: 'var(--color-bg-panel)', border: '1px solid var(--color-border-subtle)', borderRadius: 10, padding: 16, marginBottom: 16 }
+const row = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '12px 0', borderTop: '1px solid var(--color-border-subtle)' }

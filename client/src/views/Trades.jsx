@@ -47,7 +47,7 @@ export default function Trades() {
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div>
           <h3 style={{ marginTop: 0 }}>Congress Trade Feed <HelpLink slug="trades" /></h3>
-          <p style={{ color: '#a1a1aa', fontSize: '0.9em', margin: 0 }}>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9em', margin: 0 }}>
             Archived disclosures joined to explainable copy-worthiness scores and do-not-copy warnings.
           </p>
         </div>
@@ -55,7 +55,7 @@ export default function Trades() {
       </div>
 
       <FilterBar filters={filters} setFilters={setFilters} politicians={politicians} onApply={() => load().catch((e) => setError(e.message))} />
-      {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       {loading ? <p>Loading trades...</p> : <TradeTable rows={rows} expanded={expanded} setExpanded={setExpanded} scoreOne={scoreOne} />}
     </section>
   )
@@ -94,7 +94,7 @@ function FilterBar({ filters, setFilters, politicians, onApply }) {
 
 function Label({ label, children }) {
   return (
-    <label style={{ display: 'grid', gap: 4, color: '#a1a1aa', fontSize: '0.78em' }}>
+    <label style={{ display: 'grid', gap: 4, color: 'var(--color-text-muted)', fontSize: '0.78em' }}>
       {label}
       {children}
     </label>
@@ -102,7 +102,7 @@ function Label({ label, children }) {
 }
 
 function TradeTable({ rows, expanded, setExpanded, scoreOne }) {
-  if (rows.length === 0) return <p style={{ color: '#a1a1aa' }}>No archived trades match these filters.</p>
+  if (rows.length === 0) return <p style={{ color: 'var(--color-text-muted)' }}>No archived trades match these filters.</p>
   return (
     <table>
       <thead>
@@ -117,10 +117,10 @@ function TradeTable({ rows, expanded, setExpanded, scoreOne }) {
               <td>{r.disclosure_date || '-'}</td>
               <td>{r.politician}</td>
               <td>{r.ticker}</td>
-              <td style={{ color: r.type === 'buy' ? '#86efac' : '#fca5a5' }}>{r.type}</td>
+              <td style={{ color: r.type === 'buy' ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{r.type}</td>
               <td>{r.amount_range || (r.amount_mid ? `$${Number(r.amount_mid).toLocaleString()}` : '-')}</td>
               <td>{lag(r)}</td>
-              <td>{r.score == null ? <span style={{ color: '#a1a1aa' }}>unscored</span> : <ScoreBadge score={r.score} />}</td>
+              <td>{r.score == null ? <span style={{ color: 'var(--color-text-muted)' }}>unscored</span> : <ScoreBadge score={r.score} />}</td>
               <td><Recommendation value={r.recommendation} /></td>
               <td><Warnings warnings={r.warnings || []} /></td>
               <td style={{ whiteSpace: 'nowrap' }}>
@@ -147,22 +147,22 @@ function TradeTable({ rows, expanded, setExpanded, scoreOne }) {
 }
 
 function ScoreBadge({ score }) {
-  const color = score >= 75 ? '#22c55e' : score >= 55 ? '#eab308' : '#ef4444'
+  const color = score >= 75 ? 'var(--color-bullish)' : score >= 55 ? 'var(--color-warning)' : 'var(--color-bearish)'
   return <span style={{ ...chip, borderColor: color, color }}>{Number(score).toFixed(1)}</span>
 }
 
 function Recommendation({ value }) {
-  if (!value) return <span style={{ color: '#a1a1aa' }}>-</span>
-  const color = value === 'copy-candidate' ? '#86efac' : value === 'watchlist' ? '#fde68a' : value === 'manual-review' ? '#93c5fd' : '#fca5a5'
+  if (!value) return <span style={{ color: 'var(--color-text-muted)' }}>-</span>
+  const color = value === 'copy-candidate' ? 'var(--color-bullish)' : value === 'watchlist' ? 'var(--color-warning)' : value === 'manual-review' ? 'var(--color-accent-blue)' : 'var(--color-bearish)'
   return <span style={{ ...chip, color, borderColor: color }}>{value}</span>
 }
 
 function Warnings({ warnings }) {
-  if (!warnings.length) return <span style={{ color: '#a1a1aa' }}>-</span>
+  if (!warnings.length) return <span style={{ color: 'var(--color-text-muted)' }}>-</span>
   return (
     <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
       {warnings.map((w) => (
-        <span key={w.code} title={w.message} style={{ ...chip, color: w.severity === 'critical' ? '#fca5a5' : '#fde68a' }}>
+        <span key={w.code} title={w.message} style={{ ...chip, color: w.severity === 'critical' ? 'var(--color-bearish)' : 'var(--color-warning)' }}>
           {w.code}
         </span>
       ))}
@@ -191,14 +191,14 @@ function ThesisCard({ tradeKey }) {
     return () => { live = false }
   }, [tradeKey])
 
-  if (loading) return <div style={{ ...cardBox, color: '#a1a1aa' }}>Building thesis card…</div>
-  if (error) return <div style={{ ...cardBox, color: '#fca5a5' }}>Card error: {error}</div>
+  if (loading) return <div style={{ ...cardBox, color: 'var(--color-text-muted)' }}>Building thesis card…</div>
+  if (error) return <div style={{ ...cardBox, color: 'var(--color-bearish)' }}>Card error: {error}</div>
   if (!card) return null
 
   return (
     <div style={cardBox}>
       {polished && (
-        <p style={{ margin: '0 0 12px', fontStyle: 'italic', color: '#d4d4d8', lineHeight: 1.5 }}>{polished}</p>
+        <p style={{ margin: '0 0 12px', fontStyle: 'italic', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{polished}</p>
       )}
       <CardSection title="What happened">
         <p style={{ margin: 0 }}>{card.what}</p>
@@ -218,11 +218,11 @@ function ThesisCard({ tradeKey }) {
           Copy score <strong>{card.signal.copyScore}</strong> · confidence {Math.round((card.signal.confidence ?? 0) * 100)}% ·{' '}
           <Recommendation value={card.signal.recommendation} />
         </p>
-        {card.signal.politicianEdge && <p style={{ margin: '4px 0 0', color: '#a1a1aa' }}>{card.signal.politicianEdge}</p>}
+        {card.signal.politicianEdge && <p style={{ margin: '4px 0 0', color: 'var(--color-text-muted)' }}>{card.signal.politicianEdge}</p>}
       </CardSection>
       {card.risks?.length > 0 && (
         <CardSection title="Risks">
-          <ul style={bullets}>{card.risks.map((s, i) => <li key={i} style={{ color: '#fca5a5' }}>{s}</li>)}</ul>
+          <ul style={bullets}>{card.risks.map((s, i) => <li key={i} style={{ color: 'var(--color-bearish)' }}>{s}</li>)}</ul>
         </CardSection>
       )}
       <CardSection title="Suggested action">
@@ -235,7 +235,7 @@ function ThesisCard({ tradeKey }) {
 function CardSection({ title, children }) {
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ color: '#71717a', fontSize: '0.72em', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{title}</div>
+      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.72em', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{title}</div>
       {children}
     </div>
   )
@@ -255,13 +255,13 @@ function ConnectionsPanel({ tradeKey }) {
     return () => { live = false }
   }, [tradeKey])
 
-  if (error) return <div style={{ ...cardBox, color: '#fca5a5' }}>Connections error: {error}</div>
-  if (!context) return <div style={{ ...cardBox, color: '#a1a1aa' }}>Loading connections…</div>
+  if (error) return <div style={{ ...cardBox, color: 'var(--color-bearish)' }}>Connections error: {error}</div>
+  if (!context) return <div style={{ ...cardBox, color: 'var(--color-text-muted)' }}>Loading connections…</div>
 
   return (
     <div style={cardBox}>
       <CardSection title="Connections">
-        {!context.politician && <p style={{ margin: 0, color: '#a1a1aa' }}>No linked Bioguide ID yet. Run graph refresh to link the archive.</p>}
+        {!context.politician && <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No linked Bioguide ID yet. Run graph refresh to link the archive.</p>}
         {context.politician && (
           <p style={{ margin: '0 0 8px' }}>
             {context.politician.full_name} · {context.politician.party || 'unknown party'} · {context.politician.state || 'unknown state'} · {context.politician.chamber || 'unknown chamber'}
@@ -303,9 +303,9 @@ function ConnectionList({ title, rows, empty, render, link }) {
   const visible = rows.slice(0, 5)
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ color: '#a1a1aa', fontSize: '0.84em', marginBottom: 4 }}>{title}</div>
+      <div style={{ color: 'var(--color-text-muted)', fontSize: '0.84em', marginBottom: 4 }}>{title}</div>
       {visible.length === 0 ? (
-        <p style={{ margin: 0, color: '#71717a' }}>{empty}</p>
+        <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>{empty}</p>
       ) : (
         <ul style={bullets}>
           {visible.map((row, i) => {
@@ -322,12 +322,12 @@ function ConnectionList({ title, rows, empty, render, link }) {
 function FactorBreakdown({ row }) {
   const factors = Object.entries(row.factors || {})
   return (
-    <div style={{ background: '#0f1115', border: '1px solid #26282f', borderRadius: 8, padding: 12 }}>
+    <div style={{ background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border-subtle)', borderRadius: 8, padding: 12 }}>
       {factors.length === 0 ? (
-        <p style={{ color: '#a1a1aa' }}>No score persisted yet. Use Score to compute one on demand.</p>
+        <p style={{ color: 'var(--color-text-muted)' }}>No score persisted yet. Use Score to compute one on demand.</p>
       ) : (
         <div style={{ display: 'grid', gap: 10 }}>
-          <div style={{ color: '#a1a1aa' }}>
+          <div style={{ color: 'var(--color-text-muted)' }}>
             Confidence {Math.round((row.confidence ?? 0) * 100)}% | scored {row.score_computed_at || 'unknown'}
           </div>
           {factors.map(([name, f]) => (
@@ -336,10 +336,10 @@ function FactorBreakdown({ row }) {
                 <strong>{labelize(name)}</strong>
                 <span>{f.score}/100 | weight {f.weight}{f.hasData ? '' : ' | no data'}</span>
               </div>
-              <div style={{ height: 7, background: '#26282f', borderRadius: 999, overflow: 'hidden', margin: '5px 0' }}>
-                <div style={{ width: `${Math.max(0, Math.min(100, f.score))}%`, height: '100%', background: f.score >= 75 ? '#22c55e' : f.score >= 55 ? '#eab308' : '#ef4444' }} />
+              <div style={{ height: 7, background: 'var(--color-border-subtle)', borderRadius: 999, overflow: 'hidden', margin: '5px 0' }}>
+                <div style={{ width: `${Math.max(0, Math.min(100, f.score))}%`, height: '100%', background: f.score >= 75 ? 'var(--color-bullish)' : f.score >= 55 ? 'var(--color-warning)' : 'var(--color-bearish)' }} />
               </div>
-              <div style={{ color: '#a1a1aa', fontSize: '0.88em' }}>{f.detail}</div>
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '0.88em' }}>{f.detail}</div>
             </div>
           ))}
         </div>
@@ -359,22 +359,22 @@ function labelize(value) {
 }
 
 const card = {
-  background: '#16181d',
-  border: '1px solid #26282f',
+  background: 'var(--color-bg-panel)',
+  border: '1px solid var(--color-border-subtle)',
   borderRadius: 10,
   padding: '16px 20px',
 }
 
 const chip = {
-  border: '1px solid #3f3f46',
+  border: '1px solid var(--color-border-strong)',
   borderRadius: 999,
   padding: '2px 7px',
   fontSize: '0.78em',
 }
 
 const cardBox = {
-  background: '#0f1115',
-  border: '1px solid #26282f',
+  background: 'var(--color-bg-subtle)',
+  border: '1px solid var(--color-border-subtle)',
   borderRadius: 8,
   padding: 14,
   marginBottom: 10,

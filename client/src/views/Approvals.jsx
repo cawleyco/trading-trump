@@ -45,12 +45,12 @@ export default function Approvals() {
           </select>
           <button onClick={load}>Refresh</button>
         </div>
-        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       </section>
 
       {approvals.length === 0 && (
         <section style={card}>
-          <p style={{ color: '#a1a1aa' }}>No {status} approvals.</p>
+          <p style={{ color: 'var(--color-text-muted)' }}>No {status} approvals.</p>
         </section>
       )}
 
@@ -62,17 +62,17 @@ export default function Approvals() {
               <p style={{ margin: 0 }}>
                 {approval.strategy_name} matched {approval.politician} ({approval.trade_key})
               </p>
-              <p style={{ color: '#a1a1aa', marginTop: 6 }}>
+              <p style={{ color: 'var(--color-text-muted)', marginTop: 6 }}>
                 Proposed: {approval.proposed.direction} ${approval.proposed.notionalUsd} of {approval.proposed.ticker}
                 {approval.proposed.fund ? ` in ${approval.proposed.fund}` : ''}. Expires {approval.expires_at}.
               </p>
             </div>
             {approval.status === 'pending' && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <button onClick={() => resolve(approval, 'approve')} disabled={busyId === approval.id} style={{ borderColor: '#22c55e' }}>
+                <button onClick={() => resolve(approval, 'approve')} disabled={busyId === approval.id} style={{ borderColor: 'var(--color-bullish)' }}>
                   {busyId === approval.id ? 'Working...' : 'Approve'}
                 </button>
-                <button onClick={() => resolve(approval, 'reject')} disabled={busyId === approval.id} style={{ borderColor: '#ef4444' }}>
+                <button onClick={() => resolve(approval, 'reject')} disabled={busyId === approval.id} style={{ borderColor: 'var(--color-bearish)' }}>
                   Reject
                 </button>
               </div>
@@ -87,9 +87,9 @@ export default function Approvals() {
 
 function Thesis({ thesis }) {
   const cardData = thesis?.card
-  if (!cardData) return <p style={{ color: '#a1a1aa' }}>No thesis card available yet.</p>
+  if (!cardData) return <p style={{ color: 'var(--color-text-muted)' }}>No thesis card available yet.</p>
   return (
-    <div style={{ borderTop: '1px solid #27272a', marginTop: 12, paddingTop: 12 }}>
+    <div style={{ borderTop: '1px solid var(--color-border-subtle)', marginTop: 12, paddingTop: 12 }}>
       <strong>Thesis</strong>
       <p>{cardData.what}</p>
       {cardData.whyItMatters?.length > 0 && (
@@ -99,9 +99,9 @@ function Thesis({ thesis }) {
       )}
       {cardData.sinceThen && <p>{cardData.sinceThen}</p>}
       {cardData.risks?.length > 0 && (
-        <p style={{ color: '#fbbf24' }}>Risks: {cardData.risks.join(' ')}</p>
+        <p style={{ color: 'var(--color-warning)' }}>Risks: {cardData.risks.join(' ')}</p>
       )}
-      <p style={{ color: '#a1a1aa' }}>
+      <p style={{ color: 'var(--color-text-muted)' }}>
         Score {cardData.signal?.copyScore ?? 'n/a'}, confidence {cardData.signal?.confidence ?? 'n/a'},
         recommendation {cardData.signal?.recommendation ?? 'n/a'}.
       </p>
@@ -109,4 +109,4 @@ function Thesis({ thesis }) {
   )
 }
 
-const card = { background: '#18181b', border: '1px solid #27272a', borderRadius: 10, padding: 16, marginBottom: 16 }
+const card = { background: 'var(--color-bg-panel)', border: '1px solid var(--color-border-subtle)', borderRadius: 10, padding: 16, marginBottom: 16 }

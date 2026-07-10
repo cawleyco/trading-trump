@@ -51,13 +51,13 @@ export default function YoutubeBacktests() {
           </Field>
           <button onClick={run} disabled={running}>{running ? 'Running…' : 'Run backtest'}</button>
         </div>
-        {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       </section>
 
       {result && (
         <section style={card}>
           <h3>Latest Result</h3>
-          {result.summary?.warning && <p style={{ color: '#fde68a' }}>{result.summary.warning}</p>}
+          {result.summary?.warning && <p style={{ color: 'var(--color-warning)' }}>{result.summary.warning}</p>}
           <table>
             <thead><tr><th>Window</th><th>Avg return</th><th>Win rate</th></tr></thead>
             <tbody>
@@ -89,5 +89,5 @@ export default function YoutubeBacktests() {
 }
 
 function Field({ label, children }) {
-  return <label style={{ display: 'grid', gap: 4, color: '#a1a1aa', fontSize: '0.85em' }}>{label}{children}</label>
+  return <label style={{ display: 'grid', gap: 4, color: 'var(--color-text-muted)', fontSize: '0.85em' }}>{label}{children}</label>
 }

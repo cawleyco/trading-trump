@@ -1,4 +1,5 @@
 import StatusBar from '../StatusBar.jsx'
+import { useTheme } from '../../ThemeContext.jsx'
 
 const NAV_GROUPS = [
   {
@@ -46,6 +47,7 @@ const NAV_GROUPS = [
 
 export default function AppShell({ path, onNavigate, children }) {
   const context = moduleContext(path)
+  const { theme, setTheme, themes } = useTheme()
   return (
     <div className="intel-shell">
       <aside className="intel-sidebar">
@@ -77,6 +79,16 @@ export default function AppShell({ path, onNavigate, children }) {
             <span>{context}</span>
             <span className="intel-live-dot" />
             <span>Data live: local</span>
+            <select
+              className="intel-theme-select"
+              aria-label="Theme"
+              value={theme}
+              onChange={(e) => setTheme(e.target.value)}
+            >
+              {themes.map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
             <button type="button" disabled>Alerts</button>
             <button type="button" className="intel-user-button">Analyst</button>
           </div>

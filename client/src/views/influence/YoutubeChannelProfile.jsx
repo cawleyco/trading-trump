@@ -30,7 +30,7 @@ export default function YoutubeChannelProfile({ channelId }) {
     }
   }
 
-  if (error) return <section style={card}><p style={{ color: '#fca5a5' }}>{error}</p></section>
+  if (error) return <section style={card}><p style={{ color: 'var(--color-bearish)' }}>{error}</p></section>
   if (!channel) return <p className="intel-muted">Loading channel...</p>
   const alpha = channel.alpha?.[0]
 

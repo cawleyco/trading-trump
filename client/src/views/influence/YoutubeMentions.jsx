@@ -27,7 +27,7 @@ export default function YoutubeMentions() {
     <section style={card}>
       <h3>Asset Mentions</h3>
       <p style={muted}>Detected transcript mentions with classification, quality, and pump-risk signals.</p>
-      {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       {mentions.length === 0 ? <p style={muted}>No mentions detected yet.</p> : (
         <table>
           <thead><tr><th>Time</th><th>Creator</th><th>Asset</th><th>Direction</th><th>Type</th><th>Quality</th><th>Pump risk</th><th>Evidence</th><th></th></tr></thead>

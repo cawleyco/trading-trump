@@ -45,7 +45,7 @@ export default function Alerts() {
         description="Rules evaluate at natural moments — a trade is scored, a strategy matches, a post is classified, the calendar refreshes — and route explanatory, deduplicated alerts through macOS and Discord."
         meta="Every alert states the why · dedup prevents repeats"
       />
-      {error && <p style={{ color: 'var(--color-bearish, #f87171)' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
 
       <RuleEditor meta={meta} onChange={load} setError={setError} />
 

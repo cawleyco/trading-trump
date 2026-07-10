@@ -1,6 +1,91 @@
 import { useState } from 'react'
 import { navigate } from '../../lib/navigate.js'
 
+const TERM_DEFINITIONS = {
+  actionability: 'A 0-100 estimate of whether the signal is ready to act on now. It blends market relevance, confidence, freshness, risk checks, and whether enough evidence exists.',
+  confidence: 'How strongly the classifier or scoring model trusts the direction/evidence. For sentiment this starts as 0-1 and is displayed as 0-100 on cards.',
+  risk: 'A 0-100 caution score. Higher means more reasons to review or avoid, such as rejected risk checks, pump-risk flags, options exposure, low data quality, or weak evidence.',
+  'open positions': 'Positions currently reported by the selected fund/account.',
+  'recent signals': 'The latest normalized signal rows loaded from the bot server for the dashboard sample.',
+  'data sources': 'Signal sources enabled for the selected fund, such as Congress disclosures, YouTube creator mentions, or sentiment feeds.',
+  'account mode': 'Whether this fund is running against a paper account or the configured trading mode. Paper means simulated brokerage execution.',
+  'top signal feed': 'The newest signals normalized into one card format. These are prompts for review, not automatic proof of edge.',
+  'risk warnings': 'Signals currently rejected or marked avoid so elevated caution stays visible.',
+  'risk limits': 'Configured guardrails enforced before an order can be placed for this fund.',
+  'max per trade': 'Largest allowed notional order for this fund, capped by both a dollar amount and a percent of account equity.',
+  'max open positions': 'Maximum number of simultaneous positions allowed before new buys are blocked.',
+  'max total exposure': 'Maximum aggregate market value this fund may have open across positions.',
+  'daily loss limit': 'Loss threshold that trips the fund circuit breaker and blocks more trading for the day.',
+  sources: 'The signal feeds this fund subscribes to.',
+  'sentiment threshold': 'Minimum sentiment confidence required before a sentiment signal can continue through the fund risk pipeline.',
+  'auto-exit': 'Optional automatic stop-loss, take-profit, and max-hold rules attached after entry.',
+  account: 'The brokerage account category and global trading mode reported by the server.',
+  'pipeline test': 'Sends a manual test signal through the same risk checks as a real signal for the selected fund.',
+  'filing speed by politician': 'Disclosure lag statistics by member. Slower filing usually lowers actionability because the market may have already moved.',
+  politician: 'The public official associated with the disclosed trade row.',
+  trades: 'Number of qualifying disclosure trades included in this row or score.',
+  'median lag (d)': 'Median number of days between transaction date and public disclosure date.',
+  '≤15d': 'Share of disclosures filed within 15 days of the transaction date.',
+  '≤30d': 'Share of disclosures filed within 30 days of the transaction date.',
+  '≤45d': 'Share of disclosures filed within 45 days of the transaction date.',
+  'realized p&l by source': 'Cumulative profit and loss from closed positions, attributed back to the signal source that opened each position.',
+  method: 'The system posture for this module: show evidence first, then decide whether a signal is actionable.',
+  'enabled modules': 'Influence source modules currently available in the app.',
+  'future sources': 'Influence source modules planned or staged but not yet enabled.',
+  'creator alpha': 'A creator-level follow-through score from post-mention backtests. Higher means the creator\'s historical mentions more often preceded favorable moves.',
+  alpha: 'The latest creator alpha score. Higher suggests stronger historical post-mention follow-through, but small samples still require review.',
+  'alpha score': 'Creator alpha on a 0-100 scale, derived from historical returns, win rate, sample size, and pump/dump penalties.',
+  'pump risk': 'A 0-100 warning score for hype, sponsorship, unrealistic claims, or pump/dump-like follow-through. Higher is worse.',
+  'high pump-risk': 'Count of mentions whose pump-risk score is elevated enough to require extra caution.',
+  'videos analyzed today': 'Videos processed today for transcript, metadata, and mention extraction.',
+  'new asset mentions': 'New ticker or asset mentions detected in the current YouTube ingestion window.',
+  'bullish high-quality': 'Bullish mentions that passed quality filters for relevance, specificity, and evidence.',
+  'bearish high-quality': 'Bearish mentions that passed quality filters for relevance, specificity, and evidence.',
+  'recent creator signals': 'Latest YouTube-derived signals built from creator mentions, classification, and evidence checks.',
+  'assets trending across youtube': 'Assets with the most detected mentions across tracked YouTube channels.',
+  'tracked youtube creators': 'Channels currently stored for monitoring, metadata sync, and alpha calculation.',
+  'data quality': 'Coverage context for whether scores are trustworthy, including transcripts, creator history, and sample size.',
+  'creator dossier index': 'Channel list ranked with creator history, detected mentions, alpha, and pump-risk context.',
+  channel: 'Tracked YouTube channel or creator.',
+  category: 'Creator/content category used for filtering and context.',
+  subscribers: 'Latest subscriber count when available from YouTube metadata.',
+  'tracked?': 'Whether this channel is enabled for ongoing monitoring.',
+  videos: 'Number of videos stored or analyzed for this creator.',
+  mentions: 'Number of asset mentions detected for this creator.',
+  'win 30d': 'Share of measurable mentions that were favorable 30 days after the mention.',
+  'last synced': 'Most recent metadata or video sync timestamp for the channel.',
+  actions: 'Available operations for this row.',
+  'disclosure lag': 'Days between a politician trade and the public disclosure filing.',
+  'copy score': 'Explainable 0-100 score estimating whether a disclosed trade is worth copying after lag, quality, history, and relevance checks.',
+  dossiers: 'Entity profile pages with history, evidence, scores, and related context.',
+}
+
+function normalizeDefinitionKey(label) {
+  return String(label || '')
+    .replace(/\s+-\s+.*$/, '')
+    .replace(/\s+\(.+\)$/, (match) => match.toLowerCase() === ' (d)' ? match : '')
+    .trim()
+    .toLowerCase()
+}
+
+export function definitionFor(label, override) {
+  if (override) return override
+  const key = normalizeDefinitionKey(label)
+  return TERM_DEFINITIONS[key]
+}
+
+export function DefinitionLabel({ children, definition }) {
+  const text = typeof children === 'string' ? children : ''
+  const copy = definitionFor(text, definition)
+  if (!copy) return children
+  return (
+    <span className="intel-definition" tabIndex={0} aria-label={`${text}: ${copy}`}>
+      {children}
+      <span className="intel-definition-popover" role="tooltip">{copy}</span>
+    </span>
+  )
+}
+
 export function HelpLink({ slug }) {
   return (
     <button
@@ -38,7 +123,7 @@ export function SectionPanel({ title, description, actions, children, className 
       {(title || description || actions) && (
         <div className="intel-panel-header">
           <div>
-            {title && <h2>{title}</h2>}
+            {title && <h2><DefinitionLabel>{title}</DefinitionLabel></h2>}
             {description && <p>{description}</p>}
           </div>
           {actions && <div className="intel-panel-actions">{actions}</div>}
@@ -52,7 +137,7 @@ export function SectionPanel({ title, description, actions, children, className 
 export function MetricCard({ label, value, helper, tone = 'neutral' }) {
   return (
     <section className={`intel-metric-card tone-${tone}`}>
-      <div className="intel-metric-label">{label}</div>
+      <div className="intel-metric-label"><DefinitionLabel>{label}</DefinitionLabel></div>
       <div className="intel-metric-value">{value ?? '-'}</div>
       {helper && <div className="intel-metric-helper">{helper}</div>}
     </section>
@@ -97,7 +182,7 @@ export function ScoreGauge({ label, value, tone = 'neutral', helper }) {
   return (
     <div className={`intel-score tone-${tone}`}>
       <div className="intel-score-top">
-        <span>{label}</span>
+        <span><DefinitionLabel>{label}</DefinitionLabel></span>
         <strong>{n}</strong>
       </div>
       <div className="intel-score-track" aria-label={`${label}: ${n} out of 100`}>
@@ -190,7 +275,7 @@ export function DossierHeader({ entityType, name, subtitle, avatarUrl, badges = 
         <div className="intel-dossier-stats">
           {stats.map((stat) => (
             <div key={stat.label}>
-              <span>{stat.label}</span>
+              <span><DefinitionLabel>{stat.label}</DefinitionLabel></span>
               <strong>{stat.value ?? '-'}</strong>
               {stat.helper && <small>{stat.helper}</small>}
             </div>
@@ -239,7 +324,9 @@ export function IntelligenceTable({ columns, rows, empty = 'No records yet.', ro
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.key} className={column.numeric ? 'is-numeric' : ''}>{column.label}</th>
+              <th key={column.key} className={column.numeric ? 'is-numeric' : ''}>
+                <DefinitionLabel definition={column.definition}>{column.label}</DefinitionLabel>
+              </th>
             ))}
           </tr>
         </thead>

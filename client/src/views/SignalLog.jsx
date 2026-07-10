@@ -58,7 +58,7 @@ export default function SignalLog() {
         )}
       </SectionPanel>
 
-      {auditError && <p style={{ color: '#fca5a5' }}>{auditError}</p>}
+      {auditError && <p style={{ color: 'var(--color-bearish)' }}>{auditError}</p>}
       {audit && <AuditTimeline audit={audit} onClose={() => setAudit(null)} />}
       <SectionPanel
         title="Full Signal and Decision Log"
@@ -109,7 +109,7 @@ function AuditTimeline({ audit, onClose }) {
             <div style={muted}>Trade key: {audit.sourceTrade.trade_key}</div>
             <div style={muted}>Disclosed {audit.sourceTrade.disclosure_date || 'unknown'} - Source {audit.sourceTrade.source || 'unknown'}</div>
             {audit.sourceTrade.source_url && (
-              <a href={audit.sourceTrade.source_url} target="_blank" rel="noreferrer" style={{ color: '#818cf8' }}>Source filing</a>
+              <a href={audit.sourceTrade.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--color-accent-blue)' }}>Source filing</a>
             )}
             {audit.qualityFlags?.length > 0 && <JsonBlock value={audit.qualityFlags} />}
           </>
@@ -148,16 +148,16 @@ function AuditTimeline({ audit, onClose }) {
               <strong>{d.fund}</strong>: {d.approved ? 'approved' : 'rejected'} - {d.reason}
               {d.notional_usd != null && <span style={muted}> (${d.notional_usd})</span>}
             </div>
-            <ol style={{ margin: '8px 0 8px 18px', color: '#d4d4d8' }}>
+            <ol style={{ margin: '8px 0 8px 18px', color: 'var(--color-text-secondary)' }}>
               {(d.checks || []).map((check, i) => (
                 <li key={`${d.id}-${check.check}-${i}`}>
-                  <span style={{ color: check.pass ? '#86efac' : '#fca5a5' }}>{check.pass ? 'pass' : 'fail'}</span>
+                  <span style={{ color: check.pass ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{check.pass ? 'pass' : 'fail'}</span>
                   {' '}{check.check}: <span style={muted}>{check.detail}</span>
                 </li>
               ))}
             </ol>
             {(d.orders || []).map((o) => (
-              <div key={o.id} style={{ marginLeft: 12, color: '#d4d4d8' }}>
+              <div key={o.id} style={{ marginLeft: 12, color: 'var(--color-text-secondary)' }}>
                 Order #{o.id}: {o.side} {o.ticker} ${o.notional_usd ?? '-'} - {o.status}
                 {o.alpaca_order_id && <span style={muted}> ({o.alpaca_order_id})</span>}
                 {o.fills?.length > 0 && <JsonBlock value={o.fills} />}
@@ -172,7 +172,7 @@ function AuditTimeline({ audit, onClose }) {
 
 function TimelineStep({ title, children }) {
   return (
-    <div style={{ borderLeft: '2px solid #3f3f46', padding: '0 0 14px 14px', marginLeft: 6 }}>
+    <div style={{ borderLeft: '2px solid var(--color-border-strong)', padding: '0 0 14px 14px', marginLeft: 6 }}>
       <h4 style={{ margin: '0 0 6px' }}>{title}</h4>
       <div>{children}</div>
     </div>
@@ -181,7 +181,7 @@ function TimelineStep({ title, children }) {
 
 function JsonBlock({ value }) {
   return (
-    <pre style={{ fontSize: '0.75em', background: '#0f1117', padding: 10, borderRadius: 6, overflow: 'auto', maxHeight: 220 }}>
+    <pre style={{ fontSize: '0.75em', background: 'var(--color-bg-subtle)', padding: 10, borderRadius: 6, overflow: 'auto', maxHeight: 220 }}>
       {JSON.stringify(value, null, 2)}
     </pre>
   )
@@ -205,7 +205,7 @@ function ReviewQueue() {
 
   return (
     <SectionPanel title="Data-Quality Review Queue" description="Low-confidence filings are held out of automation until an analyst reviews the evidence.">
-      <h3>Data-quality review queue <span style={{ color: '#eab308' }}>({items.length} pending)</span></h3>
+      <h3>Data-quality review queue <span style={{ color: 'var(--color-warning)' }}>({items.length} pending)</span></h3>
       <table>
         <thead>
           <tr>
@@ -218,9 +218,9 @@ function ReviewQueue() {
               <tr>
                 <td>{it.politician}</td>
                 <td>{it.ticker}</td>
-                <td style={{ color: it.type === 'buy' ? '#86efac' : '#fca5a5' }}>{it.type}</td>
+                <td style={{ color: it.type === 'buy' ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{it.type}</td>
                 <td>{it.parse_confidence}</td>
-                <td style={{ maxWidth: 300, color: '#a1a1aa' }}>{it.reason}</td>
+                <td style={{ maxWidth: 300, color: 'var(--color-text-muted)' }}>{it.reason}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>
                   <button onClick={() => setExpanded(expanded === it.id ? null : it.id)} style={{ marginRight: 6 }}>
                     {expanded === it.id ? 'Hide' : 'Filing'}
@@ -234,12 +234,12 @@ function ReviewQueue() {
                   <td colSpan={6}>
                     {it.source_url && (
                       <div style={{ marginBottom: 8 }}>
-                        <a href={it.source_url} target="_blank" rel="noreferrer" style={{ color: '#818cf8' }}>
+                        <a href={it.source_url} target="_blank" rel="noreferrer" style={{ color: 'var(--color-accent-blue)' }}>
                           {it.source_url}
                         </a>
                       </div>
                     )}
-                    <pre style={{ fontSize: '0.75em', background: '#16181d', padding: 10, borderRadius: 6, overflow: 'auto', maxHeight: 240 }}>
+                    <pre style={{ fontSize: '0.75em', background: 'var(--color-bg-panel)', padding: 10, borderRadius: 6, overflow: 'auto', maxHeight: 240 }}>
                       {JSON.stringify(it.raw, null, 2)}
                     </pre>
                   </td>
@@ -254,6 +254,6 @@ function ReviewQueue() {
 }
 
 const muted = {
-  color: '#a1a1aa',
+  color: 'var(--color-text-muted)',
   fontSize: '0.9em',
 }

@@ -25,7 +25,7 @@ export default function InfluenceLayout({ path, children }) {
           <button
             key={href}
             onClick={() => navigate(href)}
-            style={path === href ? { borderColor: 'var(--color-accent-primary)', background: 'rgba(245, 177, 76, 0.09)' } : {}}
+            style={path === href ? { borderColor: 'var(--color-accent-primary)', background: 'var(--color-accent-soft)' } : {}}
           >
             {label}
           </button>
@@ -41,12 +41,16 @@ export function StatCard({ label, value, hint }) {
 }
 
 export function DirectionBadge({ direction }) {
-  const color = direction === 'bullish' ? '#86efac' : direction === 'bearish' ? '#fca5a5' : '#e4e4e7'
+  const color = direction === 'bullish'
+    ? 'var(--color-bullish)'
+    : direction === 'bearish'
+      ? 'var(--color-bearish)'
+      : 'var(--color-text-secondary)'
   return <span style={{ color }}>{direction || 'unclassified'}</span>
 }
 
 export function PumpRiskBadge({ score }) {
   const n = Number(score || 0)
-  const color = n >= 70 ? '#fca5a5' : n >= 40 ? '#fde68a' : '#86efac'
+  const color = n >= 70 ? 'var(--color-bearish)' : n >= 40 ? 'var(--color-warning)' : 'var(--color-bullish)'
   return <span style={{ color }}>{Number.isFinite(n) ? n.toFixed(0) : '—'}</span>
 }

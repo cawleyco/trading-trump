@@ -94,7 +94,7 @@ export default function Calendar() {
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div>
           <h3 style={{ marginTop: 0 }}>Political Market Calendar <HelpLink slug="calendar" /></h3>
-          <p style={{ color: '#a1a1aa', fontSize: '0.9em', margin: 0 }}>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9em', margin: 0 }}>
             Hearings, bill actions, LDA filing deadlines, and elections linked to sectors and recent Congress trades.
           </p>
         </div>
@@ -105,7 +105,7 @@ export default function Calendar() {
       </div>
 
       <FilterBar filters={filters} setFilters={setFilters} sectors={sectors} onApply={() => load().catch((e) => setError(e.message))} />
-      {error && <p style={{ color: '#fca5a5' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       {loading ? <p>Loading events...</p> : <EventGroups groups={grouped} />}
     </section>
   )
@@ -131,12 +131,12 @@ function FilterBar({ filters, setFilters, sectors, onApply }) {
 }
 
 function EventGroups({ groups }) {
-  if (groups.length === 0) return <p style={{ color: '#a1a1aa' }}>No calendar events match this range.</p>
+  if (groups.length === 0) return <p style={{ color: 'var(--color-text-muted)' }}>No calendar events match this range.</p>
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       {groups.map(([week, events]) => (
         <div key={week}>
-          <h4 style={{ margin: '0 0 8px', color: '#a1a1aa' }}>Week of {formatDate(week)}</h4>
+          <h4 style={{ margin: '0 0 8px', color: 'var(--color-text-muted)' }}>Week of {formatDate(week)}</h4>
           <div style={{ display: 'grid', gap: 10 }}>
             {events.map((event) => <EventCard key={event.id} event={event} />)}
           </div>
@@ -178,13 +178,13 @@ function TokenRow({ label, values }) {
 }
 
 function TickerRow({ tickers }) {
-  if (!tickers.length) return <p style={{ color: '#71717a', margin: '10px 0 0' }}>No recent Congress-traded tickers matched these sectors.</p>
+  if (!tickers.length) return <p style={{ color: 'var(--color-text-muted)', margin: '10px 0 0' }}>No recent Congress-traded tickers matched these sectors.</p>
   return (
     <div style={row}>
       <span style={labelStyle}>Tickers</span>
       <span style={tokens}>
         {tickers.map((ticker) => (
-          <a key={ticker} href={`/app/trades?ticker=${encodeURIComponent(ticker)}`} style={{ ...chip, color: '#93c5fd', textDecoration: 'none' }}>
+          <a key={ticker} href={`/app/trades?ticker=${encodeURIComponent(ticker)}`} style={{ ...chip, color: 'var(--color-accent-blue)', textDecoration: 'none' }}>
             {ticker}
           </a>
         ))}
@@ -211,7 +211,7 @@ function RecentTrades({ trades }) {
 
 function Label({ label, children }) {
   return (
-    <label style={{ display: 'grid', gap: 4, color: '#a1a1aa', fontSize: '0.78em' }}>
+    <label style={{ display: 'grid', gap: 4, color: 'var(--color-text-muted)', fontSize: '0.78em' }}>
       {label}
       {children}
     </label>
@@ -219,22 +219,22 @@ function Label({ label, children }) {
 }
 
 const card = {
-  border: '1px solid #27272a',
-  background: '#181a20',
+  border: '1px solid var(--color-border-subtle)',
+  background: 'var(--color-bg-panel)',
   borderRadius: 10,
   padding: 18,
 }
 
 const eventCard = {
-  border: '1px solid #27272a',
-  background: '#111318',
+  border: '1px solid var(--color-border-subtle)',
+  background: 'var(--color-bg-subtle)',
   borderRadius: 10,
   padding: 14,
 }
 
 const badge = {
-  border: '1px solid #6366f1',
-  color: '#c7d2fe',
+  border: '1px solid var(--color-accent-blue)',
+  color: 'var(--color-accent-blue)',
   borderRadius: 999,
   padding: '2px 8px',
   fontSize: '0.75em',
@@ -249,7 +249,7 @@ const row = {
 }
 
 const labelStyle = {
-  color: '#71717a',
+  color: 'var(--color-text-muted)',
   fontSize: '0.78em',
   textTransform: 'uppercase',
   letterSpacing: '0.05em',
@@ -262,18 +262,18 @@ const tokens = {
 }
 
 const chip = {
-  border: '1px solid #3f3f46',
+  border: '1px solid var(--color-border-strong)',
   borderRadius: 999,
   padding: '2px 8px',
-  color: '#d4d4d8',
+  color: 'var(--color-text-secondary)',
   fontSize: '0.8em',
 }
 
 const tradeLink = {
-  color: '#d4d4d8',
+  color: 'var(--color-text-secondary)',
   textDecoration: 'none',
-  border: '1px solid #27272a',
+  border: '1px solid var(--color-border-subtle)',
   borderRadius: 8,
   padding: '6px 8px',
-  background: '#181a20',
+  background: 'var(--color-bg-panel)',
 }

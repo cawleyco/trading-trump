@@ -7,7 +7,7 @@ import YoutubeVideoDetail from './influence/YoutubeVideoDetail.jsx'
 import YoutubeMentions from './influence/YoutubeMentions.jsx'
 import YoutubeBacktests from './influence/YoutubeBacktests.jsx'
 import YoutubeSignals from './influence/YoutubeSignals.jsx'
-import { EmptyState, MetricCard, PageHeader, SectionPanel } from '../components/intel/components.jsx'
+import { DefinitionLabel, EmptyState, MetricCard, PageHeader, SectionPanel } from '../components/intel/components.jsx'
 import { navigate } from './influence/ui.js'
 
 export default function Influence({ path }) {
@@ -78,7 +78,11 @@ function InfluenceLanding() {
             <div className="intel-meta-row">{module.status}</div>
             {module.metrics ? (
               <div className="intel-signal-badges" style={{ marginTop: 12 }}>
-                {module.metrics.map((metric) => <span key={metric} className="intel-badge source-badge">{metric}</span>)}
+                {module.metrics.map((metric) => (
+                  <span key={metric} className="intel-badge source-badge">
+                    <DefinitionLabel>{metric}</DefinitionLabel>
+                  </span>
+                ))}
               </div>
             ) : (
               <EmptyState title="Module disabled" body="Coverage will be added after source reliability and evidence trails are defined." />

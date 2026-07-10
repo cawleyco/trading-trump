@@ -258,19 +258,20 @@ function Heatmap({ matrix, valueKey, rowLabel, rowKind, formatCol, legend, diver
 function cellColor(v, maxAbs, diverging) {
   if (v == null || v === 0) return 'transparent'
   const t = Math.min(1, Math.abs(v) / maxAbs)
-  const alpha = 0.15 + 0.55 * t
-  if (!diverging) return `rgba(99, 102, 241, ${alpha})` // indigo intensity
-  return v > 0 ? `rgba(34, 197, 94, ${alpha})` : `rgba(239, 68, 68, ${alpha})`
+  const alpha = Math.round((0.15 + 0.55 * t) * 100)
+  if (!diverging) return `color-mix(in srgb, var(--color-accent-blue) ${alpha}%, transparent)`
+  const token = v > 0 ? 'var(--color-bullish)' : 'var(--color-bearish)'
+  return `color-mix(in srgb, ${token} ${alpha}%, transparent)`
 }
 
 function netColor(v) {
-  if (v > 0) return '#4ade80'
-  if (v < 0) return '#f87171'
+  if (v > 0) return 'var(--color-bullish)'
+  if (v < 0) return 'var(--color-bearish)'
   return 'inherit'
 }
 
 function RiskCell({ value }) {
-  const tone = value >= 70 ? '#f87171' : value >= 40 ? '#fbbf24' : '#4ade80'
+  const tone = value >= 70 ? 'var(--color-bearish)' : value >= 40 ? 'var(--color-warning)' : 'var(--color-bullish)'
   return <strong style={{ color: tone }}>{value}</strong>
 }
 
