@@ -10,6 +10,7 @@
     "build:client": "npm --prefix client run build",
     "dev:client": "npm --prefix client run dev",
     "backfill": "node scripts/backfill-congress.js",
+    "smoke": "node scripts/smoke.js",
     "test": "node --test 'test/**/*.test.js'"
   },
   "dependencies": {
