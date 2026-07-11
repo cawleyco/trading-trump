@@ -260,6 +260,13 @@ export const api = {
   },
   classifyYoutubeMention: (id) =>
     req(`/api/influence/youtube/mentions/${id}/reclassify`, { method: 'POST' }),
+  youtubeMentionCard: (id) => req(`/api/influence/youtube/mentions/${id}/card`),
+  runYoutubeWalkForward: (body) =>
+    req('/api/influence/youtube/walk-forward', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   overrideYoutubeMention: (id, body) =>
     req(`/api/influence/youtube/mentions/${id}`, {
       method: 'PATCH',

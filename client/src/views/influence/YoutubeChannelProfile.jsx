@@ -43,17 +43,33 @@ export default function YoutubeChannelProfile({ channelId }) {
         subtitle={channel.description || 'No description stored.'}
         badges={[
           { label: channel.category || 'CREATOR', tone: 'info' },
-          { label: alpha?.label || 'INSUFFICIENT DATA', tone: alpha?.alpha_score >= 70 ? 'good' : 'warning' },
+          {
+            label: (alpha?.label || 'insufficient_data').replace(/_/g, ' ').toUpperCase(),
+            tone: alpha?.label === 'follow' ? 'good' : alpha?.label === 'fade' ? 'bad' : alpha?.label === 'neutral' ? 'info' : 'warning',
+          },
         ]}
         stats={[
           { label: 'Subscribers', value: channel.subscriber_count ?? '-' },
           { label: 'Videos analyzed', value: videos.length },
           { label: 'Mentions', value: mentions.length },
+          { label: 'Measurable (30d)', value: alpha?.measurable_mentions ?? 0 },
           { label: 'Alpha score', value: alpha?.alpha_score == null ? '-' : alpha.alpha_score.toFixed(0) },
-          { label: 'Pump risk', value: alpha?.pump_risk_score == null ? '-' : alpha.pump_risk_score.toFixed(0) },
+          { label: 'Pump-dump rate', value: alpha?.pump_dump_rate == null ? '-' : `${(alpha.pump_dump_rate * 100).toFixed(0)}%` },
         ]}
       />
-      <SectionPanel title="Creator Alpha" description="Strong mention. Weak history still requires manual review.">
+      <SectionPanel
+        title="Creator Alpha"
+        description={alpha?.alpha_basis
+          ? `Basis: ${alpha.alpha_basis}. Alpha stays null until the sample clears the minimum — an unknown creator is not a good one.`
+          : 'No alpha computed yet — sync videos, analyze mentions, then recalculate.'}
+      >
+        {alpha?.label && alpha.label !== 'insufficient_data' && (
+          <p style={{ margin: '4px 0 0' }}>
+            Avg 30d return {alpha.avg_return_30d == null ? '—' : `${alpha.avg_return_30d.toFixed(1)}%`}
+            {' · '}win rate {alpha.win_rate_30d == null ? '—' : `${(alpha.win_rate_30d * 100).toFixed(0)}%`}
+            {' over '}{alpha.measurable_mentions} measurable mentions
+          </p>
+        )}
         <button onClick={recalc} disabled={busy === 'alpha'} style={{ marginTop: 12 }}>
           {busy === 'alpha' ? 'Recalculating...' : 'Recalculate creator alpha'}
         </button>

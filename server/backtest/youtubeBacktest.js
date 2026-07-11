@@ -3,10 +3,13 @@ import {
   getYoutubeBacktestRun,
   insertYoutubeBacktestSignalResult,
   listAssetMentions,
+  listLatestCreatorAlphaMetrics,
+  listYoutubeChannels,
   replaceCreatorAlphaMetric,
   updateYoutubeBacktestRun,
 } from '../db.js';
 import { getDailyCloses, _firstCloseOnOrAfter } from '../marketData.js';
+import { rawCreatorMetrics, percentileAlphaScores, labelCreator } from '../influence/creatorStats.js';
 import { log } from '../logger.js';
 
 const WINDOWS = {
@@ -106,11 +109,6 @@ export function _median(vals) {
   if (!usable.length) return null;
   const mid = Math.floor(usable.length / 2);
   return usable.length % 2 ? usable[mid] : (usable[mid - 1] + usable[mid]) / 2;
-}
-
-function avg(vals) {
-  const usable = vals.filter((v) => typeof v === 'number');
-  return usable.length ? usable.reduce((a, b) => a + b, 0) / usable.length : null;
 }
 
 /** Pure result builder — all price series are passed in. */
@@ -282,9 +280,9 @@ export async function runYoutubeBacktest(config = {}, { provider = alpacaPricePr
   }
 }
 
-export async function recalculateCreatorAlpha(channelId, { provider = alpacaPriceProvider } = {}) {
-  const mentions = listAssetMentions({ channelId, limit: 5000 }).filter((m) => ['bullish', 'bearish'].includes(m.direction));
-  const windows = ['1h', '6h', '24h', '7d', '30d', '90d'];
+// Price a set of mentions across the given windows. Shared by creator-alpha
+// refresh and the walk-forward validator.
+export async function priceMentions(mentions, windows, provider = alpacaPriceProvider) {
   const { daily, benchmark, minutesFor } = await loadSeries(mentions, windows, provider);
   const results = [];
   for (const mention of mentions) {
@@ -296,53 +294,95 @@ export async function recalculateCreatorAlpha(channelId, { provider = alpacaPric
       })
     );
   }
-  const sampleSize = results.length;
-  // Rates are computed over mentions with real price data for that window —
-  // counting a data gap as a loss would penalize thin tickers, not bad calls.
-  const measurable30 = results.filter((r) => typeof r.return_30d === 'number');
-  const avg30 = avg(results.map((r) => r.return_30d));
-  const win30 = measurable30.length
-    ? measurable30.filter((r) => r.return_30d > 0).length / measurable30.length
-    : null;
-  const winRateOver = (key) => {
-    const usable = results.filter((r) => typeof r[key] === 'number');
-    return usable.length ? usable.filter((r) => r[key] > 0).length / usable.length : null;
-  };
-  const pdMeasurable = results.filter(
-    (r) => typeof r.return_24h === 'number' && typeof r.return_7d === 'number'
+  return results;
+}
+
+const ALPHA_WINDOWS = ['1h', '6h', '24h', '7d', '30d', '90d'];
+
+function directionalMentions(channelId) {
+  return listAssetMentions({ channelId, limit: 5000 }).filter((m) =>
+    ['bullish', 'bearish'].includes(m.direction)
   );
-  const pumpDumpRate = pdMeasurable.length
-    ? pdMeasurable.filter((r) => r.return_24h > 5 && r.return_7d < -5).length / pdMeasurable.length
-    : null;
-  const alphaScore = measurable30.length < 3
-    ? 0
-    : Math.max(0, Math.min(100, 50 + (avg30 ?? 0) * 3 + (win30 ?? 0) * 25 - (pumpDumpRate ?? 0) * 30));
-  const label = measurable30.length < 5
-    ? 'Insufficient Data'
-    : pumpDumpRate > 0.35
-      ? 'High Pump Risk'
-      : alphaScore >= 75
-        ? 'High Alpha Creator'
-        : alphaScore < 40
-          ? 'Mostly Noise'
-          : 'Medium Confidence';
+}
+
+function storeCreatorAlpha(channelId, metrics, alphaScore) {
+  const policy = labelCreator({
+    measurable: metrics.measurable_mentions,
+    avgReturn30d: metrics.avg_return_30d,
+    alphaScore,
+    pumpDumpRate: metrics.pump_dump_rate,
+    pdMeasurable: metrics.pd_measurable,
+  });
+  const { pd_measurable, ...columns } = metrics;
   replaceCreatorAlphaMetric({
     channel_id: channelId,
-    sample_size: sampleSize,
-    avg_return_1h: avg(results.map((r) => r.return_1h)),
-    avg_return_6h: avg(results.map((r) => r.return_6h)),
-    avg_return_24h: avg(results.map((r) => r.return_24h)),
-    avg_return_7d: avg(results.map((r) => r.return_7d)),
-    avg_return_30d: avg30,
-    avg_return_90d: avg(results.map((r) => r.return_90d)),
-    win_rate_24h: winRateOver('return_24h'),
-    win_rate_7d: winRateOver('return_7d'),
-    win_rate_30d: win30,
-    median_return_30d: _median(results.map((r) => r.return_30d)),
-    pump_dump_rate: pumpDumpRate,
-    fade_score: alphaScore < 40 ? 100 - alphaScore : 0,
-    alpha_score: alphaScore,
-    label,
+    ...columns,
+    alpha_score: policy.alpha_score,
+    fade_score: policy.fade_score,
+    label: policy.label,
+    alpha_basis: policy.alpha_basis,
   });
-  return { sampleSize, measurable: measurable30.length, alphaScore, label };
+  return {
+    channelId,
+    sampleSize: metrics.sample_size,
+    measurable: metrics.measurable_mentions,
+    alphaScore: policy.alpha_score,
+    label: policy.label,
+  };
+}
+
+/**
+ * Recompute one creator's alpha. The percentile is taken against the latest
+ * stored metrics of the other creators (slightly stale by design); the
+ * nightly refreshAllCreatorAlpha() recomputes the whole universe fresh.
+ */
+export async function recalculateCreatorAlpha(channelId, { provider = alpacaPriceProvider } = {}) {
+  const results = await priceMentions(directionalMentions(channelId), ALPHA_WINDOWS, provider);
+  const metrics = rawCreatorMetrics(results);
+  const universe = listLatestCreatorAlphaMetrics()
+    .filter((row) => row.channel_id !== channelId)
+    .map((row) => ({
+      channelId: row.channel_id,
+      measurable: row.measurable_mentions ?? 0,
+      avgReturn30d: row.avg_return_30d,
+    }));
+  universe.push({
+    channelId,
+    measurable: metrics.measurable_mentions,
+    avgReturn30d: metrics.avg_return_30d,
+  });
+  const alphaScore = percentileAlphaScores(universe).get(channelId) ?? null;
+  return storeCreatorAlpha(channelId, metrics, alphaScore);
+}
+
+/** Nightly refresh: recompute every tracked creator, then percentile-rank the fresh universe. */
+export async function refreshAllCreatorAlpha({ provider = alpacaPriceProvider } = {}) {
+  const channels = listYoutubeChannels().filter((c) => c.tracking_enabled);
+  const computed = [];
+  for (const channel of channels) {
+    try {
+      const results = await priceMentions(directionalMentions(channel.id), ALPHA_WINDOWS, provider);
+      computed.push({ channelId: channel.id, metrics: rawCreatorMetrics(results) });
+    } catch (err) {
+      log.warn('youtube-backtest', `Creator alpha failed for "${channel.title}": ${err.message}`);
+    }
+  }
+  const scores = percentileAlphaScores(
+    computed.map((c) => ({
+      channelId: c.channelId,
+      measurable: c.metrics.measurable_mentions,
+      avgReturn30d: c.metrics.avg_return_30d,
+    }))
+  );
+  const summary = computed.map((c) =>
+    storeCreatorAlpha(c.channelId, c.metrics, scores.get(c.channelId) ?? null)
+  );
+  log.info(
+    'youtube-backtest',
+    `Creator alpha refresh: ${summary.length} channels, ` +
+      `${summary.filter((s) => s.label === 'follow').length} follow, ` +
+      `${summary.filter((s) => s.label === 'fade').length} fade, ` +
+      `${summary.filter((s) => s.label === 'insufficient_data').length} insufficient data`
+  );
+  return summary;
 }

@@ -3,6 +3,16 @@ export class TranscriptProviderRegistry {
     this.providers = providers;
   }
 
+  // True when at least one provider could try this video right now. Callers
+  // use this to distinguish "tried and failed" (counts as an attempt) from
+  // "nothing enabled that could try" (must not burn retry budget).
+  async hasEligibleProvider(video) {
+    for (const provider of this.providers) {
+      if (await provider.canFetch(video)) return true;
+    }
+    return false;
+  }
+
   async fetchBestAvailableTranscript(video) {
     for (const provider of this.providers) {
       if (await provider.canFetch(video)) {

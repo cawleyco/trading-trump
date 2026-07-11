@@ -16,12 +16,17 @@ const RULE_HELP = {
   'stale-warning': 'Fires when a scored trade carries a stale-disclosure warning. No params.',
   'strategy-match': 'Fires when any strategy matches a trade. No params.',
   'tweet-catalyst': 'Fires when a classified post is market-relevant. No params.',
+  'creator-alpha-mention': 'Fires when a follow-labeled creator (alpha ≥ minAlpha) makes a quality mention. Params: {"minAlpha": 65, "minQuality": 70}',
+  'pump-warning': 'Fires when a high-pump-risk mention touches a ticker you hold or watch. Params: {"minPumpRisk": 70}',
+  'fade-candidate-mention': 'Fires when a fade-labeled creator mentions a ticker you hold or watch. No params.',
 }
 
 const DEFAULT_PARAMS = {
   'high-score-trade': '{"minScore": 85}',
   cluster: '{"clusterCount": 3, "windowDays": 30}',
   'committee-relevant': '{"minRelevance": 50}',
+  'creator-alpha-mention': '{"minAlpha": 65, "minQuality": 70}',
+  'pump-warning': '{"minPumpRisk": 70}',
 }
 
 export default function Alerts() {

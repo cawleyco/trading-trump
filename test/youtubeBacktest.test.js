@@ -244,13 +244,15 @@ test('creator alpha ignores data gaps instead of counting them as losses', async
     const noData = await recalculateCreatorAlpha(fixture.channel.id, { provider: noDataProvider })
     assert.equal(noData.sampleSize, 1)
     assert.equal(noData.measurable, 0)
-    assert.equal(noData.alphaScore, 0)
-    assert.equal(noData.label, 'Insufficient Data')
+    // Below the minimum sample, alpha is NULL — unknown, not zero.
+    assert.equal(noData.alphaScore, null)
+    assert.equal(noData.label, 'insufficient_data')
 
     const priced = await recalculateCreatorAlpha(fixture.channel.id, { provider: fixtureProvider })
     assert.equal(priced.measurable, 1)
-    // 1 measurable mention is still below the 5-mention labeling floor
-    assert.equal(priced.label, 'Insufficient Data')
+    // 1 measurable mention is still below the 10-mention trust floor
+    assert.equal(priced.label, 'insufficient_data')
+    assert.equal(priced.alphaScore, null)
   } finally {
     deleteFixtureRows({ ...fixture, runId: null })
   }

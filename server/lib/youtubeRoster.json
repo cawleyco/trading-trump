@@ -1,0 +1,22 @@
+[
+  { "handle": "@MeetKevin", "title": "Meet Kevin", "influence_tier": "large", "category": "stocks", "risk_notes": "High volume, frequent direction flips; sponsorship-heavy periods" },
+  { "handle": "@GrahamStephan", "title": "Graham Stephan", "influence_tier": "large", "category": "personal-finance", "risk_notes": "Mostly personal finance; occasional stock/crypto calls" },
+  { "handle": "@AndreiJikh", "title": "Andrei Jikh", "influence_tier": "large", "category": "crypto", "risk_notes": "Crypto-heavy; monitor sponsorship risk" },
+  { "handle": "@FinancialEducation", "title": "Financial Education (Jeremy Lefebvre)", "influence_tier": "large", "category": "stocks", "risk_notes": "High-conviction single-stock calls; good alpha test subject" },
+  { "handle": "@JosephCarlsonShow", "title": "Joseph Carlson", "influence_tier": "mid", "category": "stocks", "risk_notes": "Dividend/quality focus; slower turnover" },
+  { "handle": "@EverythingMoney", "title": "Everything Money", "influence_tier": "mid", "category": "stocks", "risk_notes": "Valuation-driven; frequent bearish calls" },
+  { "handle": "@ThePlainBagel", "title": "The Plain Bagel", "influence_tier": "mid", "category": "education", "risk_notes": "Educational; few direct calls — useful control group" },
+  { "handle": "@BenFelixCSI", "title": "Ben Felix", "influence_tier": "mid", "category": "education", "risk_notes": "Evidence-based; rarely names tickers — control group" },
+  { "handle": "@Pensioncraft", "title": "PensionCraft", "influence_tier": "mid", "category": "macro", "risk_notes": "Macro/fund oriented" },
+  { "handle": "@CoinBureau", "title": "Coin Bureau", "influence_tier": "large", "category": "crypto", "risk_notes": "Crypto only; high pump-risk sector" },
+  { "handle": "@ZipTrader", "title": "ZipTrader", "influence_tier": "mid", "category": "trading", "risk_notes": "Short-horizon momentum calls; high mention volume" },
+  { "handle": "@StockMoe", "title": "Stock Moe", "influence_tier": "mid", "category": "stocks", "risk_notes": "Growth-stock calls; historically volatile accuracy" },
+  { "handle": "@TomNashTV", "title": "Tom Nash", "influence_tier": "mid", "category": "stocks", "risk_notes": "Tech-heavy conviction calls" },
+  { "handle": "@ChickenGeniusSingapore", "title": "Chicken Genius Singapore", "influence_tier": "mid", "category": "stocks", "risk_notes": "Tesla/tech concentrated" },
+  { "handle": "@minoritymindset", "title": "Minority Mindset", "influence_tier": "large", "category": "personal-finance", "risk_notes": "Broad audience; macro takes" },
+  { "handle": "@MarkoWhiteBoardFinance", "title": "Marko - WhiteBoard Finance", "influence_tier": "mid", "category": "personal-finance", "risk_notes": "Mixed personal finance and market takes" },
+  { "handle": "@humphrey", "title": "Humphrey Yang", "influence_tier": "large", "category": "personal-finance", "risk_notes": "Short-form heavy; fewer direct calls" },
+  { "handle": "@DaveLeeonInvesting", "title": "Dave Lee on Investing", "influence_tier": "mid", "category": "stocks", "risk_notes": "Tesla/growth concentrated long-horizon calls" },
+  { "handle": "@TheCompoundNews", "title": "The Compound", "influence_tier": "mid", "category": "macro", "risk_notes": "Professional commentary; multiple hosts per video" },
+  { "handle": "@Wealthion", "title": "Wealthion", "influence_tier": "mid", "category": "macro", "risk_notes": "Guest-driven macro; attribute mentions to guests carefully" }
+]

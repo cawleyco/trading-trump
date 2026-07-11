@@ -383,6 +383,8 @@ CREATE TABLE IF NOT EXISTS youtube_videos (
   ingestion_status TEXT NOT NULL DEFAULT 'pending',
   transcript_status TEXT NOT NULL DEFAULT 'not_requested',
   analysis_status TEXT NOT NULL DEFAULT 'not_started',
+  transcript_attempts INTEGER NOT NULL DEFAULT 0,
+  last_transcript_attempt_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -479,6 +481,7 @@ CREATE TABLE IF NOT EXISTS youtube_backtest_runs (
   end_date TEXT,
   status TEXT NOT NULL DEFAULT 'queued',
   created_by TEXT,
+  results TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
 );
@@ -533,6 +536,8 @@ CREATE TABLE IF NOT EXISTS creator_alpha_metrics (
   fade_score REAL,
   alpha_score REAL,
   label TEXT,
+  measurable_mentions INTEGER,
+  alpha_basis TEXT,
   calculated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_creator_alpha_channel ON creator_alpha_metrics(channel_id);
@@ -629,6 +634,29 @@ if (!hasColumn('congress_trades', 'politician_id')) {
 // card_hash lets cardRunner skip the LLM polish when the card text is unchanged
 if (!hasColumn('thesis_cards', 'card_hash')) {
   db.exec(`ALTER TABLE thesis_cards ADD COLUMN card_hash TEXT`);
+}
+
+// transcript retry accounting so the YouTube poller stops hammering videos
+// that have no captions after YOUTUBE_TRANSCRIPT_MAX_ATTEMPTS tries
+if (!hasColumn('youtube_videos', 'transcript_attempts')) {
+  db.exec(`ALTER TABLE youtube_videos ADD COLUMN transcript_attempts INTEGER NOT NULL DEFAULT 0`);
+}
+if (!hasColumn('youtube_videos', 'last_transcript_attempt_at')) {
+  db.exec(`ALTER TABLE youtube_videos ADD COLUMN last_transcript_attempt_at TEXT`);
+}
+
+// trust-layer fields: how many mentions the alpha is actually measured over,
+// and a human-readable basis string ("requires 10 measurable 30d mentions")
+if (!hasColumn('creator_alpha_metrics', 'measurable_mentions')) {
+  db.exec(`ALTER TABLE creator_alpha_metrics ADD COLUMN measurable_mentions INTEGER`);
+}
+if (!hasColumn('creator_alpha_metrics', 'alpha_basis')) {
+  db.exec(`ALTER TABLE creator_alpha_metrics ADD COLUMN alpha_basis TEXT`);
+}
+
+// walk-forward runs store their fold summaries here (per-mention rows don't fit)
+if (!hasColumn('youtube_backtest_runs', 'results')) {
+  db.exec(`ALTER TABLE youtube_backtest_runs ADD COLUMN results TEXT`);
 }
 
 if (!hasColumn('daily_pnl', 'fund')) {
@@ -2112,7 +2140,9 @@ export function listYoutubeChannels({ limit = 500 } = {}) {
             (SELECT alpha_score FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS alpha_score,
             (SELECT win_rate_30d FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS win_rate_30d,
             (SELECT avg_return_30d FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS avg_return_30d,
-            (SELECT pump_dump_rate FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS pump_risk_score
+            (SELECT pump_dump_rate FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS pump_risk_score,
+            (SELECT label FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS alpha_label,
+            (SELECT measurable_mentions FROM creator_alpha_metrics cam WHERE cam.channel_id = yc.id ORDER BY cam.calculated_at DESC LIMIT 1) AS measurable_mentions
      FROM youtube_channels yc
      ORDER BY yc.title ASC LIMIT ?`
   ).all(limit).map(parseYoutubeChannel);
@@ -2261,6 +2291,54 @@ export function updateYoutubeVideoStatuses(id, statuses = {}) {
   return getYoutubeVideo(id);
 }
 
+export function recordYoutubeTranscriptAttempt(id) {
+  db.prepare(
+    `UPDATE youtube_videos
+     SET transcript_attempts = transcript_attempts + 1,
+         last_transcript_attempt_at = datetime('now'),
+         updated_at = datetime('now')
+     WHERE id = ?`
+  ).run(id);
+  return getYoutubeVideo(id);
+}
+
+// The poller's work queue: videos that still need a transcript (and haven't
+// exhausted their attempts) or have a transcript but were never analyzed.
+// Live videos (ingestion_status='metadata_fetched') come newest-first;
+// backfill videos drain oldest-first so history fills front-to-back.
+export function listYoutubeVideosPendingIngestion({ limit = 10, maxAttempts = 3, backfill = false, channelId = null } = {}) {
+  const params = [backfill ? 'backfill_pending' : 'metadata_fetched', maxAttempts];
+  let channelClause = '';
+  if (channelId != null) {
+    channelClause = 'AND yv.channel_id = ?';
+    params.push(channelId);
+  }
+  params.push(limit);
+  return db.prepare(
+    `SELECT yv.*, yc.title AS channel_title, yc.tracking_enabled
+     FROM youtube_videos yv
+     JOIN youtube_channels yc ON yc.id = yv.channel_id
+     WHERE yc.tracking_enabled = 1
+       AND yv.ingestion_status = ?
+       AND (
+         (yv.transcript_status != 'available' AND yv.transcript_attempts < ?)
+         OR (yv.transcript_status = 'available' AND yv.analysis_status != 'complete')
+       )
+       ${channelClause}
+     ORDER BY yv.published_at ${backfill ? 'ASC' : 'DESC'}, yv.id ${backfill ? 'ASC' : 'DESC'}
+     LIMIT ?`
+  ).all(...params).map(parseYoutubeVideo);
+}
+
+// Per-channel ingestion progress for the backfill-status endpoint.
+export function countYoutubeVideosByStatus(channelId) {
+  return db.prepare(
+    `SELECT ingestion_status, transcript_status, analysis_status, COUNT(*) AS count
+     FROM youtube_videos WHERE channel_id = ?
+     GROUP BY ingestion_status, transcript_status, analysis_status`
+  ).all(channelId);
+}
+
 export function createContentDocument({ source_type, source_id, provider_name, language, raw_text, source_format, authorization_status }) {
   const res = db.prepare(
     `INSERT INTO content_documents
@@ -2384,11 +2462,16 @@ export function listAssetMentions({ videoId, channelId, assetId, limit = 500 } =
 
 export function getAssetMention(id) {
   return db.prepare(
-    `SELECT am.*, a.symbol, a.canonical_name, a.asset_type, yc.title AS channel_title, yv.title AS video_title
+    `SELECT am.*, a.symbol, a.canonical_name, a.asset_type, yc.title AS channel_title, yv.title AS video_title,
+            mc.direction, mc.mention_type, mc.mention_quality_score, mc.summary,
+            mc.pump_risk_score, mc.relevance_score, mc.conviction_score
      FROM asset_mentions am
      JOIN assets a ON a.id = am.asset_id
      LEFT JOIN youtube_channels yc ON yc.id = am.channel_id
      LEFT JOIN youtube_videos yv ON yv.id = am.video_id
+     LEFT JOIN mention_classifications mc ON mc.id = (
+       SELECT id FROM mention_classifications WHERE mention_id = am.id ORDER BY id DESC LIMIT 1
+     )
      WHERE am.id = ?`
   ).get(id) || null;
 }
@@ -2442,18 +2525,22 @@ export function getLatestAutoMentionClassification(mentionId, modelVersion, prom
   );
 }
 
-export function createYoutubeBacktestRun({ name, strategy_config, start_date, end_date, status = 'queued' }) {
+export function createYoutubeBacktestRun({ name, module_key = 'youtube', strategy_config, start_date, end_date, status = 'queued' }) {
   const res = db.prepare(
-    `INSERT INTO youtube_backtest_runs (name, strategy_config, start_date, end_date, status)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(name, JSON.stringify(strategy_config ?? {}), start_date ?? null, end_date ?? null, status);
+    `INSERT INTO youtube_backtest_runs (name, module_key, strategy_config, start_date, end_date, status)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(name, module_key, JSON.stringify(strategy_config ?? {}), start_date ?? null, end_date ?? null, status);
   return res.lastInsertRowid;
 }
 
-export function updateYoutubeBacktestRun(id, { status, completed_at } = {}) {
+export function updateYoutubeBacktestRun(id, { status, completed_at, results } = {}) {
   db.prepare(
-    `UPDATE youtube_backtest_runs SET status = COALESCE(?, status), completed_at = COALESCE(?, completed_at) WHERE id = ?`
-  ).run(status ?? null, completed_at ?? null, id);
+    `UPDATE youtube_backtest_runs
+     SET status = COALESCE(?, status),
+         completed_at = COALESCE(?, completed_at),
+         results = COALESCE(?, results)
+     WHERE id = ?`
+  ).run(status ?? null, completed_at ?? null, results === undefined ? null : JSON.stringify(results), id);
 }
 
 export function insertYoutubeBacktestSignalResult(input) {
@@ -2494,7 +2581,7 @@ export function insertYoutubeBacktestSignalResult(input) {
 
 function parseBacktestRun(row) {
   if (!row) return null;
-  return { ...row, strategy_config: JSON.parse(row.strategy_config) };
+  return { ...row, strategy_config: JSON.parse(row.strategy_config), results: jsonOrNull(row.results) };
 }
 
 export function listYoutubeBacktestRuns() {
@@ -2504,6 +2591,9 @@ export function listYoutubeBacktestRuns() {
 export function getYoutubeBacktestRun(id) {
   const run = parseBacktestRun(db.prepare(`SELECT * FROM youtube_backtest_runs WHERE id = ?`).get(id));
   if (!run) return null;
+  // Walk-forward runs store fold summaries in the results column; mention
+  // backtests store per-mention rows in youtube_backtest_signal_results.
+  if (run.results) return run;
   const results = db.prepare(
     `SELECT r.*, a.symbol, a.canonical_name, am.mention_text
      FROM youtube_backtest_signal_results r
@@ -2520,8 +2610,8 @@ export function replaceCreatorAlphaMetric(input) {
        channel_id, asset_type, direction, mention_type, sample_size, avg_return_1h,
        avg_return_6h, avg_return_24h, avg_return_7d, avg_return_30d, avg_return_90d,
        win_rate_24h, win_rate_7d, win_rate_30d, median_return_30d, volatility_30d,
-       pump_dump_rate, fade_score, alpha_score, label
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       pump_dump_rate, fade_score, alpha_score, label, measurable_mentions, alpha_basis
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     input.channel_id,
     input.asset_type ?? null,
@@ -2542,7 +2632,9 @@ export function replaceCreatorAlphaMetric(input) {
     input.pump_dump_rate ?? null,
     input.fade_score ?? null,
     input.alpha_score ?? null,
-    input.label ?? null
+    input.label ?? null,
+    input.measurable_mentions ?? null,
+    input.alpha_basis ?? null
   );
 }
 
@@ -2550,6 +2642,22 @@ export function getCreatorAlpha(channelId) {
   return db.prepare(
     `SELECT * FROM creator_alpha_metrics WHERE channel_id = ? ORDER BY calculated_at DESC, id DESC LIMIT 20`
   ).all(channelId);
+}
+
+// Latest alpha row per channel — the cross-creator universe used for
+// percentile scoring and follow/fade dashboards.
+export function listLatestCreatorAlphaMetrics() {
+  return db.prepare(
+    `SELECT cam.*, yc.title AS channel_title, yc.tracking_enabled
+     FROM creator_alpha_metrics cam
+     JOIN youtube_channels yc ON yc.id = cam.channel_id
+     WHERE cam.id = (
+       SELECT id FROM creator_alpha_metrics
+       WHERE channel_id = cam.channel_id
+       ORDER BY calculated_at DESC, id DESC LIMIT 1
+     )
+     ORDER BY cam.alpha_score DESC NULLS LAST`
+  ).all();
 }
 
 export function upsertInfluenceSignalEvent(input) {
@@ -2738,6 +2846,9 @@ export const ALERT_RULE_TYPES = [
   'stale-warning',
   'strategy-match',
   'tweet-catalyst',
+  'creator-alpha-mention',
+  'pump-warning',
+  'fade-candidate-mention',
 ];
 export const ALERT_CHANNELS = ['macos', 'discord', 'all'];
 

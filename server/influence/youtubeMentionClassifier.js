@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 import { log } from '../logger.js';
 import { createMentionClassification, getLatestAutoMentionClassification } from '../db.js';
+import { defaultCache } from '../cache/computeCache.js';
 import { mentionQualityScore } from './mentionQuality.js';
 import { logLlmUsage } from '../lib/llmUsage.js';
 
@@ -129,13 +130,34 @@ export async function classifyAndStoreYoutubeMention(mention, context = {}) {
     );
     if (existing) return { ...existing, reused: true };
   }
-  const raw = context.manualClassification || await classifyYoutubeMention({
+  const fullContext = {
     ...context,
     assetSymbol: mention.symbol,
     assetName: mention.canonical_name,
     surroundingText: mention.surrounding_text,
     mentionStartSeconds: mention.mention_start_seconds,
-  });
+  };
+  // Content-addressed second layer: re-detection creates fresh mention ids
+  // (defeating the per-mention reuse above), but identical prompt inputs
+  // still hit the compute cache instead of re-spending tokens.
+  const raw = context.manualClassification || await (await defaultCache()).memoize(
+    'youtube-mention-classify',
+    {
+      model: config.sentimentModel,
+      symbol: fullContext.assetSymbol,
+      name: fullContext.assetName,
+      segment: fullContext.segmentText || fullContext.surroundingText || '',
+      before: fullContext.previousSegmentText || '',
+      after: fullContext.nextSegmentText || '',
+      channel: fullContext.channelTitle || '',
+      video: fullContext.videoTitle || '',
+      description: (fullContext.videoDescription || '').slice(0, 800),
+      paid: !!fullContext.hasPaidProductPlacement,
+      startSeconds: fullContext.mentionStartSeconds ?? null,
+    },
+    () => classifyYoutubeMention(fullContext),
+    { version: PROMPT_VERSION, force: context.force === true }
+  );
   if (!raw) return null;
   const normalized = normalizeClassification(raw, mention);
   return createMentionClassification({

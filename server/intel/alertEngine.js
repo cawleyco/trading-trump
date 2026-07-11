@@ -15,8 +15,12 @@ import {
   listWatchlist,
   countClusterTrades,
   getTickerSector,
+  getCreatorAlpha,
 } from '../db.js';
+import { enabledFunds } from '../config.js';
+import { getFundClient } from '../alpacaClient.js';
 import { buildThesisCard } from './thesisCard.js';
+import { mentionAlertMessage } from '../influence/mentionCard.js';
 import { notify } from '../notifier.js';
 import { log } from '../logger.js';
 
@@ -122,6 +126,44 @@ export function evaluateRule(rule, event) {
         message: oneLine(`Strategy "${event.strategy.name}" matched. ${tradeAlertMessage(event.trade, event.score)}`),
       };
     }
+    case 'creator-alpha-mention': {
+      if (event.kind !== 'youtube-mention') return null;
+      // Trust layer enforced at the alert boundary: a null alpha (below the
+      // minimum sample) never fires, however good the mention looks.
+      if (event.alpha?.label !== 'follow' || event.alpha?.alpha_score == null) return null;
+      if (!(Number(event.alpha.alpha_score) >= Number(p.minAlpha ?? 65))) return null;
+      if (!(Number(event.mention.mention_quality_score ?? 0) >= Number(p.minQuality ?? 70))) return null;
+      return {
+        dedupKey: `cam:${rule.id}:${event.mention.id}`,
+        title: `Proven-alpha mention: ${event.mention.symbol}`,
+        message: mentionAlertMessage(event.mention, event.alpha),
+      };
+    }
+    case 'pump-warning': {
+      if (event.kind !== 'youtube-mention') return null;
+      if (!(Number(event.mention.pump_risk_score ?? 0) >= Number(p.minPumpRisk ?? 70))) return null;
+      const symbol = String(event.mention.symbol || '').toUpperCase();
+      const held = event.heldTickers?.has(symbol);
+      const watched = event.watchMatches?.length > 0;
+      if (!held && !watched) return null; // only warn about what you hold or watch
+      return {
+        dedupKey: `pw:${rule.id}:${event.mention.id}`,
+        title: `Pump warning: ${symbol}${held ? ' (HELD)' : ''}`,
+        message: mentionAlertMessage(event.mention, event.alpha),
+      };
+    }
+    case 'fade-candidate-mention': {
+      if (event.kind !== 'youtube-mention') return null;
+      if (event.alpha?.label !== 'fade') return null;
+      const held = event.heldTickers?.has(String(event.mention.symbol || '').toUpperCase());
+      const watched = event.watchMatches?.length > 0;
+      if (!held && !watched) return null;
+      return {
+        dedupKey: `fc:${rule.id}:${event.mention.id}`,
+        title: `Fade-candidate mention: ${event.mention.symbol}`,
+        message: mentionAlertMessage(event.mention, event.alpha),
+      };
+    }
     case 'tweet-catalyst': {
       if (event.kind !== 'post-classified') return null;
       const c = event.classification || {};
@@ -222,6 +264,51 @@ export function dispatchPostClassified(post, classification, { notifyFn = notify
     return runRules({ kind: 'post-classified', post, classification }, ['tweet-catalyst'], notifyFn);
   } catch (err) {
     log.warn('alerts', `dispatchPostClassified failed: ${err.message}`);
+    return [];
+  }
+}
+
+const YOUTUBE_TYPES = ['creator-alpha-mention', 'pump-warning', 'fade-candidate-mention'];
+
+// Held tickers change slowly relative to mention volume — cache the Alpaca
+// positions fan-out for a minute so a burst of mentions costs one API round.
+let _heldCache = { at: 0, tickers: new Set() };
+async function heldTickers() {
+  if (Date.now() - _heldCache.at < 60_000) return _heldCache.tickers;
+  const tickers = new Set();
+  for (const fund of enabledFunds) {
+    try {
+      for (const p of await getFundClient(fund.name).getPositions()) {
+        tickers.add(String(p.symbol).toUpperCase());
+      }
+    } catch (err) {
+      log.warn('alerts', `Positions fetch failed for fund "${fund.name}": ${err.message}`);
+    }
+  }
+  _heldCache = { at: Date.now(), tickers };
+  return tickers;
+}
+
+/**
+ * Called by the YouTube poller for each classified mention on a freshly
+ * ingested video (never for backfill/first-run history). Best-effort.
+ */
+export async function dispatchYoutubeMention(mention, video, { notifyFn = notify } = {}) {
+  try {
+    const alpha = mention.channel_id ? getCreatorAlpha(mention.channel_id)[0] ?? null : null;
+    const symbol = String(mention.symbol || '').toUpperCase();
+    const watchMatches = listWatchlist().filter((w) => w.kind === 'ticker' && w.value === symbol);
+    const event = {
+      kind: 'youtube-mention',
+      mention,
+      video,
+      alpha,
+      watchMatches,
+      heldTickers: await heldTickers(),
+    };
+    return runRules(event, YOUTUBE_TYPES, notifyFn);
+  } catch (err) {
+    log.warn('alerts', `dispatchYoutubeMention failed: ${err.message}`);
     return [];
   }
 }

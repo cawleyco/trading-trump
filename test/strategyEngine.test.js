@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   evaluateStrategyDefinition,
+  evaluateYoutubeStrategyDefinition,
   validateStrategyDefinition,
 } from '../server/intel/strategyEngine.js';
 
@@ -102,3 +103,62 @@ test('seed strategy definitions hit their intended filters', () => {
   assert.equal(evaluateStrategyDefinition(trade, score, freshHighConviction).matched, true);
   assert.equal(evaluateStrategyDefinition(trade, score, clusterAccumulation).matched, true);
 });
+
+// --- youtube-source strategies (WS3) ---------------------------------------
+
+test('youtube strategies validate: watch/paper only, labels checked', () => {
+  const valid = validateStrategyDefinition({
+    source: 'youtube',
+    filters: { minAlpha: 65, labels: ['follow'], minQuality: 70, maxPumpRisk: 40 },
+    action: { mode: 'paper', fund: 'paper', notionalUsd: 250 },
+  })
+  assert.equal(valid.source, 'youtube')
+  assert.deepEqual(valid.filters.labels, ['follow'])
+
+  // The compliance gate: auto and manual are rejected until walk-forward evidence exists.
+  for (const mode of ['auto', 'manual']) {
+    assert.throws(
+      () => validateStrategyDefinition({ source: 'youtube', filters: {}, action: { mode } }),
+      /only watch or paper/
+    )
+  }
+  assert.throws(
+    () => validateStrategyDefinition({ source: 'youtube', filters: { labels: ['insufficient_data'] }, action: { mode: 'watch' } }),
+    /labels must be among/
+  )
+})
+
+test('evaluateYoutubeStrategyDefinition gates on label, alpha, quality, pump risk', () => {
+  const definition = {
+    source: 'youtube',
+    filters: { minAlpha: 65, labels: ['follow'], minQuality: 70, maxPumpRisk: 40 },
+    action: { mode: 'watch' },
+  }
+  const mention = { symbol: 'TSLA', direction: 'bullish', mention_quality_score: 82, pump_risk_score: 15, channel_title: 'Alpha Creator' }
+  const followAlpha = { label: 'follow', alpha_score: 80 }
+
+  assert.equal(evaluateYoutubeStrategyDefinition(mention, followAlpha, definition).matched, true)
+
+  // null alpha (below minimum sample) fails minAlpha — unknown never trades
+  const nullAlpha = { label: 'follow', alpha_score: null }
+  const nullResult = evaluateYoutubeStrategyDefinition(mention, nullAlpha, definition)
+  assert.equal(nullResult.matched, false)
+  assert.ok(nullResult.failedFilters.some((f) => f.code === 'minAlpha'))
+
+  const noAlpha = evaluateYoutubeStrategyDefinition(mention, null, definition)
+  assert.ok(noAlpha.failedFilters.some((f) => f.code === 'labels'))
+
+  const pumpy = evaluateYoutubeStrategyDefinition({ ...mention, pump_risk_score: 60 }, followAlpha, definition)
+  assert.ok(pumpy.failedFilters.some((f) => f.code === 'maxPumpRisk'))
+})
+
+test('youtube strategies never match congress trades and vice versa', () => {
+  const youtubeDef = { source: 'youtube', filters: {}, action: { mode: 'watch' } }
+  const result = evaluateStrategyDefinition(
+    { ticker: 'LMT', type: 'buy', politician: 'Sen. Y' },
+    { score: 90 },
+    youtubeDef
+  )
+  assert.equal(result.matched, false)
+  assert.ok(result.failedFilters.some((f) => f.code === 'source'))
+})

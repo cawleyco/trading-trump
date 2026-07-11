@@ -39,6 +39,20 @@ const ACTION_KEYS = new Set(['mode', 'fund', 'notionalUsd']);
 const TOP_KEYS = new Set(['source', 'filters', 'action']);
 const MODES = new Set(['watch', 'paper', 'manual', 'auto']);
 
+// YouTube strategies match classified finfluencer mentions instead of congress
+// trades. Their mode ladder is capped at watch/paper until walk-forward
+// evidence exists (manual approvals are congress-keyed; auto is real money).
+const YOUTUBE_FILTER_KEYS = new Set([
+  'minAlpha',
+  'labels',
+  'minQuality',
+  'maxPumpRisk',
+  'directions',
+  'channels',
+]);
+const YOUTUBE_MODES = new Set(['watch', 'paper']);
+const YOUTUBE_LABELS = new Set(['follow', 'fade', 'neutral']);
+
 const EMPTY_FILTERS = {
   direction: null,
   minCopyScore: null,
@@ -74,13 +88,52 @@ function asStringArray(value, key) {
   return value.map((v) => String(v || '').trim()).filter(Boolean);
 }
 
+function validateYoutubeStrategyDefinition(definition) {
+  const filterUnknown = unknownKeys(definition.filters || {}, YOUTUBE_FILTER_KEYS);
+  if (filterUnknown.length) throw new Error(`unknown youtube filter keys: ${filterUnknown.join(', ')}`);
+  const actionUnknown = unknownKeys(definition.action || {}, ACTION_KEYS);
+  if (actionUnknown.length) throw new Error(`unknown action keys: ${actionUnknown.join(', ')}`);
+
+  const input = definition.filters || {};
+  const labels = asStringArray(input.labels ?? ['follow'], 'labels');
+  for (const label of labels) {
+    if (!YOUTUBE_LABELS.has(label)) throw new Error(`labels must be among: ${[...YOUTUBE_LABELS].join(', ')}`);
+  }
+  const directions = asStringArray(input.directions, 'directions');
+  for (const d of directions) {
+    if (!['bullish', 'bearish'].includes(d)) throw new Error('directions must be "bullish" or "bearish"');
+  }
+  const filters = {
+    minAlpha: asNumber(input.minAlpha, 'minAlpha', { min: 0, max: 100 }),
+    labels,
+    minQuality: asNumber(input.minQuality, 'minQuality', { min: 0, max: 100 }),
+    maxPumpRisk: asNumber(input.maxPumpRisk, 'maxPumpRisk', { min: 0, max: 100 }),
+    directions,
+    channels: asStringArray(input.channels, 'channels'),
+  };
+
+  const action = {
+    mode: definition.action?.mode ?? 'watch',
+    fund: definition.action?.fund ? String(definition.action.fund).trim() : 'paper',
+    notionalUsd: asNumber(definition.action?.notionalUsd ?? 500, 'notionalUsd', { min: 1 }),
+  };
+  if (!YOUTUBE_MODES.has(action.mode)) {
+    throw new Error(
+      'youtube strategies support only watch or paper mode — auto/manual are gated until walk-forward evidence exists'
+    );
+  }
+  return { source: 'youtube', filters, action };
+}
+
 export function validateStrategyDefinition(definition) {
   if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
     throw new Error('strategy definition must be an object');
   }
   const topUnknown = unknownKeys(definition, TOP_KEYS);
   if (topUnknown.length) throw new Error(`unknown strategy keys: ${topUnknown.join(', ')}`);
-  if ((definition.source ?? 'congress') !== 'congress') throw new Error('source must be "congress"');
+  const source = definition.source ?? 'congress';
+  if (source === 'youtube') return validateYoutubeStrategyDefinition(definition);
+  if (source !== 'congress') throw new Error('source must be "congress" or "youtube"');
 
   const filterUnknown = unknownKeys(definition.filters || {}, FILTER_KEYS);
   if (filterUnknown.length) throw new Error(`unknown filter keys: ${filterUnknown.join(', ')}`);
@@ -152,8 +205,43 @@ function pushFail(failed, code, detail) {
   failed.push(detail ? { code, detail } : { code });
 }
 
+/**
+ * Pure matcher for youtube-source strategies. `mention` is a listAssetMentions
+ * row (classification joined); `alpha` is the creator's latest alpha row.
+ */
+export function evaluateYoutubeStrategyDefinition(mention, alpha, definition) {
+  const clean = validateStrategyDefinition(definition);
+  if (clean.source !== 'youtube') throw new Error('not a youtube strategy');
+  const f = clean.filters;
+  const failedFilters = [];
+
+  const label = alpha?.label ?? 'insufficient_data';
+  if (f.labels.length && !f.labels.includes(label)) pushFail(failedFilters, 'labels', `creator label ${label}`);
+  // minAlpha only ever passes on a real score — null (below minimum sample) fails.
+  if (f.minAlpha != null && !(Number(alpha?.alpha_score) >= f.minAlpha)) {
+    pushFail(failedFilters, 'minAlpha', `${alpha?.alpha_score ?? 'null'} < ${f.minAlpha}`);
+  }
+  if (f.minQuality != null && !(Number(mention.mention_quality_score) >= f.minQuality)) {
+    pushFail(failedFilters, 'minQuality', `${mention.mention_quality_score ?? 'missing'} < ${f.minQuality}`);
+  }
+  if (f.maxPumpRisk != null && !(Number(mention.pump_risk_score ?? 0) <= f.maxPumpRisk)) {
+    pushFail(failedFilters, 'maxPumpRisk', `${mention.pump_risk_score} > ${f.maxPumpRisk}`);
+  }
+  if (f.directions.length && !f.directions.includes(mention.direction)) {
+    pushFail(failedFilters, 'directions', `${mention.direction ?? 'unclassified'} not allowed`);
+  }
+  if (f.channels.length && !f.channels.includes(String(mention.channel_title))) {
+    pushFail(failedFilters, 'channels', `${mention.channel_title} not in list`);
+  }
+
+  return { matched: failedFilters.length === 0, failedFilters };
+}
+
 export function evaluateStrategyDefinition(trade, score, definition, ctx = {}) {
   const clean = validateStrategyDefinition(definition);
+  if (clean.source !== 'congress') {
+    return { matched: false, failedFilters: [{ code: 'source', detail: `${clean.source} strategy cannot match a congress trade` }] };
+  }
   const f = clean.filters;
   const metrics = metricContext(trade, score, ctx);
   const failedFilters = [];
@@ -228,7 +316,8 @@ export async function processTradeThroughStrategies(tradeKey, opts = {}) {
   const trade = opts.trade ?? getCongressTradeByKey(tradeKey);
   if (!trade) throw new Error(`unknown trade key "${tradeKey}"`);
   const score = opts.score ?? getTradeScore(tradeKey) ?? await scoreTrade(tradeKey);
-  const strategies = opts.strategies ?? listStrategies({ includeDisabled: false });
+  const strategies = (opts.strategies ?? listStrategies({ includeDisabled: false }))
+    .filter((s) => (s.definition?.source ?? 'congress') === 'congress');
   const inReview = opts.inReview ?? (trade.parse_confidence < 0.8 || isTradeInPendingReview(tradeKey));
   const results = [];
 
@@ -272,6 +361,59 @@ export async function processTradeThroughStrategies(tradeKey, opts = {}) {
       updateStrategyMatchOutcome(matchId, { outcome, signalId });
     }
     results.push({ strategyId: strategy.id, matched: evaluation.matched, failedFilters: evaluation.failedFilters, outcome, signalId, approval });
+  }
+  return results;
+}
+
+/**
+ * Route a classified mention through youtube-source strategies. Called by the
+ * YouTube poller for fresh (non-seed, non-backfill) mentions. Modes: watch
+ * records the match; paper creates a real signal with source 'youtube' routed
+ * only to the strategy's fund (which must subscribe to the youtube source).
+ */
+export async function processMentionThroughStrategies(mention, alpha, opts = {}) {
+  const strategies = (opts.strategies ?? listStrategies({ includeDisabled: false }))
+    .filter((s) => s.definition?.source === 'youtube');
+  const results = [];
+  for (const strategy of strategies) {
+    const definition = validateStrategyDefinition(strategy.definition);
+    const evaluation = evaluateYoutubeStrategyDefinition(mention, alpha, definition);
+    const matchKey = `mention:${mention.id}`;
+    const matchId = recordStrategyMatch({
+      strategyId: strategy.id,
+      tradeKey: matchKey,
+      matched: evaluation.matched,
+      failedFilters: evaluation.failedFilters,
+      outcome: evaluation.matched ? null : 'filter-failed',
+    });
+    let outcome = evaluation.matched ? 'watch' : 'filter-failed';
+    let signalId = null;
+
+    if (evaluation.matched && definition.action.mode === 'paper') {
+      const signal = makeTradeSignal({
+        source: 'youtube',
+        ticker: mention.symbol,
+        direction: mention.direction === 'bearish' ? 'sell' : 'buy',
+        confidence: mention.relevance_score != null ? Number(mention.relevance_score) / 100 : null,
+        rationale: `Strategy "${strategy.name}" matched: ${mention.channel_title || 'creator'} ` +
+          `${mention.direction} mention of ${mention.symbol} ` +
+          `(quality ${mention.mention_quality_score ?? 'n/a'}, creator label ${alpha?.label ?? 'unknown'})`,
+        rawReference: {
+          mentionId: mention.id,
+          videoId: mention.video_id,
+          channelId: mention.channel_id,
+          creatorLabel: alpha?.label ?? null,
+          alphaScore: alpha?.alpha_score ?? null,
+          strategy: { id: strategy.id, name: strategy.name, action: definition.action },
+        },
+        eventTimestamp: mention.event_time,
+      });
+      const outcomes = await processSignal(signal, { onlyFund: definition.action.fund || undefined });
+      signalId = outcomes[0]?.signalId ?? null;
+      outcome = 'signal-created';
+    }
+    if (evaluation.matched) updateStrategyMatchOutcome(matchId, { outcome, signalId });
+    results.push({ strategyId: strategy.id, matched: evaluation.matched, failedFilters: evaluation.failedFilters, outcome, signalId });
   }
   return results;
 }

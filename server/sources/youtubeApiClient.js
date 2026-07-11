@@ -80,13 +80,16 @@ export async function getChannelUploadsPlaylistId(channelId) {
   return metadata.uploads_playlist_id;
 }
 
-export async function listLatestVideosFromUploadsPlaylist(playlistId, maxResults = 10) {
+// One page of an uploads playlist; nextPageToken lets callers (backfill)
+// walk the full history 50 videos at a time.
+export async function listUploadsPlaylistPage(playlistId, { maxResults = 50, pageToken = null } = {}) {
   const data = await get('playlistItems', {
     part: 'snippet,contentDetails',
     playlistId,
     maxResults: Math.min(Math.max(Number(maxResults) || 10, 1), 50),
+    ...(pageToken ? { pageToken } : {}),
   });
-  return (data.items || []).map((item) => ({
+  const items = (data.items || []).map((item) => ({
     youtube_video_id: item.contentDetails?.videoId,
     title: item.snippet?.title || 'Untitled video',
     description: item.snippet?.description ?? '',
@@ -94,6 +97,12 @@ export async function listLatestVideosFromUploadsPlaylist(playlistId, maxResults
     thumbnail_url: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url || null,
     url: item.contentDetails?.videoId ? `https://www.youtube.com/watch?v=${item.contentDetails.videoId}` : null,
   })).filter((v) => v.youtube_video_id && v.published_at);
+  return { items, nextPageToken: data.nextPageToken ?? null };
+}
+
+export async function listLatestVideosFromUploadsPlaylist(playlistId, maxResults = 10) {
+  const { items } = await listUploadsPlaylistPage(playlistId, { maxResults });
+  return items;
 }
 
 export async function getVideoMetadata(videoId) {

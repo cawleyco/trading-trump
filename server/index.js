@@ -55,14 +55,11 @@ import {
   getYoutubeChannel,
   updateYoutubeChannel,
   insertYoutubeChannelSnapshot,
-  markYoutubeChannelSynced,
   upsertYoutubeVideo,
   listYoutubeVideos,
   getYoutubeVideo,
   insertYoutubeVideoSnapshot,
-  updateYoutubeVideoStatuses,
-  createContentDocument,
-  insertContentSegments,
+  countYoutubeVideosByStatus,
   listContentDocumentsForVideo,
   listContentSegmentsForVideo,
   listAssetMentions,
@@ -115,6 +112,7 @@ import {
 import { notify } from './notifier.js';
 import { startCongressPoller } from './sources/congressPoller.js';
 import { startTruthSocialPoller } from './sources/truthSocialPoller.js';
+import { startYoutubePoller } from './sources/youtubePoller.js';
 import { ensureTickerUniverse } from './sources/tickerMeta.js';
 import { ensureLegislatorsAndCommittees, refreshLegislatorsAndCommittees } from './sources/legislators.js';
 import { refreshRecentBills } from './sources/congressGov.js';
@@ -126,17 +124,23 @@ import { runCongressBacktest, runCongressLeaderboard, runEntryBasisComparison, l
 import { validateBacktestBody } from './lib/validateBacktestBody.js';
 import { runWalkForward } from './backtest/walkForward.js';
 import { runTweetBacktest } from './backtest/tweetBacktest.js';
-import { runYoutubeBacktest, recalculateCreatorAlpha } from './backtest/youtubeBacktest.js';
+import { runYoutubeBacktest, recalculateCreatorAlpha, refreshAllCreatorAlpha } from './backtest/youtubeBacktest.js';
+import { runYoutubeWalkForward } from './backtest/youtubeWalkForward.js';
 import { getAttribution } from './attribution.js';
 import { log } from './logger.js';
 import {
   resolveChannelId,
   getChannelMetadata,
-  listLatestVideosFromUploadsPlaylist,
   getVideoMetadata,
 } from './sources/youtubeApiClient.js';
 import { ManualTranscriptProvider } from './influence/transcripts.js';
-import { detectAndStoreYoutubeMentions } from './influence/youtubeMentionDetection.js';
+import {
+  syncChannel,
+  analyzeVideo,
+  storeTranscript,
+  queueChannelBackfill,
+} from './influence/youtubeIngestion.js';
+import { buildMentionCard } from './influence/mentionCard.js';
 import { classifyAndStoreYoutubeMention, normalizeClassification } from './influence/youtubeMentionClassifier.js';
 import { generateYoutubeSignals } from './influence/youtubeSignals.js';
 import { defaultCache } from './cache/computeCache.js';
@@ -982,40 +986,38 @@ app.post('/api/influence/youtube/channels/:id/sync', async (req, res) => {
   if (!requireInfluence(req, res)) return;
   const id = numericIdParam(req, res);
   if (id == null) return;
-  const channel = getYoutubeChannel(id);
-  if (!channel) return res.status(404).json({ error: 'channel not found' });
   try {
-    let current = channel;
-    if (!channel.uploads_playlist_id || req.body.refreshChannelMetadata) {
-      const metadata = await getChannelMetadata(channel.youtube_channel_id);
-      current = updateYoutubeChannel(id, metadata);
-      insertYoutubeChannelSnapshot(id, current);
-    }
-    if (!current.uploads_playlist_id) {
-      return res.status(400).json({ error: 'channel has no uploads playlist id' });
-    }
-    const latest = await listLatestVideosFromUploadsPlaylist(
-      current.uploads_playlist_id,
-      Number(req.body.maxResults) || config.influence.syncMaxResults
-    );
-    const videos = [];
-    for (const item of latest) {
-      let full = item;
-      try {
-        full = { ...item, ...(await getVideoMetadata(item.youtube_video_id)) };
-      } catch (err) {
-        log.warn('youtube', `Video metadata failed for ${item.youtube_video_id}: ${err.message}`);
-      }
-      const video = upsertYoutubeVideo({ ...full, channel_id: id, ingestion_status: 'metadata_fetched' });
-      if (full.stats) insertYoutubeVideoSnapshot(video.id, full.stats);
-      videos.push(video);
-    }
-    markYoutubeChannelSynced(id);
-    res.json({ channel: getYoutubeChannel(id), videos });
+    res.json(await syncChannel(id, {
+      maxResults: req.body.maxResults,
+      refreshMetadata: !!req.body.refreshChannelMetadata,
+    }));
   } catch (err) {
-    log.error('youtube', `Channel sync failed: ${err.message}`);
-    res.status(500).json({ error: err.message });
+    if (!err.httpStatus) log.error('youtube', `Channel sync failed: ${err.message}`);
+    res.status(err.httpStatus || 500).json({ error: err.message });
   }
+});
+
+app.post('/api/influence/youtube/channels/:id/backfill', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  try {
+    res.json(await queueChannelBackfill(id, {
+      maxVideos: Number(req.body?.maxVideos) || 100,
+      publishedAfter: req.body?.publishedAfter,
+    }));
+  } catch (err) {
+    if (!err.httpStatus) log.error('youtube', `Backfill queue failed: ${err.message}`);
+    res.status(err.httpStatus || 500).json({ error: err.message });
+  }
+});
+
+app.get('/api/influence/youtube/channels/:id/backfill-status', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  if (!getYoutubeChannel(id)) return res.status(404).json({ error: 'channel not found' });
+  res.json({ channelId: id, statuses: countYoutubeVideosByStatus(id) });
 });
 
 app.get('/api/influence/youtube/videos', (req, res) => {
@@ -1075,17 +1077,9 @@ app.post('/api/influence/youtube/videos/:id/transcript', async (req, res) => {
   });
   const result = await provider.fetchTranscript(video);
   if (result.status !== 'success') return res.status(400).json(result);
-  const documentId = createContentDocument({
-    source_type: 'youtube_video',
-    source_id: id,
-    provider_name: result.providerName,
-    language: result.language,
-    raw_text: result.rawText,
-    source_format: result.format,
-    authorization_status: req.body.authorizationStatus || 'manual_upload',
+  const documentId = storeTranscript(video, result, {
+    authorizationStatus: req.body.authorizationStatus || 'manual_upload',
   });
-  insertContentSegments(documentId, result.segments);
-  updateYoutubeVideoStatuses(id, { transcript_status: 'available' });
   res.json({ documentId, segments: listContentSegmentsForVideo(id) });
 });
 
@@ -1096,8 +1090,7 @@ app.post('/api/influence/youtube/videos/:id/analyze', async (req, res) => {
   const video = getYoutubeVideo(id);
   if (!video) return res.status(404).json({ error: 'video not found' });
   try {
-    const detection = detectAndStoreYoutubeMentions(video);
-    updateYoutubeVideoStatuses(id, { analysis_status: 'complete' });
+    const detection = analyzeVideo(video);
     res.json({ detection, mentions: listAssetMentions({ videoId: id, limit: 500 }) });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -1135,6 +1128,16 @@ app.get('/api/influence/youtube/mentions/:id', (req, res) => {
   const mention = getAssetMention(id);
   if (!mention) return res.status(404).json({ error: 'mention not found' });
   res.json({ ...mention, classifications: listMentionClassifications(id) });
+});
+
+app.get('/api/influence/youtube/mentions/:id/card', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const mention = getAssetMention(id);
+  if (!mention) return res.status(404).json({ error: 'mention not found' });
+  const alpha = mention.channel_id ? getCreatorAlpha(mention.channel_id)[0] ?? null : null;
+  res.json(buildMentionCard(mention, alpha));
 });
 
 app.patch('/api/influence/youtube/mentions/:id', (req, res) => {
@@ -1217,6 +1220,15 @@ app.post('/api/influence/youtube/channels/:id/recalculate-alpha', async (req, re
   const id = numericIdParam(req, res);
   if (id == null) return;
   res.json(await recalculateCreatorAlpha(id));
+});
+
+app.post('/api/influence/youtube/walk-forward', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  try {
+    res.json(await runYoutubeWalkForward(req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.post('/api/influence/youtube/videos/:id/signals', (req, res) => {
@@ -1303,6 +1315,9 @@ app.listen(config.port, '127.0.0.1', () => {
   }
   startCongressPoller();
   startTruthSocialPoller();
+  if (config.influence.enabled && config.influence.youtubeEnabled) {
+    startYoutubePoller();
+  }
   startPositionManager();
 
   // Sweep expired compute-cache rows once per boot
@@ -1336,6 +1351,20 @@ app.listen(config.port, '127.0.0.1', () => {
     },
     { timezone: 'America/New_York' }
   );
+
+  // Creator alpha: recompute the whole universe nightly so percentile scores
+  // and follow/fade labels stay honest as new mentions accumulate.
+  if (config.influence.enabled && config.influence.youtubeEnabled) {
+    cron.schedule(
+      '45 6 * * *',
+      () => {
+        refreshAllCreatorAlpha().catch((err) =>
+          log.error('server', `Scheduled creator alpha refresh failed: ${err.message}`)
+        );
+      },
+      { timezone: 'America/New_York' }
+    );
+  }
 
   cron.schedule(
     '0 5 * * 0',

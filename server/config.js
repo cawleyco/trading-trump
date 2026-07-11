@@ -117,10 +117,19 @@ export const config = {
     syncMaxResults: num('YOUTUBE_SYNC_MAX_RESULTS', 10),
     pollSeconds: num('YOUTUBE_POLL_SECONDS', 1800),
     signalQualityThreshold: num('YOUTUBE_SIGNAL_QUALITY_THRESHOLD', 70),
+    // Automated caption fetching is a YouTube ToS gray area — explicit opt-in.
+    autoTranscriptsEnabled: process.env.YOUTUBE_AUTO_TRANSCRIPTS_ENABLED === 'true',
+    ytDlpPath: process.env.YT_DLP_PATH || 'yt-dlp',
+    transcriptMaxAttempts: num('YOUTUBE_TRANSCRIPT_MAX_ATTEMPTS', 3),
+    transcriptFetchDelayMs: num('YOUTUBE_TRANSCRIPT_FETCH_DELAY_MS', 5000),
+    pollMaxVideosPerRun: num('YOUTUBE_POLL_MAX_VIDEOS_PER_RUN', 10),
+    backfillMaxPerRun: num('YOUTUBE_BACKFILL_MAX_PER_RUN', 5),
+    rosterSeedEnabled: process.env.YOUTUBE_ROSTER_SEED_ENABLED !== 'false',
   },
 
   polling: {
     congressCron: process.env.CONGRESS_POLL_CRON || '*/20 * * * *',
+    youtubeCron: process.env.YOUTUBE_POLL_CRON || '*/30 * * * *',
     truthSocialSeconds: num('TRUTH_SOCIAL_POLL_SECONDS', 30),
     truthSocialUsername: process.env.TRUTH_SOCIAL_USERNAME || 'realDonaldTrump',
   },
