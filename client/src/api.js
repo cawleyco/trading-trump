@@ -164,6 +164,7 @@ export const api = {
   rejectStrategy: (id) =>
     req(`/api/approvals/${id}/reject`, { method: 'POST' }),
   politicians: () => req('/api/politicians'),
+  congressTradeCoverage: () => req('/api/congress-trades/coverage'),
   backtests: () => req('/api/backtests'),
   backtest: (id) => req(`/api/backtests/${id}`),
   backtestPresets: () => req('/api/backtest-presets'),

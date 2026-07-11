@@ -230,19 +230,28 @@ async function loadSeries(mentions, exitWindows, provider) {
 export async function runYoutubeBacktest(config = {}, { provider = alpacaPriceProvider } = {}) {
   const exitWindows = (config.exitWindows?.length ? config.exitWindows : ['1h', '24h', '7d', '30d'])
     .filter((w) => WINDOWS[w]);
-  const mentions = listAssetMentions({
+  const allMentions = listAssetMentions({
     videoId: config.videoId,
     channelId: config.channelId,
     assetId: config.assetId,
     limit: config.limit || 1000,
-  }).filter((m) => {
+  });
+  // Funnel counts explain small samples: most mentions drop out because they
+  // were never classified with a direction, not because prices are missing.
+  const withDirection = allMentions.filter((m) => ['bullish', 'bearish'].includes(m.direction));
+  const mentions = withDirection.filter((m) => {
     if (config.mentionId && Number(m.id) !== Number(config.mentionId)) return false;
     if (config.directions?.length && !config.directions.includes(m.direction)) return false;
     if (config.mentionTypes?.length && !config.mentionTypes.includes(m.mention_type)) return false;
     if (config.minMentionQualityScore && Number(m.mention_quality_score || 0) < config.minMentionQualityScore) return false;
     if (config.minEntityConfidence && Number(m.entity_confidence || 0) < config.minEntityConfidence) return false;
-    return !!m.direction && ['bullish', 'bearish'].includes(m.direction);
+    return true;
   });
+  const funnel = {
+    mentionsTotal: allMentions.length,
+    withDirection: withDirection.length,
+    afterQualityFilters: mentions.length,
+  };
   const runId = createYoutubeBacktestRun({
     name: config.name || 'YouTube mention backtest',
     strategy_config: config,
@@ -266,7 +275,7 @@ export async function runYoutubeBacktest(config = {}, { provider = alpacaPricePr
       insertYoutubeBacktestSignalResult({ ...result, backtest_run_id: runId });
     }
     updateYoutubeBacktestRun(runId, { status: 'complete', completed_at: new Date().toISOString() });
-    return { ...getYoutubeBacktestRun(runId), summary: summarize(results) };
+    return { ...getYoutubeBacktestRun(runId), summary: { ...summarize(results), funnel } };
   } catch (err) {
     updateYoutubeBacktestRun(runId, { status: 'failed', completed_at: new Date().toISOString() });
     throw err;

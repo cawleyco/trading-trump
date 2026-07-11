@@ -58,6 +58,14 @@ export default function YoutubeBacktests() {
         <section style={card}>
           <h3>Latest Result</h3>
           {result.summary?.warning && <p style={{ color: 'var(--color-warning)' }}>{result.summary.warning}</p>}
+          {result.summary?.funnel && (
+            <p style={muted}>
+              {result.summary.funnel.mentionsTotal} mentions → {result.summary.funnel.withDirection} classified bullish/bearish
+              {' '}→ {result.summary.funnel.afterQualityFilters} after filters
+              {result.summary.funnel.withDirection < result.summary.funnel.mentionsTotal &&
+                ' — unclassified mentions need the classifier run before they can be backtested'}
+            </p>
+          )}
           <table>
             <thead><tr><th>Window</th><th>Avg return</th><th>Win rate</th></tr></thead>
             <tbody>

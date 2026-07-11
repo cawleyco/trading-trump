@@ -210,6 +210,10 @@ test('runYoutubeBacktest persists results priced from the injected provider', as
     assert.equal(result.result_metadata.priceSource, 'minute')
     assert.equal(run.summary.priced, 1)
     assert.equal(run.summary.noPriceData, 0)
+    // The filter funnel explains small samples (total → directional → filtered)
+    assert.equal(run.summary.funnel.withDirection, 1)
+    assert.equal(run.summary.funnel.afterQualityFilters, 1)
+    assert.ok(run.summary.funnel.mentionsTotal >= 1)
   } finally {
     deleteFixtureRows({ ...fixture, runId })
   }

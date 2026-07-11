@@ -1,4 +1,4 @@
-import { fetchHistoricalCongressTrades } from '../sources/congressData.js';
+import { cleanPoliticianName, fetchHistoricalCongressTrades, tradeKey } from '../sources/congressData.js';
 import { simulateTrades } from './simulate.js';
 import { insertBacktest, listCongressTrades } from '../db.js';
 import { log } from '../logger.js';
@@ -13,7 +13,7 @@ function archivedTrades(startDate, endDate) {
     let raw = null;
     try { raw = r.raw ? JSON.parse(r.raw) : null; } catch { /* keep null */ }
     return {
-      politician: r.politician,
+      politician: cleanPoliticianName(r.politician),
       ticker: r.ticker,
       type: r.type,
       transactionDate: r.transaction_date,
@@ -25,21 +25,72 @@ function archivedTrades(startDate, endDate) {
   });
 }
 
-export async function getHistoricalTrades(startDate, endDate) {
-  // The local archive (populated by the poller + backfill script) is the
-  // preferred source; fall back to the network while it's still empty.
-  const archived = archivedTrades(startDate, endDate);
-  if (archived.length > 0) return archived;
-
+async function networkTrades(startDate, endDate) {
   const fresh = Date.now() - historicalCache.fetchedAt < 3600_000;
-  if (historicalCache.data && fresh && historicalCache.startDate <= startDate) {
-    return historicalCache.data.filter(
-      (t) => t.disclosureDate >= startDate && t.disclosureDate <= endDate
-    );
+  if (!(historicalCache.data && fresh && historicalCache.startDate <= startDate)) {
+    try {
+      const data = await fetchHistoricalCongressTrades(startDate, endDate);
+      historicalCache = { data, startDate, fetchedAt: Date.now() };
+    } catch (err) {
+      log.warn('backtest', `historical congress fetch failed: ${err.message}`);
+      return [];
+    }
   }
-  const data = await fetchHistoricalCongressTrades(startDate, endDate);
-  historicalCache = { data, startDate, fetchedAt: Date.now() };
-  return data;
+  return historicalCache.data
+    .filter((t) => t.disclosureDate >= startDate && t.disclosureDate <= endDate)
+    .map((t) => ({ ...t, politician: cleanPoliticianName(t.politician) }));
+}
+
+/** Merge archive + network rows, deduped by tradeKey — the archive alone can
+ * cover a sliver of the requested range, and the network source (Quiver live)
+ * only reaches back a recent window, so neither is complete on its own. */
+export function _mergeTradeSources(archived, fetched) {
+  const seen = new Set(archived.map(tradeKey));
+  const merged = archived.slice();
+  for (const t of fetched) {
+    const k = tradeKey(t);
+    if (!seen.has(k)) {
+      seen.add(k);
+      merged.push(t);
+    }
+  }
+  return merged;
+}
+
+export async function getHistoricalTrades(startDate, endDate) {
+  return _mergeTradeSources(
+    archivedTrades(startDate, endDate),
+    await networkTrades(startDate, endDate)
+  );
+}
+
+/**
+ * Coverage of the requested window actually backed by data. The archive +
+ * Quiver's recent-window endpoint cannot reach arbitrarily far back, so a
+ * 2-year request may silently run on 7 weeks of trades — surface that instead.
+ */
+export function _dataCoverage(trades, startDate, endDate) {
+  const dates = trades.map((t) => t.disclosureDate).filter(Boolean).sort();
+  const coverage = {
+    requestedFrom: startDate,
+    requestedTo: endDate,
+    from: dates[0] ?? null,
+    to: dates[dates.length - 1] ?? null,
+    tradeCount: dates.length,
+  };
+  let warning = null;
+  if (dates.length === 0) {
+    warning = `No disclosed trades between ${startDate} and ${endDate}. The archive fills as the poller runs; historical backfill is limited by the data source.`;
+  } else if (coverage.from > addDaysIso(startDate, 30)) {
+    warning =
+      `Requested from ${startDate} but trade data only begins ${coverage.from} — ` +
+      'results cover a shorter period than requested. The data source only reaches back a recent window; the local archive extends as the poller keeps running.';
+  }
+  return { coverage, warning };
+}
+
+function addDaysIso(dateStr, days) {
+  return new Date(Date.parse(`${dateStr}T00:00:00Z`) + days * 86400_000).toISOString().slice(0, 10);
 }
 
 export async function listPoliticians(startDate, endDate) {
@@ -124,6 +175,9 @@ export async function runCongressBacktest({ politician, startDate, endDate, noti
   const plans = buildPlans(theirs, { startDate, endDate, exitRule, stopLossPct, takeProfitPct, entryBasis });
   const results = await simulateTrades(plans, notionalPerTrade);
   results.entryBasis = entryBasis;
+  const { coverage, warning } = _dataCoverage(theirs, startDate, endDate);
+  results.dataCoverage = coverage;
+  if (warning) results.warning = warning;
   const params = { politician, startDate, endDate, notionalPerTrade, exitRule, stopLossPct, takeProfitPct, entryBasis };
   const id = insertBacktest({ kind: 'congress', params, results });
   return { id, params, results };
@@ -190,7 +244,9 @@ export async function runCongressLeaderboard({ startDate, endDate, notionalPerTr
     startDate, endDate, notionalPerTrade, exitRule, minTrades, entryBasis,
   });
   const params = { startDate, endDate, notionalPerTrade, exitRule, minTrades, entryBasis };
-  const results = { leaderboard: rows, politiciansConsidered, entryBasis };
+  const { coverage, warning } = _dataCoverage(all, startDate, endDate);
+  const results = { leaderboard: rows, politiciansConsidered, entryBasis, dataCoverage: coverage };
+  if (warning) results.warning = warning;
   const id = insertBacktest({ kind: 'leaderboard', params, results });
   return { id, params, results };
 }

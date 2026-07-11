@@ -1,4 +1,4 @@
-import { getHistoricalTrades, rankByReturn, buildPlans } from './congressBacktest.js';
+import { getHistoricalTrades, rankByReturn, buildPlans, _dataCoverage } from './congressBacktest.js';
 import { simulateTrades } from './simulate.js';
 import { insertBacktest } from '../db.js';
 
@@ -77,6 +77,7 @@ export async function runWalkForward({
       trainWindow: train,
       testWindow: test,
       topPoliticians,
+      empty: topPoliticians.length === 0,
       inSample: ranked.rows.slice(0, topN),
       outOfSample: oos.summary,
       benchmark: oos.benchmark ? { returnPct: oos.benchmark.returnPct, totalPnl: oos.benchmark.totalPnl } : null,
@@ -87,12 +88,37 @@ export async function runWalkForward({
   const combined = await simulateTrades(oosPlans, notionalPerTrade, { benchmark: true });
 
   const params = { startDate, endDate, notionalPerTrade, folds, topN, exitRule, minTrades, entryBasis };
+  const { coverage, warning: coverageWarning } = _dataCoverage(all, startDate, endDate);
+  const emptyFolds = foldResults.filter((f) => f.empty).length;
+  const politiciansConsidered = new Set(all.filter((t) => t.disclosureDate).map((t) => t.politician)).size;
+  const warnings = [];
+  if (coverageWarning) warnings.push(coverageWarning);
+  if (emptyFolds > 0) {
+    warnings.push(
+      `${emptyFolds} of ${foldResults.length} folds had no in-sample politicians with ≥${minTrades} trades — ` +
+      'the range likely exceeds data coverage or the folds are too short.'
+    );
+  }
+  if (topN > politiciansConsidered) {
+    warnings.push(
+      `topN (${topN}) exceeds the ${politiciansConsidered} politicians in the data — selection is not filtering anyone out.`
+    );
+  }
+  const holdDays = exitRule === 'hold_30' ? 30 : exitRule === 'hold_90' ? 90 : null;
+  const windowDays = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / DAY_MS / folds;
+  if (holdDays && windowDays < holdDays) {
+    warnings.push(
+      `Each fold spans ~${Math.round(windowDays)} days but ${exitRule} holds ${holdDays} days — most exits land outside their fold, blurring the in/out-of-sample split.`
+    );
+  }
   const results = {
     kind: 'walk-forward',
     folds,
     topN,
     entryBasis,
     foldResults,
+    dataCoverage: coverage,
+    warning: warnings.length ? warnings.join(' ') : null,
     aggregate: {
       summary: combined.summary,
       curve: combined.curve,

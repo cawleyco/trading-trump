@@ -1119,6 +1119,12 @@ export function listCongressTrades({ politician, ticker, since, until, limit } =
   return db.prepare(sql).all(...params);
 }
 
+export function congressTradeCoverage() {
+  return db
+    .prepare(`SELECT MIN(disclosure_date) AS "from", MAX(disclosure_date) AS "to", COUNT(*) AS tradeCount FROM congress_trades`)
+    .get();
+}
+
 export function listArchivePoliticians() {
   return db
     .prepare(`SELECT DISTINCT politician FROM congress_trades WHERE politician IS NOT NULL ORDER BY politician`)

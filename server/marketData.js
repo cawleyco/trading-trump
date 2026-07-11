@@ -63,11 +63,13 @@ function ttlForResult(bars, rangeTtl) {
  * the Alpaca client. Returns null when the fetch fails or the ticker is
  * unknown; failures are never cached.
  */
-export async function getDailyBarsCached(ticker, startDate, endDate) {
+export async function getDailyBarsCached(ticker, startDate, endDate, { force = false } = {}) {
   if (!ticker || !startDate || !endDate) return null;
   const l1Key = `bars|${ticker}|${startDate}|${endDate}`;
-  const l1 = getCached(l1Key);
-  if (l1) return l1.value;
+  if (!force) {
+    const l1 = getCached(l1Key);
+    if (l1) return l1.value;
+  }
   const store = await defaultCache();
   const bars = await store.memoize(
     'bars:daily',
@@ -83,6 +85,7 @@ export async function getDailyBarsCached(ticker, startDate, endDate) {
     },
     {
       version: BARS_VERSION,
+      force,
       ttlMs: (bars) => ttlForResult(bars, _barsTtl(endDate)),
       shouldCache: Array.isArray,
     }
@@ -94,11 +97,13 @@ export async function getDailyBarsCached(ticker, startDate, endDate) {
  * Minute bars between two ISO timestamps, ascending. Returns null when the
  * fetch fails; failures are never cached.
  */
-export async function getMinuteBarsCached(ticker, startIso, endIso) {
+export async function getMinuteBarsCached(ticker, startIso, endIso, { force = false } = {}) {
   if (!ticker || !startIso || !endIso) return null;
   const l1Key = `mbars|${ticker}|${startIso}|${endIso}`;
-  const l1 = getCached(l1Key);
-  if (l1) return l1.value;
+  if (!force) {
+    const l1 = getCached(l1Key);
+    if (l1) return l1.value;
+  }
   const store = await defaultCache();
   const bars = await store.memoize(
     'bars:minute',
@@ -114,6 +119,7 @@ export async function getMinuteBarsCached(ticker, startIso, endIso) {
     },
     {
       version: BARS_VERSION,
+      force,
       ttlMs: (bars) => ttlForResult(bars, _minuteBarsTtl(endIso)),
       shouldCache: Array.isArray,
     }

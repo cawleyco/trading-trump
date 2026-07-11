@@ -44,6 +44,11 @@ export default function Backtest() {
     }).catch((e) => setError(`Could not load politician list: ${e.message}`))
     api.backtests().then(setHistory).catch(() => {})
     api.backtestPresets().then(setPresets).catch(() => {})
+    // Default the range to dates the archive actually covers — a hardcoded
+    // multi-year start silently truncates to whatever data exists.
+    api.congressTradeCoverage().then((c) => {
+      if (c?.from) setStartDate((current) => (current === '2024-01-01' ? c.from : current))
+    }).catch(() => {})
   }, [])
 
   const currentParams = () => ({
@@ -424,11 +429,30 @@ function describeParams(h) {
   return `${p.startDate}→${p.endDate}, $${p.notionalPerTrade}/trade, ${hold}, conf ≥ ${p.confidenceThreshold}${slTp}`
 }
 
+function CoverageNote({ results }) {
+  const warning = results?.warning
+  const cov = results?.dataCoverage
+  return (
+    <>
+      {warning && (
+        <p style={{ background: 'var(--color-status-error-bg)', borderRadius: 6, padding: '8px 12px' }}>⚠️ {warning}</p>
+      )}
+      {cov && cov.from && (
+        <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8em', margin: '0 0 4px' }}>
+          Data coverage: {cov.tradeCount} disclosed trades from {cov.from} to {cov.to}
+          {(cov.from > cov.requestedFrom || cov.to < cov.requestedTo) && ` (requested ${cov.requestedFrom} to ${cov.requestedTo})`}
+        </p>
+      )}
+    </>
+  )
+}
+
 function LeaderboardResults({ result, onPick }) {
   const { leaderboard, politiciansConsidered } = result.results
   const notional = result.params?.notionalPerTrade || result.results?.notionalPerTrade || 500
   return (
     <section style={{ ...card, marginTop: 24 }}>
+      <CoverageNote results={result.results} />
       <h3>Leaderboard — {leaderboard.length} of {politiciansConsidered} politicians qualified</h3>
       <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85em' }}>
         Ranked by return on deployed capital. Copying past winners does not guarantee future results.
@@ -483,6 +507,7 @@ function WalkForwardResults({ result }) {
 
   return (
     <section style={{ ...card, marginTop: 24 }}>
+      <CoverageNote results={result.results} />
       <h3>Walk-forward — {folds} folds, top {topN} copied out-of-sample</h3>
       {agg && (
         <h4 style={{ margin: '4px 0 12px', fontWeight: 500 }}>
@@ -588,7 +613,7 @@ function CompareResults({ compare }) {
 }
 
 function Results({ result }) {
-  const { summary, curve, trades, warning, classifications, benchmark, entryBasis } = result.results
+  const { summary, curve, trades, classifications, benchmark, entryBasis } = result.results
   const r = result.results
   const notional = result.params?.notionalPerTrade ?? null
   const politician = result.params?.politician
@@ -607,9 +632,7 @@ function Results({ result }) {
 
   return (
     <section style={{ ...card, marginTop: 24 }}>
-      {warning && (
-        <p style={{ background: 'var(--color-status-error-bg)', borderRadius: 6, padding: '8px 12px' }}>⚠️ {warning}</p>
-      )}
+      <CoverageNote results={result.results} />
       {entryBasis === 'transaction' && (
         <p style={{ background: 'var(--color-status-error-bg)', borderRadius: 6, padding: '8px 12px' }}>
           ⚠️ Fantasy mode (transaction-date entry): assumes you knew on the trade date — not achievable. Upper bound only.
@@ -643,7 +666,8 @@ function Results({ result }) {
       </div>
       <p style={{ color: 'var(--color-text-muted)' }}>
         {summary.totalTrades} trades · {summary.wins}W/{summary.losses}L · {summary.winRate}% win rate
-        {summary.skipped > 0 && ` · ${summary.skipped} skipped (no price data)`}
+        {summary.skipped > 0 && ` · ${summary.skipped} skipped`}
+        {summary.fetchFailures > 0 && ` (${summary.fetchFailures} price-fetch failures — worth retrying)`}
         {r.postsScanned != null &&
           ` · sampled ${r.postsScanned} of ${r.postsInRange ?? r.postsScanned} posts in range: ` +
           `${r.noImpactPosts ?? '?'} no market impact, ${r.belowThresholdTickers ?? '?'} ticker calls below threshold`}

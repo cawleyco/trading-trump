@@ -27,6 +27,14 @@ function normalizeType(raw) {
   return null;
 }
 
+/** Source data carries stray whitespace/trailing commas ("Jerry Moran,") that
+ * split one politician into several dropdown entries and break filters.
+ * Applied at the backtest read path, NOT at ingest — trade keys already stored
+ * in the archive embed the raw name, and rewriting keys would duplicate rows. */
+export function cleanPoliticianName(name) {
+  return String(name || '').replace(/\s+/g, ' ').replace(/[,\s]+$/, '').trim();
+}
+
 function normalizeQuiver(row) {
   const type = normalizeType(row.Transaction);
   if (!type || !row.Ticker) return null;

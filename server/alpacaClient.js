@@ -1,4 +1,5 @@
 import Alpaca from '@alpacahq/alpaca-trade-api';
+import pRetry, { AbortError } from 'p-retry';
 import { enabledFunds } from './config.js';
 import { insertFill, updateOrderStatus } from './db.js';
 import { log } from './logger.js';
@@ -95,6 +96,30 @@ export async function getLatestQuote(ticker) {
   return marketSdk.getLatestQuote(ticker);
 }
 
+// Retry transient bar-fetch failures (rate limits, 5xx, network) so a single
+// hiccup doesn't turn into a skipped backtest trade. Hard client errors
+// (bad symbol, auth) abort immediately. The bars generator must be recreated
+// per attempt — errors only surface during iteration.
+function isTransientError(err) {
+  const status = err?.response?.status ?? err?.statusCode ?? err?.status;
+  if (status == null) return true; // network-level failure
+  return status === 429 || status >= 500;
+}
+
+async function collectBarsWithRetry(makeResp, dateSlice) {
+  return pRetry(
+    async () => {
+      try {
+        return await collectBars(makeResp(), dateSlice);
+      } catch (err) {
+        if (!isTransientError(err)) throw new AbortError(err?.message ?? String(err));
+        throw err;
+      }
+    },
+    { retries: 2, minTimeout: 500 }
+  );
+}
+
 async function collectBars(resp, dateSlice) {
   const bars = [];
   for await (const bar of resp) {
@@ -116,14 +141,17 @@ async function collectBars(resp, dateSlice) {
  * Returns [{ date: 'YYYY-MM-DD', open, high, low, close }] ascending.
  */
 export async function getDailyBars(ticker, startDate, endDate) {
-  const resp = marketSdk.getBarsV2(ticker, {
-    start: startDate,
-    end: endDate,
-    timeframe: '1Day',
-    // IEX feed is available on the free data tier; SIP requires a paid plan.
-    feed: 'iex',
-  });
-  return collectBars(resp, 10);
+  return collectBarsWithRetry(
+    () =>
+      marketSdk.getBarsV2(ticker, {
+        start: startDate,
+        end: endDate,
+        timeframe: '1Day',
+        // IEX feed is available on the free data tier; SIP requires a paid plan.
+        feed: 'iex',
+      }),
+    10
+  );
 }
 
 /**
@@ -131,12 +159,18 @@ export async function getDailyBars(ticker, startDate, endDate) {
  * Returns [{ timestamp, open, high, low, close }] ascending.
  */
 export async function getMinuteBars(ticker, startIso, endIso) {
-  const resp = marketSdk.getBarsV2(ticker, {
-    start: startIso,
-    end: endIso,
-    timeframe: '1Min',
-    feed: 'iex',
-    limit: 10000,
-  });
-  return collectBars(resp, 16);
+  return collectBarsWithRetry(
+    () =>
+      marketSdk.getBarsV2(ticker, {
+        start: startIso,
+        end: endIso,
+        timeframe: '1Min',
+        feed: 'iex',
+        // The SDK pages through results internally; this caps the total so a
+        // long holdHours range doesn't truncate at one page (10k ≈ 1 month of
+        // minutes) while still bounding memory.
+        limit: 50000,
+      }),
+    16
+  );
 }

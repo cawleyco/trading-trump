@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildPlans } from '../server/backtest/congressBacktest.js'
+import { buildPlans, _mergeTradeSources, _dataCoverage } from '../server/backtest/congressBacktest.js'
 
 // Look-ahead-bias guarantees: a copier following disclosures can only act on
 // information at/after its disclosure date. These tests pin that contract.
@@ -68,4 +68,36 @@ test('first_seen basis falls back to disclosure date for backfilled rows', () =>
   const plans = buildPlans([backfilled, live], { ...WINDOW, exitRule: 'hold_30', entryBasis: 'first_seen' })
   assert.equal(plans.find((p) => p.ticker === 'AAPL').entryDate, '2025-03-10')
   assert.equal(plans.find((p) => p.ticker === 'MSFT').entryDate, '2025-03-12')
+})
+
+// ---- archive/network merge + coverage honesty ----
+
+test('merge dedupes by trade key and keeps unique rows from both sources', () => {
+  const archived = [buy(), buy({ ticker: 'MSFT' })]
+  const fetched = [buy(), buy({ ticker: 'NVDA' })] // first is a dupe of archive
+  const merged = _mergeTradeSources(archived, fetched)
+  assert.equal(merged.length, 3)
+  assert.deepEqual(merged.map((t) => t.ticker).sort(), ['AAPL', 'MSFT', 'NVDA'])
+})
+
+test('coverage warns when data begins well after the requested start', () => {
+  const trades = [buy({ disclosureDate: '2025-06-01' }), buy({ disclosureDate: '2025-07-15' })]
+  const { coverage, warning } = _dataCoverage(trades, '2024-01-01', '2025-12-31')
+  assert.equal(coverage.from, '2025-06-01')
+  assert.equal(coverage.to, '2025-07-15')
+  assert.equal(coverage.tradeCount, 2)
+  assert.equal(coverage.requestedFrom, '2024-01-01')
+  assert.match(warning, /only begins 2025-06-01/)
+})
+
+test('coverage stays quiet when the data roughly spans the request', () => {
+  const trades = [buy({ disclosureDate: '2025-01-05' }), buy({ disclosureDate: '2025-12-20' })]
+  const { warning } = _dataCoverage(trades, '2025-01-01', '2025-12-31')
+  assert.equal(warning, null)
+})
+
+test('coverage flags an empty result set explicitly', () => {
+  const { coverage, warning } = _dataCoverage([], '2024-01-01', '2024-12-31')
+  assert.equal(coverage.from, null)
+  assert.match(warning, /No disclosed trades/)
 })

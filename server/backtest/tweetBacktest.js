@@ -11,6 +11,10 @@ const ARCHIVE_URL =
 
 let archiveCache = { data: null, fetchedAt: 0 };
 
+function nextDay(dateStr) {
+  return new Date(Date.parse(`${dateStr}T00:00:00Z`) + 86400_000).toISOString().slice(0, 10);
+}
+
 function stripHtml(html) {
   return String(html || '')
     .replace(/<br\s*\/?>/gi, '\n')
@@ -107,7 +111,10 @@ export async function runTweetBacktest({
       plans.push({
         ticker: t.ticker,
         direction: t.direction,
-        entryDate: post.createdAt.slice(0, 10),
+        // Daily mode enters at the NEXT day's open — the same day's open
+        // printed before the post existed (look-ahead). Matches the YouTube
+        // backtest's bar-after-event rule; weekends roll forward naturally.
+        entryDate: nextDay(post.createdAt.slice(0, 10)),
         // holdHours triggers minute-bar simulation entering right after the post
         entryTimestamp: holdHours != null ? post.createdAt : null,
         exitDate: null,
@@ -135,6 +142,11 @@ export async function runTweetBacktest({
   if (posts.length > 0 && classifications.length === 0) {
     results.warning =
       'The classifier returned nothing for every post — check ANTHROPIC_API_KEY and SENTIMENT_MODEL, then check the server log for sentiment errors.';
+  } else if (classifications.length > 0 && plans.length === 0) {
+    results.warning =
+      `Scanned ${posts.length} of ${inRange.length} posts in range (maxPosts=${maxPosts}); ` +
+      `${results.noImpactPosts} had no market impact and ${results.belowThresholdTickers} ticker calls were below the ${threshold} confidence threshold, so nothing was traded. ` +
+      'Raise maxPosts to sample more posts or lower the confidence threshold.';
   } else if (inRange.length === 0 && all.length > 0) {
     results.warning =
       `No posts found between ${startDate} and ${endDate}. Available post data covers ` +

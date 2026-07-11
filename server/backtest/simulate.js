@@ -7,16 +7,27 @@ import { log } from '../logger.js';
 
 const BENCHMARK_TICKER = 'SPY';
 
-const barsCache = new Map();
+// A provider failure (null) is not the same as "this ticker has no data" ([]).
+// The distinction must survive to the skip reason, and failures must never be
+// cached beyond the current run — marketData already handles cross-run
+// memoization; caching here again once poisoned whole server processes.
+export const SKIP_FETCH_FAILED = 'price fetch failed (provider error — retry)';
+export const SKIP_NO_DATA = 'no price data for range';
+export const SKIP_NO_ENTRY_PRICE = 'no usable entry price';
 
-async function getBarsCached(ticker, startDate, endDate) {
-  const key = `${ticker}|${startDate}|${endDate}`;
-  if (!barsCache.has(key)) {
-    const bars = await getDailyBarsCached(ticker, startDate, endDate);
-    if (bars == null) log.warn('backtest', `No bars for ${ticker}`);
-    barsCache.set(key, bars ?? []);
-  }
-  return barsCache.get(key);
+/** Per-run bar fetcher: dedupes identical fetches within one simulateTrades
+ * call but holds nothing across runs. Returns bars[] or null on failure. */
+function createFetcher(fetchFn) {
+  const cache = new Map();
+  return async (...args) => {
+    const key = args.join('|');
+    if (!cache.has(key)) {
+      const bars = await fetchFn(...args);
+      if (bars == null) log.warn('backtest', `bars fetch failed: ${key}`);
+      cache.set(key, bars ?? null);
+    }
+    return cache.get(key);
+  };
 }
 
 function firstBarOnOrAfter(bars, date) {
@@ -85,6 +96,9 @@ export function slippageTierBps(adv) {
  * per-round-trip dollar cost. Pure — unit-tested directly.
  */
 export function applyCosts(rawEntry, rawExit, dir, notionalPerTrade, slippageBps = 0, feePerTradeUsd = 0) {
+  if (!Number.isFinite(rawEntry) || rawEntry <= 0 || !Number.isFinite(rawExit) || !Number.isFinite(notionalPerTrade) || notionalPerTrade <= 0) {
+    throw new Error(`applyCosts: invalid inputs (entry=${rawEntry}, exit=${rawExit}, notional=${notionalPerTrade})`);
+  }
   const s = (slippageBps || 0) / 10000;
   const entryPrice = rawEntry * (1 + dir * s);
   const exitPrice = rawExit * (1 - dir * s);
@@ -131,16 +145,18 @@ function finalizeTrade(plan, entryLabel, exitLabel, rawEntry, rawExit, exitReaso
 }
 
 /** Daily-bar simulation of one plan. */
-async function simulateDaily(plan, notionalPerTrade, today, costOpts = NO_COSTS) {
+async function simulateDaily(plan, notionalPerTrade, today, costOpts, ctx) {
   const targetExit = plan.exitDate || (plan.holdDays ? addDays(plan.entryDate, plan.holdDays) : today);
   const rangeEnd = targetExit > today ? today : targetExit;
-  const bars = await getBarsCached(plan.ticker, plan.entryDate, addDays(rangeEnd, 7));
-  if (bars.length === 0) return { ...plan, skipped: true, skipReason: 'no price data' };
+  const bars = await ctx.getBars(plan.ticker, plan.entryDate, addDays(rangeEnd, 7));
+  if (bars == null) return { ...plan, skipped: true, skipReason: SKIP_FETCH_FAILED };
+  if (bars.length === 0) return { ...plan, skipped: true, skipReason: SKIP_NO_DATA };
 
   const entryIndex = bars.findIndex((b) => b.date >= plan.entryDate);
   if (entryIndex === -1) return { ...plan, skipped: true, skipReason: 'no bar at/after entry date' };
   const entryBar = bars[entryIndex];
-  const entryPrice = entryBar.open || entryBar.close;
+  const entryPrice = entryBar.open ?? entryBar.close;
+  if (entryPrice == null || entryPrice <= 0) return { ...plan, skipped: true, skipReason: SKIP_NO_ENTRY_PRICE };
   const costs = resolveCosts(costOpts, bars, entryIndex);
 
   // Stop-loss / take-profit first, if configured
@@ -161,25 +177,28 @@ async function simulateDaily(plan, notionalPerTrade, today, costOpts = NO_COSTS)
 }
 
 /** Minute-bar simulation of one plan (requires plan.entryTimestamp + holdHours). */
-async function simulateIntraday(plan, notionalPerTrade, today, costOpts = NO_COSTS) {
+async function simulateIntraday(plan, notionalPerTrade, today, costOpts, ctx) {
   const postMs = new Date(plan.entryTimestamp).getTime();
   // Fetch a generous window: post time + hold + 4 days (covers weekends —
   // a Saturday post enters at Monday's open)
   const endIso = new Date(Math.min(postMs + plan.holdHours * 3600_000 + 4 * 86400_000, Date.now())).toISOString();
-  const bars = (await getMinuteBarsCached(plan.ticker, plan.entryTimestamp, endIso)) ?? [];
+  const bars = (await ctx.getMinuteBars(plan.ticker, plan.entryTimestamp, endIso)) ?? [];
   if (bars.length < 2) {
-    // No minute data (too old / thin ticker): fall back to daily with a flag
+    // No minute data (too old / thin ticker): fall back to daily with a flag.
+    // Enter the NEXT day — the event day's open printed before the event.
     const daily = await simulateDaily(
-      { ...plan, entryDate: plan.entryTimestamp.slice(0, 10), holdDays: Math.max(1, Math.round(plan.holdHours / 24)) },
+      { ...plan, entryDate: addDays(plan.entryTimestamp.slice(0, 10), 1), holdDays: Math.max(1, Math.round(plan.holdHours / 24)) },
       notionalPerTrade,
       today,
-      costOpts
+      costOpts,
+      ctx
     );
     return { ...daily, fellBackToDaily: true };
   }
 
   const entryBar = bars[0];
-  const entryPrice = entryBar.open || entryBar.close;
+  const entryPrice = entryBar.open ?? entryBar.close;
+  if (entryPrice == null || entryPrice <= 0) return { ...plan, skipped: true, skipReason: SKIP_NO_ENTRY_PRICE };
   // Minute bars rarely carry usable volume; auto-slippage falls back to the
   // explicit slippage bps here.
   const costs = resolveCosts(costOpts, bars, 0);
@@ -213,6 +232,8 @@ async function simulateIntraday(plan, notionalPerTrade, today, costOpts = NO_COS
  *   - feePerTradeUsd {number=0}: flat cost subtracted from each round-trip P&L.
  *   - autoSlippage {boolean=false}: pick a slippage tier per trade from the
  *     ticker's average dollar volume (overrides slippageBps when ADV is known).
+ *   - getBars / getMinuteBars: injectable price providers (default: cached
+ *     marketData fetchers) — return bars[] or null on provider failure.
  *   Defaults are all zero/off, so results stay comparable to older backtests.
  * @returns {{ trades, summary, curve, benchmark? }}
  */
@@ -223,14 +244,18 @@ export async function simulateTrades(plans, notionalPerTrade, opts = {}) {
     feePerTradeUsd: opts.feePerTradeUsd || 0,
     autoSlippage: opts.autoSlippage || false,
   };
+  const ctx = {
+    getBars: createFetcher(opts.getBars ?? getDailyBarsCached),
+    getMinuteBars: createFetcher(opts.getMinuteBars ?? getMinuteBarsCached),
+  };
   const trades = [];
 
   for (const plan of plans) {
     const intraday = plan.holdHours != null && plan.entryTimestamp;
     trades.push(
       intraday
-        ? await simulateIntraday(plan, notionalPerTrade, today, costOpts)
-        : await simulateDaily(plan, notionalPerTrade, today, costOpts)
+        ? await simulateIntraday(plan, notionalPerTrade, today, costOpts, ctx)
+        : await simulateDaily(plan, notionalPerTrade, today, costOpts, ctx)
     );
   }
 
@@ -260,6 +285,7 @@ export async function simulateTrades(plans, notionalPerTrade, opts = {}) {
       totalPnl: Number(totalPnl.toFixed(2)),
       totalInvested: Number(totalInvested.toFixed(2)),
       returnPct: totalInvested ? Number(((totalPnl / totalInvested) * 100).toFixed(2)) : 0,
+      fetchFailures: trades.filter((t) => t.skipReason === SKIP_FETCH_FAILED).length,
     },
     curve,
   };
@@ -275,7 +301,7 @@ export async function simulateTrades(plans, notionalPerTrade, opts = {}) {
     }));
     const benchTrades = [];
     for (const plan of benchPlans) {
-      benchTrades.push(await simulateDaily(plan, notionalPerTrade, today));
+      benchTrades.push(await simulateDaily(plan, notionalPerTrade, today, NO_COSTS, ctx));
     }
     const benchExecuted = benchTrades.filter((t) => !t.skipped);
     const benchPnl = benchExecuted.reduce((s, t) => s + t.pnl, 0);

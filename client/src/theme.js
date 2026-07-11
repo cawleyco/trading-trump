@@ -3,6 +3,10 @@ export const THEME_STORAGE_KEY = 'intel-theme'
 export const THEMES = [
   { id: 'terminal', label: 'Terminal' },
   { id: 'paper', label: 'Paper' },
+  { id: 'citrus', label: 'Citrus' },
+  { id: 'lilac', label: 'Lilac' },
+  { id: 'sky', label: 'Sky' },
+  { id: 'coral', label: 'Coral' },
   { id: 'midnight', label: 'Midnight' },
   { id: 'contrast', label: 'Contrast' },
 ]

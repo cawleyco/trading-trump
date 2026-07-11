@@ -14,6 +14,7 @@ import {
   resetKillSwitch,
   listBacktests,
   getBacktest,
+  congressTradeCoverage,
   listBacktestPresets,
   createBacktestPreset,
   updateBacktestPreset,
@@ -122,6 +123,7 @@ import { refreshGovContracts } from './sources/contracts.js';
 import { refreshPoliticalEvents } from './sources/eventsCollector.js';
 import { startPositionManager } from './positionManager.js';
 import { runCongressBacktest, runCongressLeaderboard, runEntryBasisComparison, listPoliticians, ENTRY_BASES } from './backtest/congressBacktest.js';
+import { validateBacktestBody } from './lib/validateBacktestBody.js';
 import { runWalkForward } from './backtest/walkForward.js';
 import { runTweetBacktest } from './backtest/tweetBacktest.js';
 import { runYoutubeBacktest, recalculateCreatorAlpha } from './backtest/youtubeBacktest.js';
@@ -742,6 +744,12 @@ app.get('/api/politicians', async (req, res) => {
   }
 });
 
+// Archive coverage — lets the client default its date range to dates that
+// actually have data instead of a hardcoded multi-year window.
+app.get('/api/congress-trades/coverage', (req, res) => {
+  res.json(congressTradeCoverage());
+});
+
 function validEntryBasis(v) {
   if (v == null) return 'disclosure';
   if (!ENTRY_BASES.includes(v)) throw new Error(`entryBasis must be one of ${ENTRY_BASES.join(', ')}`);
@@ -749,21 +757,24 @@ function validEntryBasis(v) {
 }
 
 app.post('/api/backtests/congress', async (req, res) => {
+  let v;
   try {
-    const { politician, startDate, endDate, notionalPerTrade, exitRule, stopLossPct, takeProfitPct } = req.body;
-    if (!politician || !startDate || !endDate || !notionalPerTrade) {
-      return res.status(400).json({ error: 'politician, startDate, endDate, notionalPerTrade required' });
-    }
+    if (!req.body.politician) throw new Error('politician required');
+    v = { ...validateBacktestBody(req.body), entryBasis: validEntryBasis(req.body.entryBasis) };
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  try {
     res.json(
       await runCongressBacktest({
-        politician,
-        startDate,
-        endDate,
-        notionalPerTrade: Number(notionalPerTrade),
-        exitRule,
-        stopLossPct: stopLossPct ? Number(stopLossPct) : null,
-        takeProfitPct: takeProfitPct ? Number(takeProfitPct) : null,
-        entryBasis: validEntryBasis(req.body.entryBasis),
+        politician: req.body.politician,
+        startDate: v.startDate,
+        endDate: v.endDate,
+        notionalPerTrade: v.notionalPerTrade,
+        exitRule: v.exitRule,
+        stopLossPct: v.stopLossPct,
+        takeProfitPct: v.takeProfitPct,
+        entryBasis: v.entryBasis,
       })
     );
   } catch (err) {
@@ -773,20 +784,23 @@ app.post('/api/backtests/congress', async (req, res) => {
 });
 
 app.post('/api/backtests/congress/compare', async (req, res) => {
+  let v;
   try {
-    const { politician, startDate, endDate, notionalPerTrade, exitRule, stopLossPct, takeProfitPct } = req.body;
-    if (!politician || !startDate || !endDate || !notionalPerTrade) {
-      return res.status(400).json({ error: 'politician, startDate, endDate, notionalPerTrade required' });
-    }
+    if (!req.body.politician) throw new Error('politician required');
+    v = validateBacktestBody(req.body);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  try {
     res.json(
       await runEntryBasisComparison({
-        politician,
-        startDate,
-        endDate,
-        notionalPerTrade: Number(notionalPerTrade),
-        exitRule,
-        stopLossPct: stopLossPct ? Number(stopLossPct) : null,
-        takeProfitPct: takeProfitPct ? Number(takeProfitPct) : null,
+        politician: req.body.politician,
+        startDate: v.startDate,
+        endDate: v.endDate,
+        notionalPerTrade: v.notionalPerTrade,
+        exitRule: v.exitRule,
+        stopLossPct: v.stopLossPct,
+        takeProfitPct: v.takeProfitPct,
       })
     );
   } catch (err) {
@@ -796,19 +810,21 @@ app.post('/api/backtests/congress/compare', async (req, res) => {
 });
 
 app.post('/api/backtests/congress-leaderboard', async (req, res) => {
+  let v;
   try {
-    const { startDate, endDate, notionalPerTrade, exitRule, minTrades } = req.body;
-    if (!startDate || !endDate || !notionalPerTrade) {
-      return res.status(400).json({ error: 'startDate, endDate, notionalPerTrade required' });
-    }
+    v = { ...validateBacktestBody(req.body), entryBasis: validEntryBasis(req.body.entryBasis) };
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  try {
     res.json(
       await runCongressLeaderboard({
-        startDate,
-        endDate,
-        notionalPerTrade: Number(notionalPerTrade),
-        exitRule,
-        minTrades: minTrades ? Number(minTrades) : 3,
-        entryBasis: validEntryBasis(req.body.entryBasis),
+        startDate: v.startDate,
+        endDate: v.endDate,
+        notionalPerTrade: v.notionalPerTrade,
+        exitRule: v.exitRule,
+        minTrades: v.minTrades ?? 3,
+        entryBasis: v.entryBasis,
       })
     );
   } catch (err) {
@@ -818,33 +834,24 @@ app.post('/api/backtests/congress-leaderboard', async (req, res) => {
 });
 
 app.post('/api/backtests/walk-forward', async (req, res) => {
+  let v;
   try {
-    const { startDate, endDate, notionalPerTrade, folds, topN, exitRule, minTrades } = req.body;
-    if (!startDate || !endDate || !notionalPerTrade) {
-      return res.status(400).json({ error: 'startDate, endDate, notionalPerTrade required' });
-    }
-    const foldCount = folds == null ? 4 : Number(folds);
-    const topCount = topN == null ? 5 : Number(topN);
-    const minTradeCount = minTrades == null ? 3 : Number(minTrades);
-    if (!Number.isFinite(foldCount) || foldCount < 2) {
-      return res.status(400).json({ error: 'folds must be at least 2' });
-    }
-    if (!Number.isFinite(topCount) || topCount < 1) {
-      return res.status(400).json({ error: 'topN must be at least 1' });
-    }
-    if (!Number.isFinite(minTradeCount) || minTradeCount < 1) {
-      return res.status(400).json({ error: 'minTrades must be at least 1' });
-    }
+    v = { ...validateBacktestBody(req.body), entryBasis: validEntryBasis(req.body.entryBasis) };
+    if (v.folds != null && v.folds < 2) throw new Error('folds must be at least 2');
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  try {
     res.json(
       await runWalkForward({
-        startDate,
-        endDate,
-        notionalPerTrade: Number(notionalPerTrade),
-        folds: foldCount,
-        topN: topCount,
-        exitRule,
-        minTrades: minTradeCount,
-        entryBasis: validEntryBasis(req.body.entryBasis),
+        startDate: v.startDate,
+        endDate: v.endDate,
+        notionalPerTrade: v.notionalPerTrade,
+        folds: v.folds ?? 4,
+        topN: v.topN ?? 5,
+        exitRule: v.exitRule,
+        minTrades: v.minTrades ?? 3,
+        entryBasis: v.entryBasis,
       })
     );
   } catch (err) {
@@ -854,22 +861,24 @@ app.post('/api/backtests/walk-forward', async (req, res) => {
 });
 
 app.post('/api/backtests/tweet', async (req, res) => {
+  let v;
   try {
-    const { startDate, endDate, notionalPerTrade, holdDays, holdHours, confidenceThreshold, maxPosts, stopLossPct, takeProfitPct } = req.body;
-    if (!startDate || !endDate || !notionalPerTrade) {
-      return res.status(400).json({ error: 'startDate, endDate, notionalPerTrade required' });
-    }
+    v = validateBacktestBody(req.body);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  try {
     res.json(
       await runTweetBacktest({
-        startDate,
-        endDate,
-        notionalPerTrade: Number(notionalPerTrade),
-        holdDays: holdDays ? Number(holdDays) : 1,
-        holdHours: holdHours ? Number(holdHours) : null,
-        confidenceThreshold: confidenceThreshold ? Number(confidenceThreshold) : undefined,
-        maxPosts: maxPosts ? Number(maxPosts) : 200,
-        stopLossPct: stopLossPct ? Number(stopLossPct) : null,
-        takeProfitPct: takeProfitPct ? Number(takeProfitPct) : null,
+        startDate: v.startDate,
+        endDate: v.endDate,
+        notionalPerTrade: v.notionalPerTrade,
+        holdDays: v.holdDays ?? 1,
+        holdHours: v.holdHours,
+        confidenceThreshold: v.confidenceThreshold ?? undefined,
+        maxPosts: v.maxPosts ?? 200,
+        stopLossPct: v.stopLossPct,
+        takeProfitPct: v.takeProfitPct,
       })
     );
   } catch (err) {
@@ -1261,6 +1270,14 @@ if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.get(/^(?!\/api).*/, (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
 }
+
+// Terminal error handler: any route that throws (sync or async — Express 5
+// forwards rejected promises here) answers with JSON, never an HTML 500 page.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  log.error('server', `${req.method} ${req.path} failed: ${err?.message || err}`);
+  res.status(500).json({ error: err?.message || 'internal error' });
+});
 
 // ---------- startup ----------
 app.listen(config.port, '127.0.0.1', () => {
