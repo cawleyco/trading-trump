@@ -36,14 +36,39 @@ export default function YoutubeMentions() {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(null)
   const [cards, setCards] = useState({}) // mentionId → card (expanded rows)
+  const [bulkStatus, setBulkStatus] = useState(null)
+  const [unclassifiedCount, setUnclassifiedCount] = useState(0)
 
-  const refresh = () => api.youtubeMentions().then(setMentions).catch((e) => setError(e.message))
+  // The list is capped at the newest rows, so the true unclassified total
+  // comes from a dedicated count endpoint rather than the loaded mentions.
+  const refresh = () => {
+    api.youtubeMentions().then(setMentions).catch((e) => setError(e.message))
+    api.youtubeUnclassifiedCount().then((r) => setUnclassifiedCount(r.count)).catch(() => {})
+  }
   useEffect(() => { refresh() }, [])
 
   const classify = async (id) => {
     setBusy(id)
     try {
       await api.classifyYoutubeMention(id)
+      refresh()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const classifyAll = async () => {
+    setBusy('bulk')
+    setError(null)
+    setBulkStatus(null)
+    try {
+      const r = await api.classifyAllUnclassifiedYoutubeMentions()
+      const parts = [`Classified ${r.classified} of ${r.total}`]
+      if (r.failed) parts.push(`${r.failed} failed`)
+      if (r.remaining) parts.push(`${r.remaining} still unclassified`)
+      setBulkStatus(parts.join(' · ') + (r.errors?.length ? ` — ${r.errors[0]}` : ''))
       refresh()
     } catch (err) {
       setError(err.message)
@@ -70,8 +95,20 @@ export default function YoutubeMentions() {
 
   return (
     <section style={card}>
-      <h3>Asset Mentions</h3>
-      <p style={muted}>Detected transcript mentions with classification, quality, and pump-risk signals.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h3 style={{ marginTop: 0 }}>Asset Mentions</h3>
+          <p style={muted}>Detected transcript mentions with classification, quality, and pump-risk signals.</p>
+        </div>
+        <button onClick={classifyAll} disabled={busy === 'bulk' || unclassifiedCount === 0}>
+          {busy === 'bulk'
+            ? 'Classifying…'
+            : unclassifiedCount > 0
+              ? `Classify all unclassified (${unclassifiedCount})`
+              : 'All classified'}
+        </button>
+      </div>
+      {bulkStatus && <p style={muted}>{bulkStatus}</p>}
       {error && <p style={{ color: 'var(--color-bearish)' }}>{error}</p>}
       {mentions.length === 0 ? <p style={muted}>No mentions detected yet.</p> : (
         <table>

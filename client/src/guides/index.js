@@ -4,6 +4,7 @@ import signalsMd from './signals.md?raw'
 import politiciansMd from './politicians.md?raw'
 import youtubeMd from './youtube.md?raw'
 import backtestsMd from './backtests.md?raw'
+import edgeMd from './edge.md?raw'
 import strategiesMd from './strategies.md?raw'
 import alertsMd from './alerts.md?raw'
 import calendarMd from './calendar.md?raw'
@@ -45,6 +46,13 @@ export const GUIDES = [
     group: 'Intelligence',
     description: 'Creator mentions, transcript evidence, pump-risk, and post-mention backtests.',
     markdown: youtubeMd,
+  },
+  {
+    slug: 'edge',
+    title: 'Backtesting Playbook',
+    group: 'Analysis',
+    description: 'The step-by-step edge-finding workflow: exact settings, what to read, and pass/fail rules per data source.',
+    markdown: edgeMd,
   },
   {
     slug: 'backtests',

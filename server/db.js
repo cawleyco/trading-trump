@@ -2486,6 +2486,27 @@ export function getAssetMention(id) {
   ).get(id) || null;
 }
 
+/** Mentions with no classification row yet — the classifier's work queue.
+ * Carries the same columns as getAssetMention so callers can classify
+ * directly. Oldest first, so a bulk run processes them chronologically. */
+export function listUnclassifiedAssetMentions({ limit = 500 } = {}) {
+  return db.prepare(
+    `SELECT am.*, a.symbol, a.canonical_name, a.asset_type, yc.title AS channel_title
+     FROM asset_mentions am
+     JOIN assets a ON a.id = am.asset_id
+     LEFT JOIN youtube_channels yc ON yc.id = am.channel_id
+     WHERE NOT EXISTS (SELECT 1 FROM mention_classifications mc WHERE mc.mention_id = am.id)
+     ORDER BY am.event_time ASC, am.id ASC LIMIT ?`
+  ).all(limit);
+}
+
+export function countUnclassifiedAssetMentions() {
+  return db.prepare(
+    `SELECT COUNT(*) AS n FROM asset_mentions am
+     WHERE NOT EXISTS (SELECT 1 FROM mention_classifications mc WHERE mc.mention_id = am.id)`
+  ).get().n;
+}
+
 export function createMentionClassification(input) {
   const res = db.prepare(
     `INSERT INTO mention_classifications (

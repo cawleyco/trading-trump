@@ -117,44 +117,46 @@ export default function YoutubeChannels() {
 
       <SectionPanel title="Creator Dossier Index" description="Creator alpha, sample size, and pump-risk determine whether a channel is useful or merely noisy.">
         {channels.length === 0 ? <p style={muted}>No channels tracked yet.</p> : (
-          <table>
-            <thead>
-              <tr>
-                {sortableTh('title', 'Channel', true)}<th><DefinitionLabel>Category</DefinitionLabel></th>{sortableTh('subscriber_count', 'Subscribers')}<th><DefinitionLabel>Tracked?</DefinitionLabel></th>
-                {sortableTh('videos_analyzed', 'Videos')}<th><DefinitionLabel>Mentions</DefinitionLabel></th><th><DefinitionLabel>Trust</DefinitionLabel></th><th><DefinitionLabel>Alpha</DefinitionLabel></th><th><DefinitionLabel>Win 30d</DefinitionLabel></th><th><DefinitionLabel>Pump risk</DefinitionLabel></th>{sortableTh('last_synced_at', 'Last synced')}<th><DefinitionLabel>Actions</DefinitionLabel></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedChannels.map((c) => (
-                <tr key={c.id}>
-                  <td>{c.title}</td>
-                  <td>{c.category || '—'}</td>
-                  <td><SubscriberCount value={c.subscriber_count} /></td>
-                  <td>{c.tracking_enabled ? 'yes' : 'no'}</td>
-                  <td>{c.videos_analyzed ?? 0}</td>
-                  <td>{c.mentions_detected ?? 0}</td>
-                  <td><TrustBadge label={c.alpha_label} measurable={c.measurable_mentions} /></td>
-                  <td style={{ fontFamily: 'var(--font-mono)' }}>{trusted(c) ? formatPct(c.alpha_score) : '—'}</td>
-                  <td>{trusted(c) ? formatRate(c.win_rate_30d) : '—'}</td>
-                  <td>{formatPct(c.pump_risk_score == null ? null : Number(c.pump_risk_score) * 100)}</td>
-                  <td>{c.last_synced_at || '—'}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <button onClick={() => navigate(`/app/influence/youtube/channels/${c.id}`)} style={{ marginRight: 6 }}>View</button>
-                    <button onClick={() => sync(c.id)} disabled={busy === `sync-${c.id}`} style={{ marginRight: 6 }}>
-                      {busy === `sync-${c.id}` ? 'Syncing…' : 'Sync now'}
-                    </button>
-                    <button
-                      onClick={() => backfill(c.id, c.title)}
-                      disabled={busy === `backfill-${c.id}`}
-                      title="Queue up to 100 older videos; the poller ingests them a few per cycle"
-                    >
-                      {busy === `backfill-${c.id}` ? 'Queuing…' : 'Backfill'}
-                    </button>
-                  </td>
+          <div className="intel-table-wrap">
+            <table className="intel-table">
+              <thead>
+                <tr>
+                  {sortableTh('title', 'Channel', true)}<th><DefinitionLabel>Category</DefinitionLabel></th>{sortableTh('subscriber_count', 'Subscribers')}<th><DefinitionLabel>Tracked?</DefinitionLabel></th>
+                  {sortableTh('videos_analyzed', 'Videos')}<th><DefinitionLabel>Mentions</DefinitionLabel></th><th><DefinitionLabel>Trust</DefinitionLabel></th><th><DefinitionLabel>Alpha</DefinitionLabel></th><th><DefinitionLabel>Win 30d</DefinitionLabel></th><th><DefinitionLabel>Pump risk</DefinitionLabel></th>{sortableTh('last_synced_at', 'Last synced')}<th><DefinitionLabel>Actions</DefinitionLabel></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {sortedChannels.map((c) => (
+                  <tr key={c.id}>
+                    <td>{c.title}</td>
+                    <td>{c.category || '—'}</td>
+                    <td><SubscriberCount value={c.subscriber_count} /></td>
+                    <td>{c.tracking_enabled ? 'yes' : 'no'}</td>
+                    <td>{c.videos_analyzed ?? 0}</td>
+                    <td>{c.mentions_detected ?? 0}</td>
+                    <td><TrustBadge label={c.alpha_label} measurable={c.measurable_mentions} /></td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{trusted(c) ? formatPct(c.alpha_score) : '—'}</td>
+                    <td>{trusted(c) ? formatRate(c.win_rate_30d) : '—'}</td>
+                    <td>{formatPct(c.pump_risk_score == null ? null : Number(c.pump_risk_score) * 100)}</td>
+                    <td>{c.last_synced_at || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button onClick={() => navigate(`/app/influence/youtube/channels/${c.id}`)} style={{ marginRight: 6 }}>View</button>
+                      <button onClick={() => sync(c.id)} disabled={busy === `sync-${c.id}`} style={{ marginRight: 6 }}>
+                        {busy === `sync-${c.id}` ? 'Syncing…' : 'Sync now'}
+                      </button>
+                      <button
+                        onClick={() => backfill(c.id, c.title)}
+                        disabled={busy === `backfill-${c.id}`}
+                        title="Queue up to 100 older videos; the poller ingests them a few per cycle"
+                      >
+                        {busy === `backfill-${c.id}` ? 'Queuing…' : 'Backfill'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </SectionPanel>
     </div>

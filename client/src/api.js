@@ -260,6 +260,10 @@ export const api = {
   },
   classifyYoutubeMention: (id) =>
     req(`/api/influence/youtube/mentions/${id}/reclassify`, { method: 'POST' }),
+  classifyAllUnclassifiedYoutubeMentions: () =>
+    req('/api/influence/youtube/mentions/classify-unclassified', { method: 'POST' }),
+  youtubeUnclassifiedCount: () =>
+    req('/api/influence/youtube/mentions/unclassified-count'),
   youtubeMentionCard: (id) => req(`/api/influence/youtube/mentions/${id}/card`),
   backfillYoutubeChannel: (id, body = {}) =>
     req(`/api/influence/youtube/channels/${id}/backfill`, {

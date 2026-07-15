@@ -64,6 +64,8 @@ import {
   listContentSegmentsForVideo,
   listAssetMentions,
   getAssetMention,
+  listUnclassifiedAssetMentions,
+  countUnclassifiedAssetMentions,
   createMentionClassification,
   listMentionClassifications,
   listYoutubeBacktestRuns,
@@ -1125,6 +1127,14 @@ app.get('/api/influence/youtube/mentions', (req, res) => {
   }));
 });
 
+// True count of mentions with no classification yet — the list route caps at
+// 500 newest rows, so the client can't derive this reliably. Declared before
+// the /:id route so "unclassified-count" isn't parsed as an id.
+app.get('/api/influence/youtube/mentions/unclassified-count', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json({ count: countUnclassifiedAssetMentions() });
+});
+
 app.get('/api/influence/youtube/mentions/:id', (req, res) => {
   if (!requireInfluence(req, res)) return;
   const id = numericIdParam(req, res);
@@ -1161,23 +1171,54 @@ app.patch('/api/influence/youtube/mentions/:id', (req, res) => {
   }));
 });
 
+// Classify one mention with the shared LLM context (video + channel metadata).
+async function classifyMentionWithContext(mention, { force = false } = {}) {
+  const video = mention.video_id ? getYoutubeVideo(mention.video_id) : null;
+  return classifyAndStoreYoutubeMention(mention, {
+    videoTitle: video?.title,
+    videoDescription: video?.description,
+    channelTitle: mention.channel_title,
+    hasPaidProductPlacement: video?.has_paid_product_placement,
+    force,
+  });
+}
+
 app.post('/api/influence/youtube/mentions/:id/reclassify', async (req, res) => {
   if (!requireInfluence(req, res)) return;
   const id = numericIdParam(req, res);
   if (id == null) return;
   const mention = getAssetMention(id);
   if (!mention) return res.status(404).json({ error: 'mention not found' });
-  const video = mention.video_id ? getYoutubeVideo(mention.video_id) : null;
-  const classification = await classifyAndStoreYoutubeMention(mention, {
-    videoTitle: video?.title,
-    videoDescription: video?.description,
-    channelTitle: mention.channel_title,
-    hasPaidProductPlacement: video?.has_paid_product_placement,
-    // Repeat calls reuse the stored classification; {"force": true} re-runs the LLM.
-    force: req.body?.force === true,
-  });
+  // Repeat calls reuse the stored classification; {"force": true} re-runs the LLM.
+  const classification = await classifyMentionWithContext(mention, { force: req.body?.force === true });
   if (!classification) return res.status(400).json({ error: 'classification unavailable' });
   res.json(classification);
+});
+
+// Classify every mention that has no classification row yet. Returns a summary
+// of how many landed, how many reused a cached result, and how many failed.
+app.post('/api/influence/youtube/mentions/classify-unclassified', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  if (!config.influence.llmClassificationEnabled || !config.anthropicApiKey) {
+    return res.status(400).json({
+      error: 'LLM classification is disabled — set ANTHROPIC_API_KEY and YOUTUBE_LLM_CLASSIFICATION_ENABLED to run this.',
+    });
+  }
+  const pending = listUnclassifiedAssetMentions({ limit: 500 });
+  let classified = 0;
+  let failed = 0;
+  const errors = [];
+  for (const mention of pending) {
+    try {
+      const result = await classifyMentionWithContext(mention);
+      if (result) classified += 1;
+      else failed += 1;
+    } catch (err) {
+      failed += 1;
+      if (errors.length < 10) errors.push(`mention ${mention.id}: ${err.message}`);
+    }
+  }
+  res.json({ total: pending.length, classified, failed, remaining: countUnclassifiedAssetMentions(), errors });
 });
 
 app.get('/api/influence/youtube/mentions/:id/backtest', async (req, res) => {
