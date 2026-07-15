@@ -136,6 +136,15 @@ export const config = {
 
   sentimentModel: process.env.SENTIMENT_MODEL || 'claude-haiku-4-5-20251001',
 
+  // Morning brief: one weekday message summarizing overnight mentions,
+  // high-score trades, confluence, and pump warnings on held positions.
+  digest: {
+    enabled: process.env.DIGEST_ENABLED !== 'false',
+    cron: process.env.DIGEST_CRON || '30 7 * * 1-5',
+    channel: process.env.DIGEST_CHANNEL || 'all',
+    minCopyScore: num('DIGEST_MIN_COPY_SCORE', 70),
+  },
+
   // Thesis cards are deterministic by default; THESIS_LLM=true adds an optional,
   // fault-tolerant Claude rewrite of the card into an analyst note.
   thesis: {

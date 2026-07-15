@@ -20,6 +20,7 @@ import {
 import { enabledFunds } from '../config.js';
 import { getFundClient } from '../alpacaClient.js';
 import { buildThesisCard } from './thesisCard.js';
+import { confluenceSourcesForTicker } from './confluence.js';
 import { mentionAlertMessage } from '../influence/mentionCard.js';
 import { notify } from '../notifier.js';
 import { log } from '../logger.js';
@@ -164,6 +165,31 @@ export function evaluateRule(rule, event) {
         message: mentionAlertMessage(event.mention, event.alpha),
       };
     }
+    case 'confluence': {
+      if (event.kind !== 'trade-scored' && event.kind !== 'youtube-mention') return null;
+      const sources = event.confluenceSources || [];
+      const minSources = Number(p.minSources ?? 2);
+      if (sources.length < minSources) return null;
+      const ticker = event.kind === 'trade-scored'
+        ? String(event.trade.ticker).toUpperCase()
+        : String(event.mention.symbol).toUpperCase();
+      const eventDay = event.kind === 'trade-scored'
+        ? event.trade.disclosure_date
+        : String(event.mention.event_time || '').slice(0, 10);
+      // Week-bucketed dedup: one confluence alert per ticker per week, however
+      // many individual events land inside the window.
+      const weekBucket = Math.floor(new Date(`${eventDay}T00:00:00Z`).getTime() / (7 * 86400_000));
+      return {
+        dedupKey: `cf:${rule.id}:${ticker}:${weekBucket}`,
+        title: `Confluence: ${ticker}`,
+        message: oneLine(
+          `${sources.length} independent sources (${sources.join(', ')}) are active on ${ticker} ` +
+            `within ${p.windowDays ?? 14} days. Latest: ${event.kind === 'trade-scored'
+              ? tradeAlertMessage(event.trade, event.score)
+              : mentionAlertMessage(event.mention, event.alpha)}`
+        ),
+      };
+    }
     case 'tweet-catalyst': {
       if (event.kind !== 'post-classified') return null;
       const c = event.classification || {};
@@ -188,7 +214,17 @@ export function evaluateRule(rule, event) {
 
 // --- runtime dispatch ---------------------------------------------------------
 
-const TRADE_TYPES = ['high-score-trade', 'committee-relevant', 'stale-warning', 'cluster', 'watchlist-activity'];
+const TRADE_TYPES = ['high-score-trade', 'committee-relevant', 'stale-warning', 'cluster', 'watchlist-activity', 'confluence'];
+
+// Best-effort confluence lookup for a dispatch moment; never blocks the alert.
+function safeConfluenceSources(ticker, onDay, windowDays = 14) {
+  try {
+    return confluenceSourcesForTicker(ticker, onDay, windowDays);
+  } catch (err) {
+    log.warn('alerts', `Confluence lookup failed for ${ticker}: ${err.message}`);
+    return [];
+  }
+}
 
 function runRules(event, applicableTypes, notifyFn) {
   const rules = listAlertRules({ includeDisabled: false }).filter((r) => applicableTypes.includes(r.rule_type));
@@ -240,6 +276,7 @@ export function dispatchTradeScored(trade, score, { notifyFn = notify } = {}) {
       sector,
       clusterCount,
       watchMatches: watchMatchesForTrade(trade, sector),
+      confluenceSources: safeConfluenceSources(trade.ticker, trade.disclosure_date),
     };
     return runRules(event, TRADE_TYPES, notifyFn);
   } catch (err) {
@@ -268,12 +305,13 @@ export function dispatchPostClassified(post, classification, { notifyFn = notify
   }
 }
 
-const YOUTUBE_TYPES = ['creator-alpha-mention', 'pump-warning', 'fade-candidate-mention'];
+const YOUTUBE_TYPES = ['creator-alpha-mention', 'pump-warning', 'fade-candidate-mention', 'confluence'];
 
 // Held tickers change slowly relative to mention volume — cache the Alpaca
 // positions fan-out for a minute so a burst of mentions costs one API round.
+// Exported for the morning digest's pump-warning section.
 let _heldCache = { at: 0, tickers: new Set() };
-async function heldTickers() {
+export async function heldTickers() {
   if (Date.now() - _heldCache.at < 60_000) return _heldCache.tickers;
   const tickers = new Set();
   for (const fund of enabledFunds) {
@@ -305,6 +343,7 @@ export async function dispatchYoutubeMention(mention, video, { notifyFn = notify
       alpha,
       watchMatches,
       heldTickers: await heldTickers(),
+      confluenceSources: safeConfluenceSources(symbol, mention.event_time),
     };
     return runRules(event, YOUTUBE_TYPES, notifyFn);
   } catch (err) {

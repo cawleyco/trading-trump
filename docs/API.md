@@ -552,6 +552,42 @@ Updates any subset of `name`, `kind`, or `params`. Returns the updated preset.
 
 Deletes a saved preset. Returns `{ "deleted": id }`.
 
+## LLM usage
+
+### `GET /api/llm/usage`
+
+Process-lifetime Anthropic call accounting for the running server. Totals are per tag (`sentiment-classifier`, `youtube-classifier`, `thesis-polish`). `recent` is newest-first (capped at 50) and includes subject context for what each call was used on.
+
+```json
+{
+  "callCount": 12,
+  "totals": {
+    "youtube-classifier": {
+      "calls": 10,
+      "inputTokens": 6000,
+      "outputTokens": 1800,
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0
+    }
+  },
+  "recent": [
+    {
+      "ts": "2026-07-11T10:09:00.000Z",
+      "tag": "youtube-classifier",
+      "subject": { "channel": "Example", "video": "Market update", "asset": "AAPL" },
+      "input_tokens": 610,
+      "output_tokens": 180,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+    }
+  ]
+}
+```
+
+### `GET /api/cache/stats`
+
+Compute-cache hit/miss stats plus `llm` totals and `llmRecent` (same recent ring as `/api/llm/usage`).
+
 ## Errors
 
 All endpoints return `{ "error": "message" }` with status 400 (bad input), 404 (not found), or 500 (upstream failure: Alpaca auth, eFD rate limit, Claude API, etc.). Backtest and status errors are also logged to stdout with component context.

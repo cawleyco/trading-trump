@@ -261,6 +261,19 @@ export const api = {
   classifyYoutubeMention: (id) =>
     req(`/api/influence/youtube/mentions/${id}/reclassify`, { method: 'POST' }),
   youtubeMentionCard: (id) => req(`/api/influence/youtube/mentions/${id}/card`),
+  backfillYoutubeChannel: (id, body = {}) =>
+    req(`/api/influence/youtube/channels/${id}/backfill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  youtubeBackfillStatus: (id) => req(`/api/influence/youtube/channels/${id}/backfill-status`),
+  digestLatest: () => req('/api/digest/latest'),
+  runDigest: () => req('/api/digest/run', { method: 'POST' }),
+  assetTimeline: (ticker, params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')).toString()
+    return req(`/api/assets/${encodeURIComponent(ticker)}/timeline${qs ? `?${qs}` : ''}`)
+  },
   runYoutubeWalkForward: (body) =>
     req('/api/influence/youtube/walk-forward', {
       method: 'POST',
@@ -282,4 +295,5 @@ export const api = {
     }),
   youtubeBacktest: (id) => req(`/api/influence/youtube/backtests/${id}`),
   influenceSignals: (moduleKey = 'youtube') => req(`/api/influence/signals?moduleKey=${encodeURIComponent(moduleKey)}`),
+  llmUsage: () => req('/api/llm/usage'),
 }

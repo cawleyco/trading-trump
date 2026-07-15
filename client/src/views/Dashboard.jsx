@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [signals, setSignals] = useState([])
   const [attribution, setAttribution] = useState(null)
   const [filingSpeed, setFilingSpeed] = useState([])
+  const [digest, setDigest] = useState(null)
   const [selectedFund, setSelectedFund] = useState(null)
   const [testTicker, setTestTicker] = useState('AAPL')
   const [testResult, setTestResult] = useState(null)
@@ -30,6 +31,7 @@ export default function Dashboard() {
     api.signals(15).then(setSignals).catch(() => {})
     api.attribution().then(setAttribution).catch(() => {})
     api.filingSpeed().then(setFilingSpeed).catch(() => {})
+    api.digestLatest().then(setDigest).catch(() => {})
   }
 
   useEffect(() => {
@@ -69,6 +71,25 @@ export default function Dashboard() {
           </>
         )}
       />
+
+      {digest?.content?.sections?.length > 0 && (
+        <SectionPanel
+          title={digest.content.title}
+          description="What moved overnight across every tracked source. Delivered each weekday at 7:30 ET."
+        >
+          <div style={{ display: 'grid', gap: 10 }}>
+            {digest.content.sections.map((s) => (
+              <div key={s.key}>
+                <strong style={{ fontSize: '0.9em' }}>{s.title}</strong>
+                <ul style={{ margin: '4px 0 0 18px', color: 'var(--color-text-muted)' }}>
+                  {s.items.slice(0, 6).map((item, i) => <li key={i}>{item}</li>)}
+                  {s.items.length > 6 && <li>…and {s.items.length - 6} more</li>}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </SectionPanel>
+      )}
 
       {funds.length > 1 && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>

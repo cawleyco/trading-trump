@@ -19,6 +19,7 @@ const RULE_HELP = {
   'creator-alpha-mention': 'Fires when a follow-labeled creator (alpha ≥ minAlpha) makes a quality mention. Params: {"minAlpha": 65, "minQuality": 70}',
   'pump-warning': 'Fires when a high-pump-risk mention touches a ticker you hold or watch. Params: {"minPumpRisk": 70}',
   'fade-candidate-mention': 'Fires when a fade-labeled creator mentions a ticker you hold or watch. No params.',
+  confluence: 'Fires when ≥ minSources independent sources (congress, finfluencer, Trump post) are active on one ticker within windowDays. Params: {"minSources": 2, "windowDays": 14}',
 }
 
 const DEFAULT_PARAMS = {
@@ -27,6 +28,7 @@ const DEFAULT_PARAMS = {
   'committee-relevant': '{"minRelevance": 50}',
   'creator-alpha-mention': '{"minAlpha": 65, "minQuality": 70}',
   'pump-warning': '{"minPumpRisk": 70}',
+  confluence: '{"minSources": 2, "windowDays": 14}',
 }
 
 export default function Alerts() {

@@ -183,7 +183,7 @@ const POLISH_SYSTEM = `You are a markets analyst. Rewrite the given thesis-card 
  * prose string, or null on any failure / when disabled — callers must fall back
  * to the deterministic card silently.
  */
-export async function polishCard(card) {
+export async function polishCard(card, subject = {}) {
   if (!config.thesis.llmEnabled) return null;
   const client = getClient();
   if (!client) {
@@ -199,7 +199,11 @@ export async function polishCard(card) {
       system: [{ type: 'text', text: POLISH_SYSTEM, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: JSON.stringify(card, null, 2) }],
     });
-    logLlmUsage('thesis-polish', resp.usage);
+    logLlmUsage('thesis-polish', resp.usage, {
+      tradeKey: subject.tradeKey,
+      politician: subject.politician,
+      ticker: subject.ticker,
+    });
     const text = resp.content.find((b) => b.type === 'text')?.text?.trim();
     return text || null;
   } catch (err) {

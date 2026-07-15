@@ -80,7 +80,11 @@ export async function getOrBuildThesisCard(tradeKey, { force = false, polishFn =
   const cardHash = stableHash({ card, model: config.thesis.model, prompt: POLISH_PROMPT_VERSION });
   const polished =
     _reusablePolish(cached, cardHash, force) ??
-    (await polishFn(card)); // null unless THESIS_LLM=true and it succeeds
+    (await polishFn(card, {
+      tradeKey,
+      politician: trade.politician,
+      ticker: trade.ticker,
+    })); // null unless THESIS_LLM=true and it succeeds
   const saved = upsertThesisCard({
     tradeKey,
     card,

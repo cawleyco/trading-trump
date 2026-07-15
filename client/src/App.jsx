@@ -10,6 +10,7 @@ import Approvals from './views/Approvals.jsx'
 import SignalLog from './views/SignalLog.jsx'
 import Alerts from './views/Alerts.jsx'
 import Influence from './views/Influence.jsx'
+import Assets from './views/Assets.jsx'
 import Guide from './views/Guide.jsx'
 import AppShell from './components/intel/AppShell.jsx'
 import { EmptyState, PageHeader, SectionPanel } from './components/intel/components.jsx'
@@ -25,7 +26,7 @@ const VIEWS = {
   politicians: ['Politicians', Politicians],
   influence: ['Influence Signals', Influence],
   signals: ['Signals', SignalLog],
-  assets: ['Assets', AssetsPlaceholder],
+  assets: ['Assets', Assets],
   research: ['Research', ResearchPlaceholder],
   alerts: ['Alerts', Alerts],
   guide: ['Guide', Guide],
@@ -93,25 +94,6 @@ export default function App() {
     <AppShell path={path} onNavigate={navigate}>
       <View path={path} />
     </AppShell>
-  )
-}
-
-function AssetsPlaceholder() {
-  return (
-    <>
-      <PageHeader
-        eyebrow="Asset intelligence"
-        title="Assets"
-        description="A convergence view for politician trades, creator mentions, public narratives, and risk warnings."
-        meta="Future module · data model ready for cross-source timelines"
-      />
-      <SectionPanel title="Asset Intelligence" description="Edge not confirmed until source trails and backtests are attached.">
-        <EmptyState
-          title="Asset pages are staged."
-          body="This section is reserved for cross-source asset timelines, exposure scoring, and public influence summaries."
-        />
-      </SectionPanel>
-    </>
   )
 }
 

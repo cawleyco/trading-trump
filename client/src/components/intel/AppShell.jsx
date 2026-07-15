@@ -1,4 +1,5 @@
 import StatusBar from '../StatusBar.jsx'
+import LlmUsageChip from '../LlmUsageChip.jsx'
 import { useTheme } from '../../ThemeContext.jsx'
 
 const NAV_GROUPS = [
@@ -23,7 +24,7 @@ const NAV_GROUPS = [
           { key: 'sec', label: 'SEC Filings', path: '/app/influence/sec-filings', enabled: false },
         ],
       },
-      { key: 'assets', label: 'Assets', path: '/app/assets', icon: 'AS', enabled: false },
+      { key: 'assets', label: 'Assets', path: '/app/assets', icon: 'AS', enabled: true },
     ],
   },
   {
@@ -79,6 +80,7 @@ export default function AppShell({ path, onNavigate, children }) {
             <span>{context}</span>
             <span className="intel-live-dot" />
             <span>Data live: local</span>
+            <LlmUsageChip />
             <select
               className="intel-theme-select"
               aria-label="Theme"

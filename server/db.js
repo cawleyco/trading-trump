@@ -659,6 +659,16 @@ if (!hasColumn('youtube_backtest_runs', 'results')) {
   db.exec(`ALTER TABLE youtube_backtest_runs ADD COLUMN results TEXT`);
 }
 
+// morning digests: one per date, replayable from the in-app feed
+db.exec(`
+CREATE TABLE IF NOT EXISTS digests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  digest_date TEXT UNIQUE NOT NULL,
+  content_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`);
+
 if (!hasColumn('daily_pnl', 'fund')) {
   // PK is changing from (trade_date) to (trade_date, fund): rebuild the table
   db.exec(`
@@ -2644,6 +2654,26 @@ export function getCreatorAlpha(channelId) {
   ).all(channelId);
 }
 
+export function upsertDigest(digestDate, content) {
+  db.prepare(
+    `INSERT INTO digests (digest_date, content_json) VALUES (?, ?)
+     ON CONFLICT(digest_date) DO UPDATE SET content_json = excluded.content_json, created_at = datetime('now')`
+  ).run(digestDate, JSON.stringify(content));
+  return getDigestByDate(digestDate);
+}
+
+function parseDigest(row) {
+  return row ? { ...row, content: JSON.parse(row.content_json), content_json: undefined } : null;
+}
+
+export function getDigestByDate(digestDate) {
+  return parseDigest(db.prepare(`SELECT * FROM digests WHERE digest_date = ?`).get(digestDate));
+}
+
+export function getLatestDigest() {
+  return parseDigest(db.prepare(`SELECT * FROM digests ORDER BY digest_date DESC LIMIT 1`).get());
+}
+
 // Latest alpha row per channel — the cross-creator universe used for
 // percentile scoring and follow/fade dashboards.
 export function listLatestCreatorAlphaMetrics() {
@@ -2849,6 +2879,7 @@ export const ALERT_RULE_TYPES = [
   'creator-alpha-mention',
   'pump-warning',
   'fade-candidate-mention',
+  'confluence',
 ];
 export const ALERT_CHANNELS = ['macos', 'discord', 'all'];
 

@@ -61,6 +61,21 @@ export default function YoutubeChannels() {
     }
   }
 
+  const [backfillResult, setBackfillResult] = useState(null)
+  const backfill = async (id, title) => {
+    setBusy(`backfill-${id}`)
+    setError(null)
+    try {
+      const result = await api.backfillYoutubeChannel(id, { maxVideos: 100 })
+      setBackfillResult(`${title}: queued ${result.queued} videos (${result.scanned} scanned). The poller drains them oldest-first, ${''}a few per cycle.`)
+      await refresh()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div>
       <SectionPanel title="Add YouTube Channel" description="Manual channel data works without a YouTube key. Enable API resolve/sync when `YOUTUBE_API_KEY` is configured.">
@@ -125,8 +140,15 @@ export default function YoutubeChannels() {
                   <td>{c.last_synced_at || '—'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button onClick={() => navigate(`/app/influence/youtube/channels/${c.id}`)} style={{ marginRight: 6 }}>View</button>
-                    <button onClick={() => sync(c.id)} disabled={busy === `sync-${c.id}`}>
+                    <button onClick={() => sync(c.id)} disabled={busy === `sync-${c.id}`} style={{ marginRight: 6 }}>
                       {busy === `sync-${c.id}` ? 'Syncing…' : 'Sync now'}
+                    </button>
+                    <button
+                      onClick={() => backfill(c.id, c.title)}
+                      disabled={busy === `backfill-${c.id}`}
+                      title="Queue up to 100 older videos; the poller ingests them a few per cycle"
+                    >
+                      {busy === `backfill-${c.id}` ? 'Queuing…' : 'Backfill'}
                     </button>
                   </td>
                 </tr>

@@ -110,7 +110,11 @@ export async function classifyYoutubeMention(context) {
 - Mention location seconds: ${context.mentionStartSeconds ?? ''}`,
       }],
     });
-    logLlmUsage('youtube-classifier', resp.usage);
+    logLlmUsage('youtube-classifier', resp.usage, {
+      channel: context.channelTitle,
+      video: context.videoTitle,
+      asset: context.assetSymbol,
+    });
     const text = resp.content.find((b) => b.type === 'text')?.text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;

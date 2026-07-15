@@ -8,6 +8,7 @@ export default function YoutubeChannelProfile({ channelId }) {
   const [channel, setChannel] = useState(null)
   const [videos, setVideos] = useState([])
   const [mentions, setMentions] = useState([])
+  const [backfillStatus, setBackfillStatus] = useState(null)
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
 
@@ -15,6 +16,7 @@ export default function YoutubeChannelProfile({ channelId }) {
     api.youtubeChannel(channelId).then(setChannel).catch((e) => setError(e.message))
     api.youtubeVideos(channelId).then(setVideos).catch(() => {})
     api.youtubeMentions({ channelId }).then(setMentions).catch(() => {})
+    api.youtubeBackfillStatus(channelId).then(setBackfillStatus).catch(() => {})
   }, [channelId])
   useEffect(() => { refresh() }, [refresh])
 
@@ -29,6 +31,31 @@ export default function YoutubeChannelProfile({ channelId }) {
       setBusy(null)
     }
   }
+
+  const backfill = async () => {
+    setBusy('backfill')
+    try {
+      const result = await api.backfillYoutubeChannel(channelId, { maxVideos: 100 })
+      setError(null)
+      refresh()
+      return result
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // Compact drain-progress line from the per-status counts.
+  const backfillSummary = (() => {
+    const rows = backfillStatus?.statuses || []
+    if (!rows.length) return null
+    const total = (pred) => rows.filter(pred).reduce((s, r) => s + r.count, 0)
+    const pending = total((r) => r.ingestion_status === 'backfill_pending')
+    const ingested = total((r) => r.ingestion_status === 'ingested')
+    const failed = total((r) => r.ingestion_status === 'ingest_failed')
+    return `${ingested} ingested · ${pending} queued for backfill · ${failed} failed/no captions`
+  })()
 
   if (error) return <section style={card}><p style={{ color: 'var(--color-bearish)' }}>{error}</p></section>
   if (!channel) return <p className="intel-muted">Loading channel...</p>
@@ -76,6 +103,12 @@ export default function YoutubeChannelProfile({ channelId }) {
       </SectionPanel>
 
       <SectionPanel title="Recent Videos" description="Transcript status determines whether mentions can be audited.">
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+          <button onClick={backfill} disabled={busy === 'backfill'} title="Queue up to 100 older videos; the poller ingests them a few per cycle">
+            {busy === 'backfill' ? 'Queuing…' : 'Backfill history (100 videos)'}
+          </button>
+          {backfillSummary && <span style={muted}>{backfillSummary}</span>}
+        </div>
         {videos.length === 0 ? <p style={muted}>No videos synced yet.</p> : (
           <table>
             <thead><tr><th>Published</th><th>Title</th><th>Transcript</th><th>Analysis</th><th></th></tr></thead>

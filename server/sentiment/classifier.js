@@ -106,7 +106,8 @@ export async function classifyPost(postText) {
       system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: `Post:\n"""\n${postText}\n"""` }],
     });
-    logLlmUsage('sentiment-classifier', resp.usage);
+    const preview = String(postText || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+    logLlmUsage('sentiment-classifier', resp.usage, { preview });
     const text = resp.content.find((b) => b.type === 'text')?.text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {

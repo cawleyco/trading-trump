@@ -73,6 +73,8 @@ import {
   updateInfluenceSignal,
   getYoutubeDashboardStats,
   getCreatorAlpha,
+  getLatestDigest,
+  getDigestByDate,
 } from './db.js';
 import { filingSpeedLeaderboard } from './intel/freshnessReports.js';
 import {
@@ -88,6 +90,8 @@ import { rescoreRecentTrades, scoreTrade } from './intel/scoreRunner.js';
 import { getOrBuildThesisCard } from './intel/cardRunner.js';
 import { dispatchCalendarEvents } from './intel/alertEngine.js';
 import { buildCrossSignalContext } from './intel/crossSignal.js';
+import { buildAssetTimeline } from './intel/confluence.js';
+import { runMorningDigest } from './digest.js';
 import {
   approvePendingStrategySignal,
   runStrategyBacktest,
@@ -144,7 +148,7 @@ import { buildMentionCard } from './influence/mentionCard.js';
 import { classifyAndStoreYoutubeMention, normalizeClassification } from './influence/youtubeMentionClassifier.js';
 import { generateYoutubeSignals } from './influence/youtubeSignals.js';
 import { defaultCache } from './cache/computeCache.js';
-import { llmUsageTotals } from './lib/llmUsage.js';
+import { llmUsageTotals, llmUsageRecent, llmUsageCallCount } from './lib/llmUsage.js';
 
 const app = express();
 app.use(express.json({ limit: '5mb' }));
@@ -1261,10 +1265,53 @@ app.patch('/api/influence/signals/:id', (req, res) => {
   res.json(signal);
 });
 
+// ---------- LLM usage (process-lifetime) ----------
+app.get('/api/llm/usage', (req, res) => {
+  res.json({
+    totals: llmUsageTotals(),
+    recent: llmUsageRecent(),
+    callCount: llmUsageCallCount(),
+  });
+});
+
+// ---------- morning digest ----------
+app.get('/api/digest/latest', (req, res) => {
+  res.json(getLatestDigest() || { content: null });
+});
+
+app.get('/api/digest', (req, res) => {
+  const date = String(req.query.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date=YYYY-MM-DD required' });
+  const digest = getDigestByDate(date);
+  if (!digest) return res.status(404).json({ error: 'no digest for that date' });
+  res.json(digest);
+});
+
+app.post('/api/digest/run', async (req, res) => {
+  res.json(await runMorningDigest());
+});
+
+// ---------- assets: cross-source confluence timeline ----------
+app.get('/api/assets/:ticker/timeline', (req, res) => {
+  const ticker = String(req.params.ticker || '').trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9.-]{0,9}$/.test(ticker)) {
+    return res.status(400).json({ error: 'invalid ticker' });
+  }
+  res.json(buildAssetTimeline(ticker, {
+    days: Math.min(Math.max(Number(req.query.days) || 90, 1), 365),
+    windowDays: Math.min(Math.max(Number(req.query.windowDays) || 14, 1), 90),
+    minSources: Math.min(Math.max(Number(req.query.minSources) || 2, 2), 3),
+  }));
+});
+
 // ---------- compute cache admin ----------
 app.get('/api/cache/stats', async (req, res) => {
   const cache = await defaultCache();
-  res.json({ ...cache.stats(), llm: llmUsageTotals() });
+  res.json({
+    ...cache.stats(),
+    llm: llmUsageTotals(),
+    llmRecent: llmUsageRecent(),
+  });
 });
 
 app.post('/api/cache/purge', async (req, res) => {
@@ -1360,6 +1407,19 @@ app.listen(config.port, '127.0.0.1', () => {
       () => {
         refreshAllCreatorAlpha().catch((err) =>
           log.error('server', `Scheduled creator alpha refresh failed: ${err.message}`)
+        );
+      },
+      { timezone: 'America/New_York' }
+    );
+  }
+
+  // Morning brief: what to look at today, delivered before the open.
+  if (config.digest.enabled) {
+    cron.schedule(
+      config.digest.cron,
+      () => {
+        runMorningDigest().catch((err) =>
+          log.error('server', `Morning digest failed: ${err.message}`)
         );
       },
       { timezone: 'America/New_York' }
