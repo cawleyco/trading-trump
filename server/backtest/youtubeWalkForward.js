@@ -4,9 +4,9 @@
 // mentions in the *next* window (out of sample). A creator who looks brilliant
 // in-sample and flops out-of-sample is noise, not edge — same reasoning as
 // the congress walk-forward (walkForward.js), reusing its splitWindows.
-import { createYoutubeBacktestRun, getYoutubeBacktestRun, listAssetMentions, updateYoutubeBacktestRun } from '../db.js';
+import { createYoutubeBacktestRun, getYoutubeBacktestRun, listAllAssetMentions, updateYoutubeBacktestRun } from '../db.js';
 import { splitWindows } from './walkForward.js';
-import { priceMentions, alpacaPriceProvider } from './youtubeBacktest.js';
+import { priceMentions, alpacaPriceProvider, consolidateYoutubeMentions } from './youtubeBacktest.js';
 
 const HORIZONS = ['24h', '7d', '30d'];
 
@@ -96,10 +96,9 @@ export async function runYoutubeWalkForward(
   minMentions = Math.max(1, Math.floor(Number(minMentions) || 5));
   const windows = splitWindows(startDate, endDate, folds); // validates the range
 
-  const mentions = listAssetMentions({ limit: 10_000 }).filter((m) => {
+  const mentions = consolidateYoutubeMentions(listAllAssetMentions({ startDate, endDate })).filter((m) => {
     if (!['bullish', 'bearish'].includes(m.direction)) return false;
-    const day = String(m.event_time || '').slice(0, 10);
-    return day >= startDate && day <= endDate;
+    return true;
   });
 
   const params = { startDate, endDate, folds, topN, horizon, minMentions };
@@ -113,7 +112,7 @@ export async function runYoutubeWalkForward(
   });
 
   try {
-    const priced = await priceMentions(mentions, [horizon, '30d'], provider);
+    const priced = await priceMentions(mentions, [horizon, '30d'], provider, { runId });
     // priceMentions returns rows keyed by mention_id — re-attach channel info.
     const byMentionId = new Map(mentions.map((m) => [m.id, m]));
     for (const row of priced) {

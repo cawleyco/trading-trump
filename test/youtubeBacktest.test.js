@@ -5,6 +5,7 @@ import {
   _exitPrice,
   _median,
   _resultForMention,
+  consolidateYoutubeMentions,
   recalculateCreatorAlpha,
   runYoutubeBacktest,
 } from '../server/backtest/youtubeBacktest.js'
@@ -14,6 +15,7 @@ import {
   createMentionClassification,
   createYoutubeChannel,
   getAssetBySymbol,
+  listAllAssetMentions,
   upsertYoutubeVideo,
 } from '../server/db.js'
 
@@ -137,6 +139,53 @@ test('missing price data yields null returns, not fabricated ones', () => {
   assert.equal(r.result_metadata.noPriceData, true)
 })
 
+test('outcome metadata distinguishes immature horizons from missing prices', () => {
+  const mention = { id: 1, asset_id: 1, event_time: EVENT_TIME, direction: 'bullish' }
+  const beforeThirtyDays = EVENT_MS + 10 * 86400_000
+  const r = _resultForMention(mention, ['7d', '30d'], {
+    minuteBars,
+    dailyBars,
+    benchmarkBars: spyBars,
+    nowMs: beforeThirtyDays,
+  })
+  assert.equal(r.result_metadata.outcomeStatus['7d'], 'measured')
+  assert.equal(r.result_metadata.outcomeStatus['30d'], 'immature')
+  assert.equal(r.return_30d, null)
+})
+
+test('30-day drawdown and runup use the complete directional price path', () => {
+  const mention = { id: 1, asset_id: 1, event_time: EVENT_TIME, direction: 'bullish' }
+  const path = [
+    { date: '2026-06-15', close: 90 },
+    { date: '2026-06-20', close: 110 },
+    { date: '2026-06-25', close: 80 },
+    { date: '2026-07-15', close: 120 },
+  ]
+  const r = _resultForMention(mention, ['30d'], {
+    minuteBars,
+    dailyBars: path,
+    benchmarkBars: spyBars,
+    nowMs: EVENT_MS + 31 * 86400_000,
+  })
+  assert.equal(r.max_drawdown_30d, -20)
+  assert.equal(r.max_runup_30d, 20)
+})
+
+test('consolidation clusters repeats and conservatively retains direction conflicts', () => {
+  const base = { video_id: 10, channel_id: 20, asset_id: 30, symbol: 'TSLA', entity_confidence: 0.9 }
+  const rows = [
+    { ...base, id: 1, event_time: '2026-06-15T14:00:00Z', direction: 'bullish', mention_quality_score: 20 },
+    { ...base, id: 2, event_time: '2026-06-15T14:00:20Z', direction: 'bullish', mention_quality_score: 60 },
+    { ...base, id: 3, event_time: '2026-06-15T14:02:00Z', direction: 'bearish', mention_quality_score: 50 },
+  ]
+  const [signal] = consolidateYoutubeMentions(rows, { persist: false })
+  assert.equal(signal.direction, 'mixed')
+  assert.equal(signal.conflict_status, 'direction_conflict')
+  assert.equal(signal.occurrence_count, 3)
+  assert.equal(signal.collapsed_cluster_count, 2)
+  assert.deepEqual(signal.mention_ids, [1, 2, 3])
+})
+
 // ---------------------------------------------------------------------------
 // DB-backed integration. runYoutubeBacktest is async so the sync-transaction
 // rollback trick doesn't apply — fixture rows are deleted in `finally`.
@@ -182,10 +231,12 @@ function insertFixtureMention({ channelKey, direction = 'bullish' }) {
 
 function deleteFixtureRows({ channel, video, mentionId, runId }) {
   if (runId) {
+    db.prepare(`DELETE FROM youtube_backtest_price_observations WHERE backtest_run_id = ?`).run(runId)
     db.prepare(`DELETE FROM youtube_backtest_signal_results WHERE backtest_run_id = ?`).run(runId)
     db.prepare(`DELETE FROM youtube_backtest_runs WHERE id = ?`).run(runId)
   }
   db.prepare(`DELETE FROM creator_alpha_metrics WHERE channel_id = ?`).run(channel.id)
+  db.prepare(`DELETE FROM youtube_canonical_signals WHERE video_id = ?`).run(video.id)
   db.prepare(`DELETE FROM mention_classifications WHERE mention_id = ?`).run(mentionId)
   db.prepare(`DELETE FROM asset_mentions WHERE id = ?`).run(mentionId)
   db.prepare(`DELETE FROM youtube_videos WHERE id = ?`).run(video.id)
@@ -208,6 +259,11 @@ test('runYoutubeBacktest persists results priced from the injected provider', as
     assert.equal(result.return_1h, 5)
     assert.equal(result.return_30d, 20)
     assert.equal(result.result_metadata.priceSource, 'minute')
+    assert.equal(result.result_metadata.priceProvider, 'injected')
+    const snapshots = db.prepare(
+      `SELECT interval, COUNT(*) n FROM youtube_backtest_price_observations WHERE backtest_run_id=? GROUP BY interval`
+    ).all(runId)
+    assert.ok(snapshots.some((row) => row.n > 0), 'the run preserves the exact provider bars it used')
     assert.equal(run.summary.priced, 1)
     assert.equal(run.summary.noPriceData, 0)
     // The filter funnel explains small samples (total → directional → filtered)
@@ -216,6 +272,34 @@ test('runYoutubeBacktest persists results priced from the injected provider', as
     assert.ok(run.summary.funnel.mentionsTotal >= 1)
   } finally {
     deleteFixtureRows({ ...fixture, runId })
+  }
+})
+
+test('mention paging and date filters are applied by the database query', () => {
+  const fixture = insertFixtureMention({ channelKey: 'bt-fixture-paging' })
+  let secondMentionId = null
+  let secondVideo = null
+  try {
+    secondVideo = upsertYoutubeVideo({
+      youtube_video_id: 'bt-fixture-paging-video-2',
+      channel_id: fixture.channel.id,
+      title: 'Older fixture video',
+      published_at: '2026-05-01T12:00:00Z',
+    })
+    const asset = getAssetBySymbol('TSLA')
+    secondMentionId = createAssetMention({
+      asset_id: asset.id, source_type: 'youtube_video', source_id: secondVideo.id,
+      video_id: secondVideo.id, channel_id: fixture.channel.id, mention_text: 'older paging fixture',
+      event_time: '2026-05-01T12:00:00Z', entity_confidence: 0.9,
+    })
+    const all = listAllAssetMentions({ channelId: fixture.channel.id }, { pageSize: 1 })
+    assert.equal(all.length, 2)
+    const june = listAllAssetMentions({ channelId: fixture.channel.id, startDate: '2026-06-01', endDate: '2026-06-30' }, { pageSize: 1 })
+    assert.deepEqual(june.map((m) => m.id), [fixture.mentionId])
+  } finally {
+    if (secondMentionId) db.prepare(`DELETE FROM asset_mentions WHERE id=?`).run(secondMentionId)
+    if (secondVideo) db.prepare(`DELETE FROM youtube_videos WHERE id=?`).run(secondVideo.id)
+    deleteFixtureRows({ ...fixture, runId: null })
   }
 })
 

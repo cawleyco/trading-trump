@@ -7,7 +7,7 @@ export default function YoutubeBacktests() {
   const [result, setResult] = useState(null)
   const [config, setConfig] = useState({
     name: 'YouTube creator mention backtest',
-    minMentionQualityScore: 50,
+    minMentionQualityScore: 20,
     exitWindows: ['1h', '24h', '7d', '30d'],
   })
   const [error, setError] = useState(null)
@@ -34,13 +34,19 @@ export default function YoutubeBacktests() {
     <div>
       <section style={card}>
         <h3>Create Backtest</h3>
-        <p style={muted}>Uses stored classified mentions. MVP falls back to deterministic mock market data when no provider is configured.</p>
+        <p style={muted}>Consolidates repeated transcript occurrences into one video–asset thesis and uses real provider prices. Missing prices remain missing.</p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <Field label="Name">
             <input value={config.name} onChange={(e) => setConfig({ ...config, name: e.target.value })} style={{ width: 260 }} />
           </Field>
           <Field label="Min quality">
             <input type="number" value={config.minMentionQualityScore} onChange={(e) => setConfig({ ...config, minMentionQualityScore: Number(e.target.value) })} style={{ width: 90 }} />
+          </Field>
+          <Field label="Start date">
+            <input type="date" value={config.startDate || ''} onChange={(e) => setConfig({ ...config, startDate: e.target.value || undefined })} />
+          </Field>
+          <Field label="End date">
+            <input type="date" value={config.endDate || ''} onChange={(e) => setConfig({ ...config, endDate: e.target.value || undefined })} />
           </Field>
           <Field label="Direction">
             <select value={config.directions?.[0] || ''} onChange={(e) => setConfig({ ...config, directions: e.target.value ? [e.target.value] : undefined })}>
@@ -60,7 +66,8 @@ export default function YoutubeBacktests() {
           {result.summary?.warning && <p style={{ color: 'var(--color-warning)' }}>{result.summary.warning}</p>}
           {result.summary?.funnel && (
             <p style={muted}>
-              {result.summary.funnel.mentionsTotal} mentions → {result.summary.funnel.withDirection} classified bullish/bearish
+              {result.summary.funnel.rawOccurrences} raw occurrences → {result.summary.funnel.canonicalSignals} independent video–asset signals
+              {' '}({result.summary.funnel.directionConflicts} direction conflicts excluded) → {result.summary.funnel.withDirection} bullish/bearish
               {' '}→ {result.summary.funnel.afterQualityFilters} after filters
               {result.summary.funnel.withDirection < result.summary.funnel.mentionsTotal &&
                 ' — unclassified mentions need the classifier run before they can be backtested'}

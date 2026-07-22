@@ -472,6 +472,29 @@ CREATE TABLE IF NOT EXISTS mention_classifications (
 );
 CREATE INDEX IF NOT EXISTS idx_mention_classifications_mention ON mention_classifications(mention_id);
 
+-- Raw transcript occurrences remain in asset_mentions.  This table stores the
+-- reproducible research unit used by backtests: one creator/video/asset thesis.
+CREATE TABLE IF NOT EXISTS youtube_canonical_signals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel_id INTEGER NOT NULL REFERENCES youtube_channels(id),
+  video_id INTEGER NOT NULL REFERENCES youtube_videos(id),
+  asset_id INTEGER NOT NULL REFERENCES assets(id),
+  direction TEXT NOT NULL,                 -- bullish|bearish|mixed|unactionable
+  conflict_status TEXT NOT NULL,           -- none|direction_conflict|no_direction
+  event_time TEXT NOT NULL,                -- first actionable occurrence
+  representative_mention_id INTEGER REFERENCES asset_mentions(id),
+  occurrence_count INTEGER NOT NULL,
+  collapsed_cluster_count INTEGER NOT NULL,
+  mention_ids TEXT NOT NULL,               -- JSON, preserves raw provenance
+  consolidation_version TEXT NOT NULL,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(video_id, asset_id, consolidation_version)
+);
+CREATE INDEX IF NOT EXISTS idx_ycs_event_time ON youtube_canonical_signals(event_time);
+CREATE INDEX IF NOT EXISTS idx_ycs_channel ON youtube_canonical_signals(channel_id);
+
 CREATE TABLE IF NOT EXISTS youtube_backtest_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -513,6 +536,29 @@ CREATE TABLE IF NOT EXISTS youtube_backtest_signal_results (
   result_metadata TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Exact immutable bars observed by a particular run.  compute_cache improves
+-- performance; this table is the durable audit trail for research results.
+CREATE TABLE IF NOT EXISTS youtube_backtest_price_observations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  backtest_run_id INTEGER NOT NULL REFERENCES youtube_backtest_runs(id),
+  canonical_signal_id INTEGER REFERENCES youtube_canonical_signals(id),
+  asset_id INTEGER REFERENCES assets(id),
+  symbol TEXT NOT NULL,
+  interval TEXT NOT NULL,
+  observed_at TEXT NOT NULL,
+  open REAL,
+  high REAL,
+  low REAL,
+  close REAL,
+  volume REAL,
+  provider TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  request_start TEXT,
+  request_end TEXT,
+  UNIQUE(backtest_run_id, canonical_signal_id, symbol, interval, observed_at, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_ybtpo_run ON youtube_backtest_price_observations(backtest_run_id);
 
 CREATE TABLE IF NOT EXISTS creator_alpha_metrics (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2482,13 +2528,15 @@ export function createAssetMention(input) {
   return existing?.id ?? null;
 }
 
-export function listAssetMentions({ videoId, channelId, assetId, limit = 500 } = {}) {
+export function listAssetMentions({ videoId, channelId, assetId, startDate, endDate, limit = 500, offset = 0 } = {}) {
   const where = [];
   const params = [];
   if (videoId) { where.push('am.video_id = ?'); params.push(videoId); }
   if (channelId) { where.push('am.channel_id = ?'); params.push(channelId); }
   if (assetId) { where.push('am.asset_id = ?'); params.push(assetId); }
-  params.push(limit);
+  if (startDate) { where.push('am.event_time >= ?'); params.push(`${startDate}T00:00:00.000Z`); }
+  if (endDate) { where.push('am.event_time < ?'); params.push(new Date(new Date(`${endDate}T00:00:00.000Z`).getTime() + 86400_000).toISOString()); }
+  params.push(limit, offset);
   return db.prepare(
     `SELECT am.*, a.symbol, a.canonical_name, a.asset_type, yc.title AS channel_title, yv.title AS video_title,
             yv.youtube_video_id AS youtube_video_id, yv.published_at AS video_published_at,
@@ -2502,8 +2550,43 @@ export function listAssetMentions({ videoId, channelId, assetId, limit = 500 } =
        SELECT id FROM mention_classifications WHERE mention_id = am.id ORDER BY id DESC LIMIT 1
      )
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-     ORDER BY am.event_time DESC, am.id DESC LIMIT ?`
+     ORDER BY am.event_time DESC, am.id DESC LIMIT ? OFFSET ?`
   ).all(...params);
+}
+
+export function listAllAssetMentions(filters = {}, { pageSize = 1000 } = {}) {
+  const rows = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const page = listAssetMentions({ ...filters, limit: pageSize, offset });
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
+export function upsertYoutubeCanonicalSignal(input) {
+  db.prepare(
+    `INSERT INTO youtube_canonical_signals (
+       channel_id, video_id, asset_id, direction, conflict_status, event_time,
+       representative_mention_id, occurrence_count, collapsed_cluster_count,
+       mention_ids, consolidation_version, metadata
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(video_id, asset_id, consolidation_version) DO UPDATE SET
+       channel_id=excluded.channel_id, direction=excluded.direction,
+       conflict_status=excluded.conflict_status, event_time=excluded.event_time,
+       representative_mention_id=excluded.representative_mention_id,
+       occurrence_count=excluded.occurrence_count,
+       collapsed_cluster_count=excluded.collapsed_cluster_count,
+       mention_ids=excluded.mention_ids, metadata=excluded.metadata,
+       updated_at=datetime('now')`
+  ).run(
+    input.channel_id, input.video_id, input.asset_id, input.direction,
+    input.conflict_status, input.event_time, input.representative_mention_id ?? null,
+    input.occurrence_count, input.collapsed_cluster_count, JSON.stringify(input.mention_ids),
+    input.consolidation_version, JSON.stringify(input.metadata ?? {})
+  );
+  return db.prepare(
+    `SELECT * FROM youtube_canonical_signals WHERE video_id=? AND asset_id=? AND consolidation_version=?`
+  ).get(input.video_id, input.asset_id, input.consolidation_version);
 }
 
 export function getAssetMention(id) {
@@ -2644,6 +2727,29 @@ export function insertYoutubeBacktestSignalResult(input) {
     input.benchmark_return_30d ?? null,
     JSON.stringify(input.result_metadata ?? {})
   );
+}
+
+export function insertYoutubeBacktestPriceObservations(rows) {
+  if (!rows?.length) return 0;
+  const stmt = db.prepare(
+    `INSERT OR IGNORE INTO youtube_backtest_price_observations (
+       backtest_run_id, canonical_signal_id, asset_id, symbol, interval, observed_at,
+       open, high, low, close, volume, provider, fetched_at, request_start, request_end
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insert = db.transaction((items) => {
+    let changes = 0;
+    for (const r of items) {
+      changes += stmt.run(
+        r.backtest_run_id, r.canonical_signal_id ?? null, r.asset_id ?? null,
+        r.symbol, r.interval, r.observed_at, r.open ?? null, r.high ?? null,
+        r.low ?? null, r.close ?? null, r.volume ?? null, r.provider,
+        r.fetched_at, r.request_start ?? null, r.request_end ?? null
+      ).changes;
+    }
+    return changes;
+  });
+  return insert(rows);
 }
 
 function parseBacktestRun(row) {

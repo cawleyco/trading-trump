@@ -2,10 +2,12 @@ import {
   createYoutubeBacktestRun,
   getYoutubeBacktestRun,
   insertYoutubeBacktestSignalResult,
-  listAssetMentions,
+  insertYoutubeBacktestPriceObservations,
+  listAllAssetMentions,
   listLatestCreatorAlphaMetrics,
   listYoutubeChannels,
   replaceCreatorAlphaMetric,
+  upsertYoutubeCanonicalSignal,
   updateYoutubeBacktestRun,
 } from '../db.js';
 import { getDailyCloses, _firstCloseOnOrAfter } from '../marketData.js';
@@ -41,6 +43,7 @@ export function benchmarkSymbolFor(assetType) {
 // ---------------------------------------------------------------------------
 
 export const alpacaPriceProvider = {
+  providerName: 'alpaca',
   async minuteBars(symbol, startIso, endIso) {
     try {
       const { getMinuteBarsCached } = await import('../marketData.js');
@@ -53,6 +56,72 @@ export const alpacaPriceProvider = {
   // Persistently cached and null-safe already.
   dailyCloses: getDailyCloses,
 };
+
+export const CONSOLIDATION_VERSION = 'video-asset-v1';
+const DUPLICATE_WINDOW_SECONDS = 60;
+
+/**
+ * Collapse raw transcript occurrences into one conservative video/asset thesis.
+ * Any bullish/bearish disagreement is retained as `mixed` and is not eligible
+ * for a directional backtest.  Raw mention ids are always preserved.
+ */
+export function consolidateYoutubeMentions(mentions, { persist = true } = {}) {
+  const groups = new Map();
+  for (const mention of mentions) {
+    if (!mention.video_id || !mention.asset_id || !mention.channel_id) continue;
+    const key = `${mention.video_id}:${mention.asset_id}`;
+    const group = groups.get(key) || [];
+    group.push(mention);
+    groups.set(key, group);
+  }
+  return [...groups.values()].map((occurrences) => {
+    occurrences.sort((a, b) => new Date(a.event_time) - new Date(b.event_time) || a.id - b.id);
+    const actionable = occurrences.filter((m) => ['bullish', 'bearish'].includes(m.direction));
+    const directions = new Set(actionable.map((m) => m.direction));
+    const direction = directions.size > 1 ? 'mixed' : directions.size === 1 ? [...directions][0] : 'unactionable';
+    const conflictStatus = directions.size > 1 ? 'direction_conflict' : directions.size === 0 ? 'no_direction' : 'none';
+    const representative = [...(actionable.length ? actionable : occurrences)].sort((a, b) =>
+      Number(b.mention_quality_score || 0) - Number(a.mention_quality_score || 0) ||
+      new Date(a.event_time) - new Date(b.event_time)
+    )[0];
+    let clusters = 0;
+    let priorMs = null;
+    for (const occurrence of occurrences) {
+      const ms = new Date(occurrence.event_time).getTime();
+      if (priorMs == null || ms - priorMs > DUPLICATE_WINDOW_SECONDS * 1000) clusters++;
+      priorMs = ms;
+    }
+    const input = {
+      channel_id: occurrences[0].channel_id,
+      video_id: occurrences[0].video_id,
+      asset_id: occurrences[0].asset_id,
+      direction,
+      conflict_status: conflictStatus,
+      event_time: (actionable[0] || occurrences[0]).event_time,
+      representative_mention_id: representative?.id,
+      occurrence_count: occurrences.length,
+      collapsed_cluster_count: clusters,
+      mention_ids: occurrences.map((m) => m.id),
+      consolidation_version: CONSOLIDATION_VERSION,
+      metadata: {
+        duplicateWindowSeconds: DUPLICATE_WINDOW_SECONDS,
+        directions: [...directions].sort(),
+      },
+    };
+    const stored = persist ? upsertYoutubeCanonicalSignal(input) : { id: null, ...input };
+    return {
+      ...representative,
+      id: representative.id,
+      canonical_signal_id: stored.id,
+      direction,
+      event_time: input.event_time,
+      occurrence_count: input.occurrence_count,
+      collapsed_cluster_count: clusters,
+      conflict_status: conflictStatus,
+      mention_ids: input.mention_ids,
+    };
+  });
+}
 
 export function calculateDirectionalReturn(direction, entry, exit) {
   if (!entry || !exit) return null;
@@ -127,7 +196,7 @@ export function _median(vals) {
 }
 
 /** Pure result builder — all price series are passed in. */
-export function _resultForMention(mention, exitWindows, { minuteBars, dailyBars, benchmarkBars }) {
+export function _resultForMention(mention, exitWindows, { minuteBars, dailyBars, benchmarkBars, nowMs = Date.now(), priceProvider = 'unknown' }) {
   const eventMs = new Date(mention.event_time).getTime();
   const { price: entryPrice, source: entrySource } = _entryPrice({ minuteBars, dailyBars, eventMs });
   const out = {
@@ -142,6 +211,11 @@ export function _resultForMention(mention, exitWindows, { minuteBars, dailyBars,
       mentionQualityScore: mention.mention_quality_score,
       priceSource: entrySource,
       noPriceData: entryPrice == null,
+      priceProvider,
+      canonicalSignalId: mention.canonical_signal_id ?? null,
+      occurrenceCount: mention.occurrence_count ?? 1,
+      collapsedClusterCount: mention.collapsed_cluster_count ?? 1,
+      outcomeStatus: {},
       benchmarkSymbol: benchmarkSymbolFor(mention.asset_type),
     },
   };
@@ -158,23 +232,42 @@ export function _resultForMention(mention, exitWindows, { minuteBars, dailyBars,
   for (const window of exitWindows) {
     const days = WINDOWS[window];
     if (!days) continue;
-    const price = entryPrice == null
+    const targetMs = eventMs + days * DAY_MS;
+    const immature = targetMs > nowMs;
+    const intradayOffHours = days < 1 && entryPrice != null && entrySource !== 'minute';
+    const price = entryPrice == null || immature
       ? null
       : _exitPrice({ minuteBars, dailyBars, eventMs, windowDays: days, entrySource });
     const raw = calculateRawReturn(entryPrice, price);
-    const bench = benchmarkReturn(days);
+    const bench = immature ? null : benchmarkReturn(days);
     out[`exit_${window}_price`] = price;
     // `return_*` stays directional (creator-correctness) for backward compat.
     out[`return_${window}`] = calculateDirectionalReturn(mention.direction, entryPrice, price);
     out[`raw_return_${window}`] = raw;
     out[`benchmark_return_${window}`] = bench;
     out[`abnormal_return_${window}`] = raw != null && bench != null ? raw - bench : null;
+    out.result_metadata.outcomeStatus[window] = immature
+      ? 'immature'
+      : entryPrice == null
+        ? 'missing_entry_price'
+        : intradayOffHours
+          ? 'not_applicable_off_hours'
+          : price == null
+            ? 'missing_exit_price'
+            : 'measured';
   }
-  // Approximation from window returns, not the true intra-window path.
-  out.max_drawdown_30d = Math.min(0, out.return_30d ?? out.return_7d ?? 0);
-  out.max_runup_30d = Math.max(0, out.return_30d ?? out.return_7d ?? 0);
+  // True close-to-entry path extrema, available only once the full horizon has matured.
+  const thirtyDayMature = eventMs + 30 * DAY_MS <= nowMs;
+  const pathReturns = entryPrice != null && thirtyDayMature
+    ? (dailyBars || [])
+      .filter((b) => b.date >= isoDate(eventMs) && b.date <= isoDate(eventMs + 30 * DAY_MS) && b.close != null)
+      .map((b) => calculateDirectionalReturn(mention.direction, entryPrice, b.close))
+      .filter((v) => typeof v === 'number')
+    : [];
+  out.max_drawdown_30d = pathReturns.length ? Math.min(0, ...pathReturns) : null;
+  out.max_runup_30d = pathReturns.length ? Math.max(0, ...pathReturns) : null;
   // Kept as a named column (persisted by insertYoutubeBacktestSignalResult).
-  out.benchmark_return_30d = out.benchmark_return_30d ?? benchmarkReturn(30);
+  out.benchmark_return_30d = out.benchmark_return_30d ?? (thirtyDayMature ? benchmarkReturn(30) : null);
   return out;
 }
 
@@ -226,8 +319,13 @@ async function loadSeries(mentions, exitWindows, provider) {
   }
 
   const daily = new Map();
+  const requests = [];
   for (const [symbol, { min, max }] of bySymbol) {
-    daily.set(symbol, await provider.dailyCloses(symbol, isoDate(min - DAY_MS), isoDate(max + (spanDays + 14) * DAY_MS)));
+    const start = isoDate(min - DAY_MS);
+    const end = isoDate(max + (spanDays + 14) * DAY_MS);
+    const bars = await provider.dailyCloses(symbol, start, end);
+    daily.set(symbol, bars);
+    requests.push({ symbol, interval: '1d', start, end, bars });
   }
 
   // Benchmark per asset class: equities vs SPY, crypto vs a bitcoin proxy.
@@ -239,10 +337,11 @@ async function loadSeries(mentions, exitWindows, provider) {
     const allMax = Math.max(...[...bySymbol.values()].map((s) => s.max));
     const wantedBenchmarks = new Set(mentions.map((m) => benchmarkSymbolFor(m.asset_type)));
     for (const symbol of wantedBenchmarks) {
-      benchmarks.set(
-        symbol,
-        await provider.dailyCloses(symbol, isoDate(allMin - DAY_MS), isoDate(allMax + 44 * DAY_MS))
-      );
+      const start = isoDate(allMin - DAY_MS);
+      const end = isoDate(allMax + 44 * DAY_MS);
+      const bars = await provider.dailyCloses(symbol, start, end);
+      benchmarks.set(symbol, bars);
+      requests.push({ symbol, interval: '1d', start, end, bars });
     }
   }
   const benchmarkFor = (mention) => benchmarks.get(benchmarkSymbolFor(mention.asset_type)) ?? null;
@@ -254,28 +353,57 @@ async function loadSeries(mentions, exitWindows, provider) {
     const key = `${mention.symbol}|${Math.floor(ms / 3600_000)}`;
     if (!minuteCache.has(key)) {
       const end = new Date(ms + (wantMinutes ? 6 * 3600_000 : 0) + 2 * MINUTE_FILL_TOLERANCE_MS).toISOString();
-      minuteCache.set(key, await provider.minuteBars(mention.symbol, new Date(ms).toISOString(), end));
+      const start = new Date(ms).toISOString();
+      const bars = await provider.minuteBars(mention.symbol, start, end);
+      minuteCache.set(key, bars);
+      requests.push({ symbol: mention.symbol, interval: '1m', start, end, bars, canonicalSignalId: mention.canonical_signal_id, assetId: mention.asset_id });
     }
     return minuteCache.get(key);
   };
 
-  return { daily, benchmarkFor, minutesFor };
+  return { daily, benchmarkFor, minutesFor, requests };
+}
+
+function persistPriceSnapshot(runId, mentions, requests, providerName) {
+  const assetBySymbol = new Map(mentions.map((m) => [m.symbol, m.asset_id]));
+  const fetchedAt = new Date().toISOString();
+  const rows = [];
+  for (const request of requests) {
+    for (const bar of request.bars || []) {
+      rows.push({
+        backtest_run_id: runId,
+        canonical_signal_id: request.canonicalSignalId ?? null,
+        asset_id: request.assetId ?? assetBySymbol.get(request.symbol) ?? null,
+        symbol: request.symbol,
+        interval: request.interval,
+        observed_at: bar.timestamp ?? bar.date,
+        open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume,
+        provider: providerName,
+        fetched_at: fetchedAt,
+        request_start: request.start,
+        request_end: request.end,
+      });
+    }
+  }
+  return insertYoutubeBacktestPriceObservations(rows);
 }
 
 export async function runYoutubeBacktest(config = {}, { provider = alpacaPriceProvider } = {}) {
   const exitWindows = (config.exitWindows?.length ? config.exitWindows : ['1h', '24h', '7d', '30d'])
     .filter((w) => WINDOWS[w]);
-  const allMentions = listAssetMentions({
+  const rawMentions = listAllAssetMentions({
     videoId: config.videoId,
     channelId: config.channelId,
     assetId: config.assetId,
-    limit: config.limit || 1000,
+    startDate: config.startDate,
+    endDate: config.endDate,
   });
+  const allMentions = consolidateYoutubeMentions(rawMentions);
   // Funnel counts explain small samples: most mentions drop out because they
   // were never classified with a direction, not because prices are missing.
   const withDirection = allMentions.filter((m) => ['bullish', 'bearish'].includes(m.direction));
   const mentions = withDirection.filter((m) => {
-    if (config.mentionId && Number(m.id) !== Number(config.mentionId)) return false;
+    if (config.mentionId && !m.mention_ids.includes(Number(config.mentionId))) return false;
     if (config.directions?.length && !config.directions.includes(m.direction)) return false;
     if (config.mentionTypes?.length && !config.mentionTypes.includes(m.mention_type)) return false;
     if (config.minMentionQualityScore && Number(m.mention_quality_score || 0) < config.minMentionQualityScore) return false;
@@ -283,6 +411,9 @@ export async function runYoutubeBacktest(config = {}, { provider = alpacaPricePr
     return true;
   });
   const funnel = {
+    rawOccurrences: rawMentions.length,
+    canonicalSignals: allMentions.length,
+    directionConflicts: allMentions.filter((m) => m.conflict_status === 'direction_conflict').length,
     mentionsTotal: allMentions.length,
     withDirection: withDirection.length,
     afterQualityFilters: mentions.length,
@@ -295,7 +426,8 @@ export async function runYoutubeBacktest(config = {}, { provider = alpacaPricePr
     status: 'running',
   });
   try {
-    const { daily, benchmarkFor, minutesFor } = await loadSeries(mentions, exitWindows, provider);
+    const { daily, benchmarkFor, minutesFor, requests } = await loadSeries(mentions, exitWindows, provider);
+    const providerName = provider.providerName || 'injected';
     const results = [];
     for (const mention of mentions) {
       results.push(
@@ -303,9 +435,11 @@ export async function runYoutubeBacktest(config = {}, { provider = alpacaPricePr
           minuteBars: await minutesFor(mention),
           dailyBars: daily.get(mention.symbol),
           benchmarkBars: benchmarkFor(mention),
+          priceProvider: providerName,
         })
       );
     }
+    persistPriceSnapshot(runId, mentions, requests, providerName);
     for (const result of results) {
       insertYoutubeBacktestSignalResult({ ...result, backtest_run_id: runId });
     }
@@ -319,8 +453,9 @@ export async function runYoutubeBacktest(config = {}, { provider = alpacaPricePr
 
 // Price a set of mentions across the given windows. Shared by creator-alpha
 // refresh and the walk-forward validator.
-export async function priceMentions(mentions, windows, provider = alpacaPriceProvider) {
-  const { daily, benchmarkFor, minutesFor } = await loadSeries(mentions, windows, provider);
+export async function priceMentions(mentions, windows, provider = alpacaPriceProvider, { runId = null } = {}) {
+  const { daily, benchmarkFor, minutesFor, requests } = await loadSeries(mentions, windows, provider);
+  const providerName = provider.providerName || 'injected';
   const results = [];
   for (const mention of mentions) {
     results.push(
@@ -328,16 +463,18 @@ export async function priceMentions(mentions, windows, provider = alpacaPricePro
         minuteBars: await minutesFor(mention),
         dailyBars: daily.get(mention.symbol),
         benchmarkBars: benchmarkFor(mention),
+        priceProvider: providerName,
       })
     );
   }
+  if (runId) persistPriceSnapshot(runId, mentions, requests, providerName);
   return results;
 }
 
 const ALPHA_WINDOWS = ['1h', '6h', '24h', '7d', '30d', '90d'];
 
 function directionalMentions(channelId) {
-  return listAssetMentions({ channelId, limit: 5000 }).filter((m) =>
+  return consolidateYoutubeMentions(listAllAssetMentions({ channelId })).filter((m) =>
     ['bullish', 'bearish'].includes(m.direction)
   );
 }
