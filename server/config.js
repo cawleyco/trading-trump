@@ -119,6 +119,9 @@ export const config = {
     signalQualityThreshold: num('YOUTUBE_SIGNAL_QUALITY_THRESHOLD', 70),
     // Automated caption fetching is a YouTube ToS gray area — explicit opt-in.
     autoTranscriptsEnabled: process.env.YOUTUBE_AUTO_TRANSCRIPTS_ENABLED === 'true',
+    // Semantic-theme tagging runs an LLM over mention summaries — opt-in so it
+    // never spends tokens unless explicitly enabled.
+    themeTaggingEnabled: process.env.YOUTUBE_THEME_TAGGING_ENABLED === 'true',
     ytDlpPath: process.env.YT_DLP_PATH || 'yt-dlp',
     transcriptMaxAttempts: num('YOUTUBE_TRANSCRIPT_MAX_ATTEMPTS', 3),
     transcriptFetchDelayMs: num('YOUTUBE_TRANSCRIPT_FETCH_DELAY_MS', 5000),

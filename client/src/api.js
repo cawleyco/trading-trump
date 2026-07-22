@@ -298,6 +298,28 @@ export const api = {
       body: JSON.stringify(body),
     }),
   youtubeBacktest: (id) => req(`/api/influence/youtube/backtests/${id}`),
+  youtubeNarratives: (kind = 'mention_type') =>
+    req(`/api/influence/youtube/narratives?kind=${encodeURIComponent(kind)}`),
+  // Constituent videos/channels/stocks behind one narrative group, with filters.
+  narrativeMentions: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+    )
+    return req(`/api/influence/youtube/narratives/mentions?${qs}`)
+  },
+  refreshYoutubeNarratives: (body = {}) =>
+    req('/api/influence/youtube/narratives/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  youtubeThemeStatus: () => req('/api/influence/youtube/themes/status'),
+  tagYoutubeThemes: (body = {}) =>
+    req('/api/influence/youtube/themes/tag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   influenceSignals: (moduleKey = 'youtube') => req(`/api/influence/signals?moduleKey=${encodeURIComponent(moduleKey)}`),
   llmUsage: () => req('/api/llm/usage'),
 }

@@ -987,6 +987,14 @@ pre {
   transform: translateY(0);
 }
 
+/* Table wraps use overflow:auto for horizontal scroll. Upward popovers get
+   clipped by that ancestor, so open below the header into the scroll area. */
+.intel-table .intel-definition-popover {
+  top: calc(100% + 8px);
+  bottom: auto;
+  transform: translateY(-4px);
+}
+
 .intel-metric-card {
   padding: 14px;
   min-height: 106px;

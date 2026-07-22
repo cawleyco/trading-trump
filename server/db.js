@@ -542,6 +542,41 @@ CREATE TABLE IF NOT EXISTS creator_alpha_metrics (
 );
 CREATE INDEX IF NOT EXISTS idx_creator_alpha_channel ON creator_alpha_metrics(channel_id);
 
+-- Narrative-level price impact: abnormal return (asset move minus SPY) after
+-- mentions carrying a given narrative. narrative_kind = 'mention_type' (Phase 1,
+-- structured labels) or 'theme' (Phase 2, semantic clusters). Per-window detail
+-- lives in metrics_json; flat headline columns exist for sorting/filtering.
+CREATE TABLE IF NOT EXISTS narrative_alpha_metrics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  narrative TEXT NOT NULL,
+  narrative_kind TEXT NOT NULL DEFAULT 'mention_type',
+  direction TEXT,
+  asset_type TEXT,
+  sample_size INTEGER NOT NULL,
+  priced INTEGER,
+  avg_abnormal_24h REAL,
+  avg_abnormal_7d REAL,
+  avg_abnormal_30d REAL,
+  metrics_json TEXT NOT NULL,
+  calculated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_narrative_alpha_kind ON narrative_alpha_metrics(narrative_kind);
+
+-- Semantic theme tags for mentions (Phase 2 narrative layer). Multi-label: a
+-- mention may carry several themes. taxonomy_version pins the vocabulary so a
+-- taxonomy change can be re-tagged without colliding with old rows.
+CREATE TABLE IF NOT EXISTS mention_themes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mention_id INTEGER NOT NULL REFERENCES asset_mentions(id),
+  theme TEXT NOT NULL,
+  taxonomy_version TEXT NOT NULL,
+  model_version TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(mention_id, theme, taxonomy_version)
+);
+CREATE INDEX IF NOT EXISTS idx_mention_themes_mention ON mention_themes(mention_id);
+CREATE INDEX IF NOT EXISTS idx_mention_themes_theme ON mention_themes(theme, taxonomy_version);
+
 CREATE TABLE IF NOT EXISTS influence_signal_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_type TEXT NOT NULL,
@@ -2456,6 +2491,7 @@ export function listAssetMentions({ videoId, channelId, assetId, limit = 500 } =
   params.push(limit);
   return db.prepare(
     `SELECT am.*, a.symbol, a.canonical_name, a.asset_type, yc.title AS channel_title, yv.title AS video_title,
+            yv.youtube_video_id AS youtube_video_id, yv.published_at AS video_published_at,
             mc.direction, mc.mention_type, mc.mention_quality_score, mc.summary,
             mc.pump_risk_score, mc.relevance_score, mc.conviction_score
      FROM asset_mentions am
@@ -2673,6 +2709,95 @@ export function getCreatorAlpha(channelId) {
   return db.prepare(
     `SELECT * FROM creator_alpha_metrics WHERE channel_id = ? ORDER BY calculated_at DESC, id DESC LIMIT 20`
   ).all(channelId);
+}
+
+// Replace a whole generation of narrative-impact rows atomically: delete the
+// prior rows for this kind, insert the fresh set. One refresh = one consistent
+// snapshot, so the dashboard never mixes old and new samples.
+export function replaceNarrativeAlphaMetrics(kind, rows) {
+  const del = db.prepare(`DELETE FROM narrative_alpha_metrics WHERE narrative_kind = ?`);
+  const ins = db.prepare(
+    `INSERT INTO narrative_alpha_metrics (
+       narrative, narrative_kind, direction, asset_type, sample_size, priced,
+       avg_abnormal_24h, avg_abnormal_7d, avg_abnormal_30d, metrics_json
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const tx = db.transaction((kindArg, list) => {
+    del.run(kindArg);
+    for (const r of list) {
+      ins.run(
+        r.narrative,
+        kindArg,
+        r.direction ?? null,
+        r.assetType ?? r.asset_type ?? null,
+        r.sample_size,
+        r.priced ?? null,
+        r.by_window?.['24h']?.avg_abnormal_return ?? null,
+        r.by_window?.['7d']?.avg_abnormal_return ?? null,
+        r.by_window?.['30d']?.avg_abnormal_return ?? null,
+        JSON.stringify(r.by_window ?? {})
+      );
+    }
+  });
+  tx(kind, rows);
+}
+
+export function listNarrativeAlphaMetrics(kind = 'mention_type') {
+  return db.prepare(
+    `SELECT * FROM narrative_alpha_metrics WHERE narrative_kind = ?
+     ORDER BY avg_abnormal_7d DESC NULLS LAST, sample_size DESC`
+  ).all(kind).map((r) => ({ ...r, by_window: JSON.parse(r.metrics_json), metrics_json: undefined }));
+}
+
+// --- Semantic theme tags (Phase 2 narrative layer) ---
+
+// Classified mentions with no theme row yet for this taxonomy version — the
+// theme tagger's work queue. Oldest first so a bulk run is chronological.
+export function listMentionsWithoutThemes(taxonomyVersion, limit = 500) {
+  return db.prepare(
+    `SELECT am.id, am.surrounding_text, a.symbol, a.asset_type, mc.summary, mc.mention_type
+     FROM asset_mentions am
+     JOIN assets a ON a.id = am.asset_id
+     JOIN mention_classifications mc ON mc.id = (
+       SELECT id FROM mention_classifications WHERE mention_id = am.id ORDER BY id DESC LIMIT 1
+     )
+     WHERE NOT EXISTS (
+       SELECT 1 FROM mention_themes mt WHERE mt.mention_id = am.id AND mt.taxonomy_version = ?
+     )
+     ORDER BY am.id ASC LIMIT ?`
+  ).all(taxonomyVersion, limit);
+}
+
+export function insertMentionThemes(mentionId, themes, taxonomyVersion, modelVersion) {
+  const ins = db.prepare(
+    `INSERT OR IGNORE INTO mention_themes (mention_id, theme, taxonomy_version, model_version)
+     VALUES (?, ?, ?, ?)`
+  );
+  const tx = db.transaction((id, list) => {
+    for (const theme of list) ins.run(id, theme, taxonomyVersion, modelVersion);
+  });
+  tx(mentionId, themes);
+}
+
+export function countMentionThemes(taxonomyVersion) {
+  return db.prepare(
+    `SELECT COUNT(DISTINCT mention_id) AS mentions, COUNT(*) AS tags
+     FROM mention_themes WHERE taxonomy_version = ?`
+  ).get(taxonomyVersion);
+}
+
+// mention_id → [theme, ...] for the given taxonomy version, used to expand
+// priced mentions into per-theme groups during aggregation.
+export function getMentionThemeMap(taxonomyVersion) {
+  const rows = db.prepare(
+    `SELECT mention_id, theme FROM mention_themes WHERE taxonomy_version = ?`
+  ).all(taxonomyVersion);
+  const map = new Map();
+  for (const r of rows) {
+    if (!map.has(r.mention_id)) map.set(r.mention_id, []);
+    map.get(r.mention_id).push(r.theme);
+  }
+  return map;
 }
 
 export function upsertDigest(digestDate, content) {

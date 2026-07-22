@@ -9,6 +9,7 @@ export default function InfluenceLayout({ path, children }) {
     ['/app/influence/youtube/videos', 'Videos'],
     ['/app/influence/youtube/mentions', 'Mentions'],
     ['/app/influence/youtube/backtests', 'Backtests'],
+    ['/app/influence/youtube/narratives', 'Narratives'],
     ['/app/influence/youtube/signals', 'Signals'],
   ]
   return (

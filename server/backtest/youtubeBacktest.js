@@ -26,6 +26,13 @@ const DAY_MS = 86400_000;
 // count as a fill — otherwise the market was closed and the window is null.
 const MINUTE_FILL_TOLERANCE_MS = 30 * 60_000;
 const BENCHMARK_SYMBOL = 'SPY';
+// Grayscale Bitcoin Mini Trust trades under ticker BTC on the same equity feed
+// used for crypto entry/exit proxies, so it needs no separate data path.
+const CRYPTO_BENCHMARK_SYMBOL = 'BTC';
+
+export function benchmarkSymbolFor(assetType) {
+  return assetType === 'crypto' ? CRYPTO_BENCHMARK_SYMBOL : BENCHMARK_SYMBOL;
+}
 
 // ---------------------------------------------------------------------------
 // Real market data provider. Injectable so tests stay offline (ground rule:
@@ -50,6 +57,14 @@ export const alpacaPriceProvider = {
 export function calculateDirectionalReturn(direction, entry, exit) {
   if (!entry || !exit) return null;
   if (direction === 'bearish') return ((entry - exit) / entry) * 100;
+  return ((exit - entry) / entry) * 100;
+}
+
+// Raw, un-flipped price move (%). Directional return answers "was the creator
+// right"; this answers "which way did the asset actually move" — the input to
+// an abnormal-return (market-impact) measure.
+export function calculateRawReturn(entry, exit) {
+  if (!entry || !exit) return null;
   return ((exit - entry) / entry) * 100;
 }
 
@@ -127,7 +142,18 @@ export function _resultForMention(mention, exitWindows, { minuteBars, dailyBars,
       mentionQualityScore: mention.mention_quality_score,
       priceSource: entrySource,
       noPriceData: entryPrice == null,
+      benchmarkSymbol: benchmarkSymbolFor(mention.asset_type),
     },
+  };
+  // Window-matched benchmark drift (SPY for equities, BTC for crypto), from
+  // daily closes. Sub-day windows
+  // land inside one trading day, so the daily benchmark is ~0 and abnormal
+  // collapses to raw — honest, since intraday SPY isn't loaded here.
+  const benchmarkReturn = (days) => {
+    if (entryPrice == null || !benchmarkBars) return null;
+    const from = _firstCloseOnOrAfter(benchmarkBars, isoDate(eventMs));
+    const to = _firstCloseOnOrAfter(benchmarkBars, isoDate(eventMs + days * DAY_MS));
+    return from && to ? ((to - from) / from) * 100 : null;
   };
   for (const window of exitWindows) {
     const days = WINDOWS[window];
@@ -135,19 +161,20 @@ export function _resultForMention(mention, exitWindows, { minuteBars, dailyBars,
     const price = entryPrice == null
       ? null
       : _exitPrice({ minuteBars, dailyBars, eventMs, windowDays: days, entrySource });
+    const raw = calculateRawReturn(entryPrice, price);
+    const bench = benchmarkReturn(days);
     out[`exit_${window}_price`] = price;
+    // `return_*` stays directional (creator-correctness) for backward compat.
     out[`return_${window}`] = calculateDirectionalReturn(mention.direction, entryPrice, price);
+    out[`raw_return_${window}`] = raw;
+    out[`benchmark_return_${window}`] = bench;
+    out[`abnormal_return_${window}`] = raw != null && bench != null ? raw - bench : null;
   }
   // Approximation from window returns, not the true intra-window path.
   out.max_drawdown_30d = Math.min(0, out.return_30d ?? out.return_7d ?? 0);
   out.max_runup_30d = Math.max(0, out.return_30d ?? out.return_7d ?? 0);
-  if (entryPrice != null && benchmarkBars) {
-    const from = _firstCloseOnOrAfter(benchmarkBars, isoDate(eventMs));
-    const to = _firstCloseOnOrAfter(benchmarkBars, isoDate(eventMs + 30 * DAY_MS));
-    out.benchmark_return_30d = from && to ? ((to - from) / from) * 100 : null;
-  } else {
-    out.benchmark_return_30d = null;
-  }
+  // Kept as a named column (persisted by insertYoutubeBacktestSignalResult).
+  out.benchmark_return_30d = out.benchmark_return_30d ?? benchmarkReturn(30);
   return out;
 }
 
@@ -203,12 +230,22 @@ async function loadSeries(mentions, exitWindows, provider) {
     daily.set(symbol, await provider.dailyCloses(symbol, isoDate(min - DAY_MS), isoDate(max + (spanDays + 14) * DAY_MS)));
   }
 
-  let benchmark = null;
+  // Benchmark per asset class: equities vs SPY, crypto vs a bitcoin proxy.
+  // Subtracting SPY from a crypto move leaves crypto-vs-equity beta in the
+  // "abnormal" number, so crypto is benchmarked against BTC instead.
+  const benchmarks = new Map();
   if (bySymbol.size) {
     const allMin = Math.min(...[...bySymbol.values()].map((s) => s.min));
     const allMax = Math.max(...[...bySymbol.values()].map((s) => s.max));
-    benchmark = await provider.dailyCloses(BENCHMARK_SYMBOL, isoDate(allMin - DAY_MS), isoDate(allMax + 44 * DAY_MS));
+    const wantedBenchmarks = new Set(mentions.map((m) => benchmarkSymbolFor(m.asset_type)));
+    for (const symbol of wantedBenchmarks) {
+      benchmarks.set(
+        symbol,
+        await provider.dailyCloses(symbol, isoDate(allMin - DAY_MS), isoDate(allMax + 44 * DAY_MS))
+      );
+    }
   }
+  const benchmarkFor = (mention) => benchmarks.get(benchmarkSymbolFor(mention.asset_type)) ?? null;
 
   const minuteCache = new Map();
   const wantMinutes = needsMinutes(exitWindows);
@@ -222,7 +259,7 @@ async function loadSeries(mentions, exitWindows, provider) {
     return minuteCache.get(key);
   };
 
-  return { daily, benchmark, minutesFor };
+  return { daily, benchmarkFor, minutesFor };
 }
 
 export async function runYoutubeBacktest(config = {}, { provider = alpacaPriceProvider } = {}) {
@@ -258,14 +295,14 @@ export async function runYoutubeBacktest(config = {}, { provider = alpacaPricePr
     status: 'running',
   });
   try {
-    const { daily, benchmark, minutesFor } = await loadSeries(mentions, exitWindows, provider);
+    const { daily, benchmarkFor, minutesFor } = await loadSeries(mentions, exitWindows, provider);
     const results = [];
     for (const mention of mentions) {
       results.push(
         _resultForMention(mention, exitWindows, {
           minuteBars: await minutesFor(mention),
           dailyBars: daily.get(mention.symbol),
-          benchmarkBars: benchmark,
+          benchmarkBars: benchmarkFor(mention),
         })
       );
     }
@@ -283,14 +320,14 @@ export async function runYoutubeBacktest(config = {}, { provider = alpacaPricePr
 // Price a set of mentions across the given windows. Shared by creator-alpha
 // refresh and the walk-forward validator.
 export async function priceMentions(mentions, windows, provider = alpacaPriceProvider) {
-  const { daily, benchmark, minutesFor } = await loadSeries(mentions, windows, provider);
+  const { daily, benchmarkFor, minutesFor } = await loadSeries(mentions, windows, provider);
   const results = [];
   for (const mention of mentions) {
     results.push(
       _resultForMention(mention, windows, {
         minuteBars: await minutesFor(mention),
         dailyBars: daily.get(mention.symbol),
-        benchmarkBars: benchmark,
+        benchmarkBars: benchmarkFor(mention),
       })
     );
   }

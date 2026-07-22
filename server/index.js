@@ -70,6 +70,8 @@ import {
   listMentionClassifications,
   listYoutubeBacktestRuns,
   getYoutubeBacktestRun,
+  listNarrativeAlphaMetrics,
+  countMentionThemes,
   listInfluenceSignals,
   getInfluenceSignal,
   updateInfluenceSignal,
@@ -131,6 +133,8 @@ import { validateBacktestBody } from './lib/validateBacktestBody.js';
 import { runWalkForward } from './backtest/walkForward.js';
 import { runTweetBacktest } from './backtest/tweetBacktest.js';
 import { runYoutubeBacktest, recalculateCreatorAlpha, refreshAllCreatorAlpha } from './backtest/youtubeBacktest.js';
+import { refreshNarrativeImpact, listNarrativeConstituents } from './backtest/narrativeImpact.js';
+import { tagMentionThemes, TAXONOMY_VERSION, THEME_TAXONOMY } from './influence/narrativeThemes.js';
 import { runYoutubeWalkForward } from './backtest/youtubeWalkForward.js';
 import { getAttribution } from './attribution.js';
 import { log } from './logger.js';
@@ -1267,6 +1271,68 @@ app.post('/api/influence/youtube/channels/:id/recalculate-alpha', async (req, re
   res.json(await recalculateCreatorAlpha(id));
 });
 
+// Narrative impact: abnormal-return (asset move minus SPY) by mention_type.
+app.get('/api/influence/youtube/narratives', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json(listNarrativeAlphaMetrics(req.query.kind || 'mention_type'));
+});
+
+app.post('/api/influence/youtube/narratives/refresh', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  try {
+    const body = req.body || {};
+    const kind = body.kind === 'theme' ? 'theme' : 'mention_type';
+    const metrics = await refreshNarrativeImpact({ ...body, kind });
+    res.json({ groups: metrics.length, kind, metrics: listNarrativeAlphaMetrics(kind) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Drill-down: the constituent videos/channels/stocks behind one narrative group,
+// with per-mention abnormal return, plus stats recomputed over the filtered
+// subset. Read-only (market data only, no token spend).
+app.get('/api/influence/youtube/narratives/mentions', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  try {
+    const q = req.query;
+    const result = await listNarrativeConstituents({
+      kind: q.kind === 'theme' ? 'theme' : 'mention_type',
+      narrative: q.narrative,
+      direction: q.direction,
+      assetType: q.asset_type,
+      channelId: q.channelId || undefined,
+      videoId: q.videoId || undefined,
+      minQuality: q.minQuality != null ? Number(q.minQuality) : 0,
+      since: q.since || undefined,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Semantic-theme tagging status + trigger (Phase 2). Tagging spends LLM tokens,
+// so it is opt-in (config.influence.themeTaggingEnabled) and never automatic.
+app.get('/api/influence/youtube/themes/status', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json({
+    enabled: config.influence.themeTaggingEnabled,
+    taxonomyVersion: TAXONOMY_VERSION,
+    taxonomy: THEME_TAXONOMY,
+    totals: countMentionThemes(TAXONOMY_VERSION),
+  });
+});
+
+app.post('/api/influence/youtube/themes/tag', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  try {
+    res.json(await tagMentionThemes(req.body || {}));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/influence/youtube/walk-forward', async (req, res) => {
   if (!requireInfluence(req, res)) return;
   try {
@@ -1448,6 +1514,19 @@ app.listen(config.port, '127.0.0.1', () => {
       () => {
         refreshAllCreatorAlpha().catch((err) =>
           log.error('server', `Scheduled creator alpha refresh failed: ${err.message}`)
+        );
+      },
+      { timezone: 'America/New_York' }
+    );
+
+    // Narrative impact: re-price the corpus and re-aggregate abnormal returns
+    // by narrative. Staggered after creator alpha so the two nightly passes
+    // don't contend for the market-data cache at once.
+    cron.schedule(
+      '55 6 * * *',
+      () => {
+        refreshNarrativeImpact().catch((err) =>
+          log.error('server', `Scheduled narrative impact refresh failed: ${err.message}`)
         );
       },
       { timezone: 'America/New_York' }

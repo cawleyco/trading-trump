@@ -6,6 +6,7 @@ import YoutubeVideos from './influence/YoutubeVideos.jsx'
 import YoutubeVideoDetail from './influence/YoutubeVideoDetail.jsx'
 import YoutubeMentions from './influence/YoutubeMentions.jsx'
 import YoutubeBacktests from './influence/YoutubeBacktests.jsx'
+import YoutubeNarratives from './influence/YoutubeNarratives.jsx'
 import YoutubeSignals from './influence/YoutubeSignals.jsx'
 import { DefinitionLabel, EmptyState, MetricCard, PageHeader, SectionPanel } from '../components/intel/components.jsx'
 import { navigate } from './influence/ui.js'
@@ -25,6 +26,7 @@ export default function Influence({ path }) {
   else if (route.endsWith('/videos')) content = <YoutubeVideos />
   else if (route.endsWith('/mentions')) content = <YoutubeMentions />
   else if (route.endsWith('/backtests')) content = <YoutubeBacktests />
+  else if (route.endsWith('/narratives')) content = <YoutubeNarratives />
   else if (route.endsWith('/signals')) content = <YoutubeSignals />
 
   return <InfluenceLayout path={route}>{content}</InfluenceLayout>
