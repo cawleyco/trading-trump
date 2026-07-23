@@ -186,7 +186,7 @@ function TickerRow({ tickers }) {
       <span style={tokens}>
         {tickers.map((ticker) => (
           <span key={ticker} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-            <a href={`/app/trades?ticker=${encodeURIComponent(ticker)}`} style={{ ...chip, color: 'var(--color-accent-blue)', textDecoration: 'none' }}>
+            <a href={`/app/research/congress-trades?ticker=${encodeURIComponent(ticker)}`} style={{ ...chip, color: 'var(--color-accent-blue)', textDecoration: 'none' }}>
               {ticker}
             </a>
             <InvestButton ticker={ticker} origin={{ kind: 'calendar', surface: 'calendar' }} />
@@ -204,7 +204,7 @@ function RecentTrades({ trades }) {
       <div style={labelStyle}>Recent matching trades</div>
       <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
         {trades.map((trade) => (
-          <a key={trade.trade_key} href={`/app/trades?ticker=${encodeURIComponent(trade.ticker)}`} style={tradeLink}>
+          <a key={trade.trade_key} href={`/app/research/congress-trades?ticker=${encodeURIComponent(trade.ticker)}`} style={tradeLink}>
             {trade.disclosure_date || '-'} · {trade.politician} · {trade.type} {trade.ticker} {trade.amount_range ? `· ${trade.amount_range}` : ''}
           </a>
         ))}

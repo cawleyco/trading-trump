@@ -12,9 +12,13 @@ export default function YoutubeBacktests() {
   })
   const [error, setError] = useState(null)
   const [running, setRunning] = useState(false)
+  const [datasets, setDatasets] = useState([])
+  const [datasetQuality, setDatasetQuality] = useState(20)
+  const [buildingDataset, setBuildingDataset] = useState(false)
 
   const refresh = () => api.youtubeBacktests().then(setRuns).catch(() => {})
-  useEffect(() => { refresh() }, [])
+  const refreshDatasets = () => api.youtubeResearchDatasets().then(setDatasets).catch(() => {})
+  useEffect(() => { refresh(); refreshDatasets() }, [])
 
   const run = async () => {
     setRunning(true)
@@ -27,6 +31,19 @@ export default function YoutubeBacktests() {
       setError(err.message)
     } finally {
       setRunning(false)
+    }
+  }
+
+  const buildDataset = async () => {
+    setBuildingDataset(true)
+    setError(null)
+    try {
+      await api.buildYoutubeResearchDataset({ minimumQuality: datasetQuality })
+      await refreshDatasets()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBuildingDataset(false)
     }
   }
 
@@ -95,6 +112,35 @@ export default function YoutubeBacktests() {
             <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Created</th></tr></thead>
             <tbody>
               {runs.map((r) => <tr key={r.id}><td>{r.id}</td><td>{r.name}</td><td>{r.status}</td><td>{r.created_at}</td></tr>)}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section style={card}>
+        <h3>Frozen Research Datasets</h3>
+        <p style={muted}>Builds an immutable, versioned snapshot of canonical signals, evidence, model provenance, creator/video snapshots, outcomes and exclusion reasons.</p>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
+          <Field label="Minimum quality">
+            <input type="number" min="0" max="100" value={datasetQuality} onChange={(e) => setDatasetQuality(Number(e.target.value))} style={{ width: 90 }} />
+          </Field>
+          <button onClick={buildDataset} disabled={buildingDataset}>{buildingDataset ? 'Freezing…' : 'Freeze current dataset'}</button>
+        </div>
+        {datasets.length === 0 ? <p style={muted}>No frozen datasets yet.</p> : (
+          <table>
+            <thead><tr><th>Version</th><th>Cutoff</th><th>Rows</th><th>Included</th><th>Excluded</th><th>Hash</th><th></th></tr></thead>
+            <tbody>
+              {datasets.map((dataset) => (
+                <tr key={dataset.id}>
+                  <td>{dataset.dataset_version}</td>
+                  <td>{dataset.cutoff_time}</td>
+                  <td>{dataset.row_count}</td>
+                  <td>{dataset.included_count}</td>
+                  <td>{dataset.excluded_count}</td>
+                  <td style={{ fontFamily: 'var(--font-mono)' }}>{dataset.content_hash?.slice(0, 12) || '—'}</td>
+                  <td><a href={`/api/influence/youtube/research-datasets/${dataset.id}/export.jsonl`}>JSONL</a></td>
+                </tr>
+              ))}
             </tbody>
           </table>
         )}

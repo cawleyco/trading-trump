@@ -1,5 +1,5 @@
 import { enabledFunds } from './config.js';
-import { db } from './db.js';
+import { db, getPositionExitRule } from './db.js';
 import { getFundClient, isMarketOpen } from './alpacaClient.js';
 import { makeTradeSignal } from './signal.js';
 import { processSignal, isFundHalted } from './riskManager.js';
@@ -54,6 +54,11 @@ export function _exitReason({ entry, current, ageDays }, { stopLossPct, takeProf
   return null;
 }
 
+/** Per-ticker override if any field is set; otherwise fund-level autoExit (or null). */
+export function _resolveExitRules(fund, ticker) {
+  return getPositionExitRule(fund.name, ticker) || fund.autoExit || null;
+}
+
 async function checkFund(fund) {
   if (isFundHalted(fund.name)) return;
   const positions = await getFundClient(fund.name).getPositions();
@@ -65,7 +70,9 @@ async function checkFund(fund) {
     const movePct = ((current - entry) / entry) * 100;
     const ageDays = positionAgeDays(fund.name, p.symbol);
 
-    const reason = _exitReason({ entry, current, ageDays }, fund.autoExit);
+    const rules = _resolveExitRules(fund, p.symbol);
+    if (!rules) continue;
+    const reason = _exitReason({ entry, current, ageDays }, rules);
     if (!reason) continue;
 
     log.info('auto-exit', `[${fund.name}] closing ${p.symbol}: ${reason}`);
@@ -90,8 +97,8 @@ export async function runAutoExitCheck() {
     log.error('auto-exit', `Market clock check failed: ${err.message}`);
     return;
   }
+  // Always scan enabled funds: per-ticker exit rules can exist without a fund-level autoExit block.
   for (const fund of enabledFunds) {
-    if (!fund.autoExit) continue;
     try {
       await checkFund(fund);
     } catch (err) {
@@ -101,12 +108,11 @@ export async function runAutoExitCheck() {
 }
 
 export function startPositionManager() {
-  const withAutoExit = enabledFunds.filter((f) => f.autoExit);
-  if (withAutoExit.length === 0) {
-    log.info('auto-exit', 'No funds have autoExit configured — position manager idle');
+  if (enabledFunds.length === 0) {
+    log.info('auto-exit', 'No enabled funds — position manager idle');
     return null;
   }
-  log.info('auto-exit', `Position manager watching: ${withAutoExit.map((f) => f.name).join(', ')} (every 5 min during market hours)`);
+  log.info('auto-exit', `Position manager watching: ${enabledFunds.map((f) => f.name).join(', ')} (every 5 min during market hours)`);
   runAutoExitCheck();
   return setInterval(runAutoExitCheck, CHECK_INTERVAL_MS);
 }

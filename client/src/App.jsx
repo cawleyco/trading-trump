@@ -3,6 +3,9 @@ import Dashboard from './views/Dashboard.jsx'
 import Backtest from './views/Backtest.jsx'
 import Politicians from './views/Politicians.jsx'
 import Trades from './views/Trades.jsx'
+import ActiveTrades from './views/ActiveTrades.jsx'
+import TradeHistory from './views/TradeHistory.jsx'
+import Performance from './views/Performance.jsx'
 import Intel from './views/Intel.jsx'
 import Calendar from './views/Calendar.jsx'
 import Strategies from './views/Strategies.jsx'
@@ -17,7 +20,10 @@ import { EmptyState, PageHeader, SectionPanel } from './components/intel/compone
 
 const VIEWS = {
   overview: ['Overview', Dashboard],
-  trades: ['Trades', Trades],
+  congressionalTrades: ['Congressional Trades', Trades],
+  activeTrades: ['Active Trades', ActiveTrades],
+  tradeHistory: ['Trade History', TradeHistory],
+  performance: ['Performance', Performance],
   intel: ['Intel', Intel],
   calendar: ['Calendar', Calendar],
   strategies: ['Strategies', Strategies],
@@ -36,7 +42,10 @@ const VIEWS = {
 
 const VIEW_PATHS = {
   overview: '/app/overview',
-  trades: '/app/trades',
+  congressionalTrades: '/app/research/congress-trades',
+  activeTrades: '/app/trading/active',
+  tradeHistory: '/app/trading/history',
+  performance: '/app/trading/performance',
   intel: '/app/intel',
   calendar: '/app/calendar',
   strategies: '/app/strategies',
@@ -54,10 +63,14 @@ const VIEW_PATHS = {
 }
 
 function viewFromPath(path) {
-  if (path === '/' || path === '/app' || path.startsWith('/app/overview')) return 'overview'
+  if (path === '/' || path === '/app') return 'influence'
+  if (path.startsWith('/app/overview')) return 'overview'
   if (path.startsWith('/app/influence/politicians') || path.startsWith('/app/politicians')) return 'politicians'
   if (path.startsWith('/app/influence')) return 'influence'
-  if (path.startsWith('/app/trades')) return 'trades'
+  if (path.startsWith('/app/research/congress-trades') || path.startsWith('/app/trades')) return 'congressionalTrades'
+  if (path.startsWith('/app/trading/active')) return 'activeTrades'
+  if (path.startsWith('/app/trading/history')) return 'tradeHistory'
+  if (path.startsWith('/app/trading/performance')) return 'performance'
   if (path.startsWith('/app/intel')) return 'intel'
   if (path.startsWith('/app/calendar')) return 'calendar'
   if (path.startsWith('/app/strategies')) return 'strategies'
@@ -70,7 +83,7 @@ function viewFromPath(path) {
   if (path.startsWith('/app/guide')) return 'guide'
   if (path.startsWith('/app/data-sources')) return 'dataSources'
   if (path.startsWith('/app/settings')) return 'settings'
-  return 'overview'
+  return 'influence'
 }
 
 export default function App() {

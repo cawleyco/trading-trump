@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { _positionPrices, _exitReason } from '../server/positionManager.js'
+import { _positionPrices, _exitReason, _resolveExitRules } from '../server/positionManager.js'
+import { db, upsertPositionExitRule, getPositionExitRule } from '../server/db.js'
 
 test('position prices use current_price when present', () => {
   assert.deepEqual(
@@ -66,4 +67,52 @@ test('stop-loss wins when multiple rules match', () => {
   // a -20% move with maxHold also breached must report the loss, not the age
   const rules = { stopLossPct: 5, maxHoldDays: 1 }
   assert.match(_exitReason({ entry: 100, current: 80, ageDays: 10 }, rules), /stop-loss/)
+})
+
+test('per-ticker exit rules apply even when the fund has no autoExit block', () => {
+  const fund = { name: `exit-rule-fund-${Date.now()}`, autoExit: null }
+  const ticker = 'MSFT'
+  try {
+    upsertPositionExitRule({ fund: fund.name, ticker, stopLossPct: 7, takeProfitPct: null, maxHoldDays: null })
+    const rules = _resolveExitRules(fund, ticker)
+    assert.equal(rules.stopLossPct, 7)
+    assert.equal(fund.autoExit, null)
+  } finally {
+    db.prepare(`DELETE FROM position_exit_rules WHERE fund = ? AND ticker = ?`).run(fund.name, ticker)
+  }
+})
+
+test('clearing all exit fields falls back to fund autoExit defaults', () => {
+  const fund = {
+    name: `exit-rule-clear-${Date.now()}`,
+    autoExit: { stopLossPct: 5, takeProfitPct: 15, maxHoldDays: 30 },
+  }
+  const ticker = 'NVDA'
+  try {
+    upsertPositionExitRule({ fund: fund.name, ticker, stopLossPct: 8, takeProfitPct: 20, maxHoldDays: 10 })
+    assert.equal(getPositionExitRule(fund.name, ticker).stopLossPct, 8)
+    assert.equal(upsertPositionExitRule({ fund: fund.name, ticker, stopLossPct: null, takeProfitPct: null, maxHoldDays: null }), null)
+    assert.equal(getPositionExitRule(fund.name, ticker), null)
+    assert.deepEqual(_resolveExitRules(fund, ticker), fund.autoExit)
+  } finally {
+    db.prepare(`DELETE FROM position_exit_rules WHERE fund = ? AND ticker = ?`).run(fund.name, ticker)
+  }
+})
+
+test('legacy all-null exit rule rows do not override fund defaults', () => {
+  const fund = {
+    name: `exit-rule-legacy-${Date.now()}`,
+    autoExit: { stopLossPct: 4, takeProfitPct: 12, maxHoldDays: 14 },
+  }
+  const ticker = 'AMD'
+  try {
+    db.prepare(
+      `INSERT INTO position_exit_rules (fund, ticker, stop_loss_pct, take_profit_pct, max_hold_days, updated_at)
+       VALUES (?, ?, NULL, NULL, NULL, datetime('now'))`
+    ).run(fund.name, ticker)
+    assert.equal(getPositionExitRule(fund.name, ticker), null)
+    assert.deepEqual(_resolveExitRules(fund, ticker), fund.autoExit)
+  } finally {
+    db.prepare(`DELETE FROM position_exit_rules WHERE fund = ? AND ticker = ?`).run(fund.name, ticker)
+  }
 })

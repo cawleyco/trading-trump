@@ -4,40 +4,44 @@ import { useTheme } from '../../ThemeContext.jsx'
 
 const NAV_GROUPS = [
   {
-    label: 'INTELLIGENCE',
+    label: 'YOUTUBE ANALYSIS',
     items: [
-      { key: 'overview', label: 'Overview', path: '/app/overview', icon: 'OV' },
-      { key: 'intel', label: 'Intel', path: '/app/intel', icon: 'IN' },
-      { key: 'signals', label: 'Signals', path: '/app/signals', icon: 'SG' },
-      {
-        key: 'influence',
-        label: 'Influence',
-        path: '/app/influence',
-        icon: 'IF',
-        children: [
-          { key: 'politicians', label: 'Politicians', path: '/app/influence/politicians', enabled: true },
-          { key: 'youtube', label: 'YouTube', path: '/app/influence/youtube', enabled: true },
-          { key: 'x', label: 'X / Twitter', path: '/app/influence/x', enabled: false },
-          { key: 'reddit', label: 'Reddit', path: '/app/influence/reddit', enabled: false },
-          { key: 'podcasts', label: 'Podcasts', path: '/app/influence/podcasts', enabled: false },
-          { key: 'newsletters', label: 'Newsletters', path: '/app/influence/newsletters', enabled: false },
-          { key: 'sec', label: 'SEC Filings', path: '/app/influence/sec-filings', enabled: false },
-        ],
-      },
-      { key: 'assets', label: 'Assets', path: '/app/assets', icon: 'AS', enabled: true },
+      { key: 'youtube-dashboard', label: 'Dashboard', path: '/app/influence/youtube', icon: 'YT' },
+      { key: 'youtube-channels', label: 'Channels', path: '/app/influence/youtube/channels', icon: 'CH' },
+      { key: 'youtube-videos', label: 'Videos', path: '/app/influence/youtube/videos', icon: 'VI' },
+      { key: 'youtube-mentions', label: 'Mentions', path: '/app/influence/youtube/mentions', icon: 'ME' },
+      { key: 'youtube-narratives', label: 'Narratives', path: '/app/influence/youtube/narratives', icon: 'NA' },
+      { key: 'youtube-signals', label: 'Signals', path: '/app/influence/youtube/signals', icon: 'SG' },
+      { key: 'youtube-backtests', label: 'Backtests', path: '/app/influence/youtube/backtests', icon: 'BT' },
     ],
   },
   {
-    label: 'ANALYSIS',
+    label: 'TRADING',
     items: [
-      { key: 'backtests', label: 'Backtests', path: '/app/backtests', icon: 'BT' },
+      { key: 'active-trades', label: 'Active Trades', path: '/app/trading/active', icon: 'AT' },
+      { key: 'trade-history', label: 'Trade History', path: '/app/trading/history', icon: 'TH' },
+      { key: 'performance', label: 'Performance', path: '/app/trading/performance', icon: 'PF' },
+      { key: 'approvals', label: 'Approvals', path: '/app/approvals', icon: 'AP' },
       { key: 'strategies', label: 'Strategies', path: '/app/strategies', icon: 'ST' },
+    ],
+  },
+  {
+    label: 'RESEARCH',
+    items: [
+      { key: 'intel', label: 'Intel', path: '/app/intel', icon: 'IN' },
+      { key: 'congressional-trades', label: 'Congressional Trades', path: '/app/research/congress-trades', icon: 'CT' },
+      { key: 'politicians', label: 'Politicians', path: '/app/influence/politicians', icon: 'PO' },
+      { key: 'assets', label: 'Assets', path: '/app/assets', icon: 'AS', enabled: true },
+      { key: 'calendar', label: 'Calendar', path: '/app/calendar', icon: 'CA' },
+      { key: 'backtests', label: 'Backtests', path: '/app/backtests', icon: 'BT' },
       { key: 'research', label: 'Research', path: '/app/research', icon: 'RS', enabled: false },
     ],
   },
   {
     label: 'SYSTEM',
     items: [
+      { key: 'overview', label: 'System Overview', path: '/app/overview', icon: 'OV' },
+      { key: 'signals', label: 'Signal Log', path: '/app/signals', icon: 'SL' },
       { key: 'alerts', label: 'Alerts', path: '/app/alerts', icon: 'AL' },
       { key: 'guide', label: 'Guide', path: '/app/guide', icon: 'GD' },
       { key: 'data-sources', label: 'Data Sources', path: '/app/data-sources', icon: 'DS', enabled: false },
@@ -52,7 +56,7 @@ export default function AppShell({ path, onNavigate, children }) {
   return (
     <div className="intel-shell">
       <aside className="intel-sidebar">
-        <button type="button" className="intel-brand" onClick={() => onNavigate('/app/overview')}>
+        <button type="button" className="intel-brand" onClick={() => onNavigate('/app/influence/youtube')}>
           <span className="intel-brand-mark">PI</span>
           <span>
             <strong>Influence Intel</strong>
@@ -144,8 +148,8 @@ function NavItem({ item, path, onNavigate }) {
 }
 
 function isActive(path, itemPath) {
-  if (itemPath === '/app/overview') return path === '/' || path === '/app' || path === '/app/overview'
-  if (itemPath === '/app/influence') return path.startsWith('/app/influence')
+  if (itemPath === '/app/influence/youtube') return path === '/' || path === '/app' || path === '/app/influence/youtube'
+  if (itemPath === '/app/overview') return path === '/app/overview'
   return path === itemPath || path.startsWith(`${itemPath}/`)
 }
 
@@ -159,6 +163,10 @@ function moduleContext(path) {
   if (path.startsWith('/app/signals')) return 'Normalized Signals'
   if (path.startsWith('/app/backtests')) return 'Backtest Lab'
   if (path.startsWith('/app/strategies')) return 'Strategy Review'
+  if (path.startsWith('/app/trading/active')) return 'Active Trades'
+  if (path.startsWith('/app/trading/history')) return 'Trade History'
+  if (path.startsWith('/app/trading/performance')) return 'Performance Analytics'
+  if (path.startsWith('/app/research/congress-trades') || path.startsWith('/app/trades')) return 'Congressional Trades'
   if (path.startsWith('/app/guide')) return 'Guide'
   return 'Overview'
 }

@@ -17,6 +17,9 @@ export function createFundClient(fund) {
     fund,
     getAccount: () => sdk.getAccount(),
     getPositions: () => sdk.getPositions(),
+    getPosition: (ticker) => sdk.getPosition(ticker),
+    getOpenOrders: (ticker) => sdk.getOrders({ status: 'open', symbols: ticker ? [ticker] : undefined }),
+    cancelOrder: (orderId) => sdk.cancelOrder(orderId),
     cancelAllOrders: () => sdk.cancelAllOrders(),
 
     /** Submit a notional market order. Caller is responsible for risk checks. */
@@ -27,6 +30,15 @@ export function createFundClient(fund) {
         side, // 'buy' | 'sell'
         type: 'market',
         time_in_force: 'day',
+      }),
+    submitQuantityOrder: ({ ticker, side, qty, clientOrderId }) =>
+      sdk.createOrder({
+        symbol: ticker,
+        qty: Number(qty),
+        side,
+        type: 'market',
+        time_in_force: 'day',
+        client_order_id: clientOrderId,
       }),
 
     /** Connect this fund's trade-updates websocket and persist fill events. */

@@ -5,8 +5,10 @@ import cron from 'node-cron';
 import { config, enabledFunds, assertStrategyModeAllowed, fundPosture } from './config.js';
 import {
   listSignalsWithDecisions,
+  listTradeHistory,
   getSeenPost,
   getDailyPnl,
+  getPositionExitRule,
   getActiveKillSwitchEvent,
   getAuditChainByOrderId,
   getAuditChainBySignalId,
@@ -76,6 +78,8 @@ import {
   getInfluenceSignal,
   updateInfluenceSignal,
   getYoutubeDashboardStats,
+  getYoutubeResearchDataset,
+  listYoutubeResearchDatasets,
   getCreatorAlpha,
   getLatestDigest,
   getDigestByDate,
@@ -137,6 +141,8 @@ import { refreshNarrativeImpact, listNarrativeConstituents } from './backtest/na
 import { tagMentionThemes, TAXONOMY_VERSION, THEME_TAXONOMY } from './influence/narrativeThemes.js';
 import { runYoutubeWalkForward } from './backtest/youtubeWalkForward.js';
 import { getAttribution } from './attribution.js';
+import { getPerformanceAnalytics } from './performance.js';
+import { confirmPositionAction, previewPositionAction } from './positionActions.js';
 import { log } from './logger.js';
 import {
   resolveChannelId,
@@ -153,6 +159,8 @@ import {
 import { buildMentionCard } from './influence/mentionCard.js';
 import { classifyAndStoreYoutubeMention, normalizeClassification } from './influence/youtubeMentionClassifier.js';
 import { generateYoutubeSignals } from './influence/youtubeSignals.js';
+import { buildYoutubeCollectionPlan, queueYoutubeCollectionPlan } from './influence/backfillPlanner.js';
+import { buildYoutubeResearchDataset, datasetAsJsonl } from './influence/researchDataset.js';
 import { defaultCache } from './cache/computeCache.js';
 import { llmUsageTotals, llmUsageRecent, llmUsageCallCount } from './lib/llmUsage.js';
 
@@ -190,9 +198,17 @@ app.get('/api/status', async (req, res) => {
           positions: positions.map((p) => ({
             symbol: p.symbol,
             qty: Number(p.qty),
+            side: p.side || (Number(p.qty) < 0 ? 'short' : 'long'),
             marketValue: Number(p.market_value),
             unrealizedPl: Number(p.unrealized_pl),
+            unrealizedPlPct: Number(p.unrealized_plpc) * 100,
             avgEntry: Number(p.avg_entry_price),
+            currentPrice: Number(p.current_price),
+            costBasis: Number(p.cost_basis),
+            changeTodayPct: Number(p.change_today) * 100,
+            assetClass: p.asset_class || null,
+            exchange: p.exchange || null,
+            exitRule: getPositionExitRule(fund.name, p.symbol),
           })),
         };
       } catch (err) {
@@ -203,6 +219,7 @@ app.get('/api/status', async (req, res) => {
   res.json({
     tradingMode: config.tradingMode,
     globallyHalted: isGloballyHalted(),
+    generatedAt: new Date().toISOString(),
     funds: fundStatuses,
   });
 });
@@ -242,6 +259,45 @@ app.get('/api/audit/order/:orderId', (req, res) => {
   const audit = getAuditChainByOrderId(req.params.orderId);
   if (!audit) return res.status(404).json({ error: 'order not found' });
   res.json(audit);
+});
+
+app.get('/api/trading/history', (req, res) => {
+  const limit = Number(req.query.limit || 50);
+  const offset = Number(req.query.offset || 0);
+  if (!Number.isFinite(limit) || !Number.isFinite(offset) || limit < 1 || offset < 0) {
+    return res.status(400).json({ error: 'limit must be positive and offset must be zero or greater' });
+  }
+  res.json(listTradeHistory({
+    from: req.query.from,
+    to: req.query.to,
+    fund: req.query.fund,
+    ticker: req.query.ticker,
+    source: req.query.source,
+    creator: req.query.creator,
+    strategy: req.query.strategy,
+    side: req.query.side,
+    status: req.query.status,
+    limit,
+    offset,
+  }));
+});
+
+app.get('/api/trading/performance', async (req, res) => {
+  try {
+    res.json(await getPerformanceAnalytics({ from: req.query.from, to: req.query.to, fund: req.query.fund }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/trading/positions/preview', async (req, res) => {
+  try { res.json(await previewPositionAction(req.body || {})); }
+  catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.post('/api/trading/positions/confirm', async (req, res) => {
+  try { res.json(await confirmPositionAction(req.body || {})); }
+  catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 // ---------- kill switches (per fund; omit fund = all) ----------
@@ -921,6 +977,75 @@ function requireInfluence(req, res) {
 app.get('/api/influence/youtube/dashboard', (req, res) => {
   if (!requireInfluence(req, res)) return;
   res.json(getYoutubeDashboardStats());
+});
+
+app.get('/api/influence/youtube/collection-plan', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json(buildYoutubeCollectionPlan({
+    targets: {
+      videosPerChannel: req.query.videosPerChannel,
+      historyMonths: req.query.historyMonths,
+    },
+  }));
+});
+
+app.post('/api/influence/youtube/collection-plan/queue', async (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  try {
+    res.json(await queueYoutubeCollectionPlan(req.body || {}));
+  } catch (err) {
+    log.error('youtube', `Bulk collection queue failed: ${err.message}`);
+    res.status(err.httpStatus || 500).json({ error: err.message });
+  }
+});
+
+app.get('/api/influence/youtube/research-datasets', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  res.json(listYoutubeResearchDatasets());
+});
+
+app.post('/api/influence/youtube/research-datasets', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  try {
+    const minimumQuality = Number(req.body?.minimumQuality || 0);
+    if (!Number.isFinite(minimumQuality) || minimumQuality < 0 || minimumQuality > 100) {
+      return res.status(400).json({ error: 'minimumQuality must be between 0 and 100' });
+    }
+    const datasetVersion = req.body?.datasetVersion || undefined;
+    if (datasetVersion && !/^[a-zA-Z0-9._-]{3,80}$/.test(datasetVersion)) {
+      return res.status(400).json({ error: 'datasetVersion must use 3-80 letters, numbers, dots, underscores, or hyphens' });
+    }
+    const dataset = buildYoutubeResearchDataset({
+      datasetVersion,
+      cutoffTime: req.body?.cutoffTime || undefined,
+      minimumQuality,
+    });
+    const { rows, ...manifest } = dataset;
+    res.json(manifest);
+  } catch (err) {
+    const duplicate = err.code === 'SQLITE_CONSTRAINT_UNIQUE';
+    res.status(duplicate ? 409 : 500).json({ error: duplicate ? 'dataset version already exists and is immutable' : err.message });
+  }
+});
+
+app.get('/api/influence/youtube/research-datasets/:id', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const dataset = getYoutubeResearchDataset(id);
+  if (!dataset) return res.status(404).json({ error: 'research dataset not found' });
+  res.json(dataset);
+});
+
+app.get('/api/influence/youtube/research-datasets/:id/export.jsonl', (req, res) => {
+  if (!requireInfluence(req, res)) return;
+  const id = numericIdParam(req, res);
+  if (id == null) return;
+  const dataset = getYoutubeResearchDataset(id);
+  if (!dataset) return res.status(404).json({ error: 'research dataset not found' });
+  res.setHeader('Content-Type', 'application/x-ndjson');
+  res.setHeader('Content-Disposition', `attachment; filename="${dataset.dataset_version}.jsonl"`);
+  res.send(datasetAsJsonl(dataset));
 });
 
 app.get('/api/influence/youtube/channels', (req, res) => {

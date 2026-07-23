@@ -127,6 +127,10 @@ export const config = {
     transcriptFetchDelayMs: num('YOUTUBE_TRANSCRIPT_FETCH_DELAY_MS', 5000),
     pollMaxVideosPerRun: num('YOUTUBE_POLL_MAX_VIDEOS_PER_RUN', 10),
     backfillMaxPerRun: num('YOUTUBE_BACKFILL_MAX_PER_RUN', 5),
+    collectionTargetVideosPerChannel: num('YOUTUBE_COLLECTION_TARGET_VIDEOS_PER_CHANNEL', 200),
+    collectionTargetHistoryMonths: num('YOUTUBE_COLLECTION_TARGET_HISTORY_MONTHS', 24),
+    collectionBulkMaxChannels: num('YOUTUBE_COLLECTION_BULK_MAX_CHANNELS', 5),
+    collectionBulkMaxVideos: num('YOUTUBE_COLLECTION_BULK_MAX_VIDEOS', 500),
     rosterSeedEnabled: process.env.YOUTUBE_ROSTER_SEED_ENABLED !== 'false',
   },
 

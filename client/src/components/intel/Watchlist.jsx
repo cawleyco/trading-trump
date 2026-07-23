@@ -86,7 +86,7 @@ export function WatchlistPanel() {
           <div style={{ display: 'grid', gap: 6 }}>
             {activity.trades.map((t) => (
               <div key={t.trade_key} style={{ ...activityRow, justifyContent: 'space-between' }}>
-                <a href={`/app/trades?ticker=${encodeURIComponent(t.ticker)}`} style={{ ...activityRow, flex: 1, textDecoration: 'none', color: 'inherit', padding: 0, border: 'none' }}>
+                <a href={`/app/research/congress-trades?ticker=${encodeURIComponent(t.ticker)}`} style={{ ...activityRow, flex: 1, textDecoration: 'none', color: 'inherit', padding: 0, border: 'none' }}>
                   <span style={{ color: 'var(--color-text-muted)', minWidth: 88 }}>{t.disclosure_date || '—'}</span>
                   <span>
                     {t.politician} · <strong style={{ color: t.type === 'buy' ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{t.type}</strong> {t.ticker}

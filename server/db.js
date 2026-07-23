@@ -58,6 +58,29 @@ CREATE TABLE IF NOT EXISTS daily_pnl (
   PRIMARY KEY (trade_date, fund)
 );
 
+CREATE TABLE IF NOT EXISTS position_exit_rules (
+  fund TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  stop_loss_pct REAL,
+  take_profit_pct REAL,
+  max_hold_days REAL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (fund, ticker)
+);
+
+CREATE TABLE IF NOT EXISTS position_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  idempotency_key TEXT UNIQUE NOT NULL,
+  fund TEXT NOT NULL,
+  ticker TEXT NOT NULL,
+  action TEXT NOT NULL,
+  request_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  response_json TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS kill_switch_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   fund TEXT NOT NULL DEFAULT 'default',
@@ -533,6 +556,7 @@ CREATE TABLE IF NOT EXISTS youtube_backtest_signal_results (
   max_runup_30d REAL,
   volume_change_24h REAL,
   benchmark_return_30d REAL,
+  return_components TEXT,
   result_metadata TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -559,6 +583,41 @@ CREATE TABLE IF NOT EXISTS youtube_backtest_price_observations (
   UNIQUE(backtest_run_id, canonical_signal_id, symbol, interval, observed_at, provider)
 );
 CREATE INDEX IF NOT EXISTS idx_ybtpo_run ON youtube_backtest_price_observations(backtest_run_id);
+
+CREATE TABLE IF NOT EXISTS youtube_research_datasets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dataset_version TEXT UNIQUE NOT NULL,
+  schema_version TEXT NOT NULL,
+  consolidation_version TEXT NOT NULL,
+  cutoff_time TEXT NOT NULL,
+  parameters TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'building',
+  row_count INTEGER NOT NULL DEFAULT 0,
+  included_count INTEGER NOT NULL DEFAULT 0,
+  excluded_count INTEGER NOT NULL DEFAULT 0,
+  content_hash TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS youtube_research_dataset_rows (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dataset_id INTEGER NOT NULL REFERENCES youtube_research_datasets(id),
+  canonical_signal_id INTEGER NOT NULL REFERENCES youtube_canonical_signals(id),
+  row_hash TEXT NOT NULL,
+  included INTEGER NOT NULL,
+  exclusion_reasons TEXT NOT NULL,
+  signal_json TEXT NOT NULL,
+  classification_json TEXT NOT NULL,
+  creator_json TEXT NOT NULL,
+  video_json TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  outcomes_json TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(dataset_id, canonical_signal_id)
+);
+CREATE INDEX IF NOT EXISTS idx_yrdr_dataset ON youtube_research_dataset_rows(dataset_id, included);
 
 CREATE TABLE IF NOT EXISTS creator_alpha_metrics (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -738,6 +797,15 @@ if (!hasColumn('creator_alpha_metrics', 'alpha_basis')) {
 // walk-forward runs store their fold summaries here (per-mention rows don't fit)
 if (!hasColumn('youtube_backtest_runs', 'results')) {
   db.exec(`ALTER TABLE youtube_backtest_runs ADD COLUMN results TEXT`);
+}
+if (!hasColumn('youtube_backtest_signal_results', 'return_components')) {
+  try {
+    db.exec(`ALTER TABLE youtube_backtest_signal_results ADD COLUMN return_components TEXT`);
+  } catch (err) {
+    // Node's test runner imports this module in parallel processes. Another
+    // process may complete the same idempotent migration after hasColumn().
+    if (!String(err.message).includes('duplicate column name')) throw err;
+  }
 }
 
 // morning digests: one per date, replayable from the in-app feed
@@ -1145,6 +1213,58 @@ export function getDailyPnl(tradeDate, fund) {
   return db
     .prepare(`SELECT * FROM daily_pnl WHERE trade_date = ? AND fund = ?`)
     .get(tradeDate, fund || 'default');
+}
+
+export function listDailyPnl({ from, to, fund } = {}) {
+  const where = [];
+  const params = [];
+  if (from) { where.push(`trade_date >= ?`); params.push(from); }
+  if (to) { where.push(`trade_date <= ?`); params.push(to); }
+  if (fund) { where.push(`fund = ?`); params.push(fund); }
+  return db.prepare(`SELECT * FROM daily_pnl ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY trade_date ASC, fund ASC`).all(...params);
+}
+
+export function getPositionExitRule(fund, ticker) {
+  const row = db.prepare(`SELECT * FROM position_exit_rules WHERE fund = ? AND ticker = ?`).get(fund, String(ticker).toUpperCase());
+  if (!row) return null;
+  // An all-null row means "cleared override" — treat as absent so fund autoExit applies.
+  if (row.stop_loss_pct == null && row.take_profit_pct == null && row.max_hold_days == null) return null;
+  return { stopLossPct: row.stop_loss_pct, takeProfitPct: row.take_profit_pct, maxHoldDays: row.max_hold_days, updatedAt: row.updated_at };
+}
+
+export function upsertPositionExitRule({ fund, ticker, stopLossPct, takeProfitPct, maxHoldDays }) {
+  const symbol = String(ticker).toUpperCase();
+  const stop = stopLossPct ?? null;
+  const take = takeProfitPct ?? null;
+  const hold = maxHoldDays ?? null;
+  if (stop == null && take == null && hold == null) {
+    db.prepare(`DELETE FROM position_exit_rules WHERE fund = ? AND ticker = ?`).run(fund, symbol);
+    return null;
+  }
+  db.prepare(
+    `INSERT INTO position_exit_rules (fund, ticker, stop_loss_pct, take_profit_pct, max_hold_days, updated_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(fund, ticker) DO UPDATE SET stop_loss_pct = excluded.stop_loss_pct,
+       take_profit_pct = excluded.take_profit_pct, max_hold_days = excluded.max_hold_days, updated_at = datetime('now')`
+  ).run(fund, symbol, stop, take, hold);
+  return getPositionExitRule(fund, ticker);
+}
+
+export function getPositionAction(idempotencyKey) {
+  const row = db.prepare(`SELECT * FROM position_actions WHERE idempotency_key = ?`).get(idempotencyKey);
+  return row ? { ...row, request: jsonOrNull(row.request_json), response: jsonOrNull(row.response_json) } : null;
+}
+
+export function beginPositionAction({ idempotencyKey, fund, ticker, action, request }) {
+  db.prepare(`INSERT INTO position_actions (idempotency_key, fund, ticker, action, request_json) VALUES (?, ?, ?, ?, ?)`)
+    .run(idempotencyKey, fund, ticker, action, JSON.stringify(request));
+  return getPositionAction(idempotencyKey);
+}
+
+export function finishPositionAction(idempotencyKey, status, response) {
+  db.prepare(`UPDATE position_actions SET status = ?, response_json = ?, completed_at = datetime('now') WHERE idempotency_key = ?`)
+    .run(status, JSON.stringify(response), idempotencyKey);
+  return getPositionAction(idempotencyKey);
 }
 
 export function recordKillSwitchTrip(reason, fund) {
@@ -2064,6 +2184,137 @@ export function listSignalsWithDecisions(limit = 100) {
     });
 }
 
+export function listTradeHistory({ from, to, fund, ticker, source, creator, strategy, side, status, limit = 50, offset = 0 } = {}) {
+  const where = [];
+  const params = [];
+  // Prefer fill date, then order submit, then decision — matches the UI "execution date" filter.
+  const executionDate = `date(COALESCE(f.filled_at, o.submitted_at, d.created_at))`;
+  if (from) { where.push(`${executionDate} >= date(?)`); params.push(from); }
+  if (to) { where.push(`${executionDate} <= date(?)`); params.push(to); }
+  if (fund) { where.push(`d.fund = ?`); params.push(fund); }
+  if (ticker) { where.push(`s.ticker = ?`); params.push(String(ticker).toUpperCase()); }
+  if (source) { where.push(`s.source = ?`); params.push(source); }
+  if (creator) { where.push(`(s.rationale LIKE ? OR s.raw_reference LIKE ?)`); params.push(`%${creator}%`, `%${creator}%`); }
+  if (strategy) { where.push(`s.raw_reference LIKE ?`); params.push(`%${strategy}%`); }
+  if (side) { where.push(`COALESCE(o.side, s.direction) = ?`); params.push(side); }
+  if (status) {
+    where.push(`COALESCE(o.status, CASE WHEN d.approved = 0 THEN 'rejected' ELSE 'no_order' END) = ?`);
+    params.push(status);
+  }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const boundedLimit = Math.min(5000, Math.max(1, Number(limit) || 50));
+  const boundedOffset = Math.max(0, Number(offset) || 0);
+  const fromClause = `FROM decisions d
+     JOIN signals s ON s.id = d.signal_id
+     LEFT JOIN orders o ON o.decision_id = d.id
+     LEFT JOIN fills f ON f.id = (SELECT MAX(f2.id) FROM fills f2 WHERE f2.order_id = o.id)`;
+  const count = db.prepare(
+    `SELECT COUNT(*) AS count
+     ${fromClause}
+     ${clause}`
+  ).get(...params).count;
+  const rows = db.prepare(
+    `SELECT
+       d.id AS decision_id, d.signal_id, d.fund, d.approved, d.reason AS decision_reason,
+       d.notional_usd AS decision_notional_usd, d.checks, d.created_at AS decision_at,
+       s.source, s.ticker, s.direction, s.confidence, s.rationale, s.raw_reference, s.created_at AS signal_at,
+       o.id AS order_id, o.alpaca_order_id, o.side AS order_side, o.notional_usd AS order_notional_usd,
+       o.status AS order_status, o.submitted_at,
+       f.id AS fill_id, f.filled_qty, f.filled_avg_price, f.filled_at
+     ${fromClause}
+     ${clause}
+     ORDER BY COALESCE(f.filled_at, o.submitted_at, d.created_at) DESC, d.id DESC
+     LIMIT ? OFFSET ?`
+  ).all(...params, boundedLimit, boundedOffset);
+  const outcomes = closedOrderOutcomes();
+  return {
+    rows: rows.map((row) => ({
+      id: row.order_id ? `order-${row.order_id}` : `decision-${row.decision_id}`,
+      orderId: row.order_id,
+      decisionId: row.decision_id,
+      signalId: row.signal_id,
+      fund: row.fund,
+      approved: !!row.approved,
+      decisionReason: row.decision_reason,
+      checks: jsonOrNull(row.checks) ?? [],
+      source: row.source,
+      ticker: row.ticker,
+      side: row.order_side || row.direction,
+      confidence: row.confidence,
+      rationale: row.rationale,
+      rawReference: jsonOrNull(row.raw_reference),
+      status: row.order_status || (row.approved ? 'no_order' : 'rejected'),
+      notionalUsd: row.order_notional_usd ?? row.decision_notional_usd,
+      alpacaOrderId: row.alpaca_order_id,
+      submittedAt: row.submitted_at || row.decision_at,
+      signalAt: row.signal_at,
+      filledQty: row.filled_qty,
+      filledAvgPrice: row.filled_avg_price,
+      filledAt: row.filled_at,
+      ...(row.order_id ? outcomes.get(row.order_id) : null),
+    })),
+    total: Number(count),
+    limit: boundedLimit,
+    offset: boundedOffset,
+  };
+}
+
+function closedOrderOutcomes() {
+  const fills = db.prepare(
+    `SELECT o.id AS order_id, o.fund, o.ticker, o.side, f.filled_qty AS qty,
+            f.filled_avg_price AS price, f.filled_at
+     FROM orders o
+     JOIN fills f ON f.id = (SELECT MAX(f2.id) FROM fills f2 WHERE f2.order_id = o.id)
+     WHERE f.filled_qty > 0 AND f.filled_avg_price > 0
+     ORDER BY f.filled_at ASC, f.id ASC`
+  ).all();
+  return matchClosedOrders(fills);
+}
+
+export function matchClosedOrders(fills) {
+  const lots = new Map();
+  const outcomes = new Map();
+  for (const fill of fills) {
+    const key = `${fill.fund}|${fill.ticker}`;
+    const qty = Number(fill.qty);
+    const price = Number(fill.price);
+    if (!(qty > 0) || !(price > 0)) continue;
+    if (fill.side === 'buy') {
+      if (!lots.has(key)) lots.set(key, []);
+      lots.get(key).push({ qty, price, enteredAt: fill.filled_at });
+      outcomes.set(fill.order_id, { entryPrice: price, exitPrice: null, realizedPnl: null, returnPct: null, matchedQty: null, holdingDays: null });
+      continue;
+    }
+    let remaining = qty;
+    let matchedQty = 0;
+    let matchedCost = 0;
+    let weightedHoldingMs = 0;
+    const queue = lots.get(key) || [];
+    while (remaining > 1e-9 && queue.length) {
+      const lot = queue[0];
+      const matched = Math.min(lot.qty, remaining);
+      matchedQty += matched;
+      matchedCost += matched * lot.price;
+      const heldMs = new Date(fill.filled_at).getTime() - new Date(lot.enteredAt).getTime();
+      if (Number.isFinite(heldMs)) weightedHoldingMs += Math.max(0, heldMs) * matched;
+      lot.qty -= matched;
+      remaining -= matched;
+      if (lot.qty <= 1e-9) queue.shift();
+    }
+    const proceeds = matchedQty * price;
+    const pnl = proceeds - matchedCost;
+    outcomes.set(fill.order_id, {
+      entryPrice: matchedQty ? matchedCost / matchedQty : null,
+      exitPrice: price,
+      realizedPnl: matchedQty ? Number(pnl.toFixed(2)) : null,
+      returnPct: matchedCost ? Number(((pnl / matchedCost) * 100).toFixed(4)) : null,
+      matchedQty: matchedQty || null,
+      holdingDays: matchedQty ? Number((weightedHoldingMs / matchedQty / 86400000).toFixed(2)) : null,
+    });
+  }
+  return outcomes;
+}
+
 function jsonOrNull(value) {
   if (value == null) return null;
   try { return JSON.parse(value); } catch { return null; }
@@ -2430,6 +2681,32 @@ export function countYoutubeVideosByStatus(channelId) {
   ).all(channelId);
 }
 
+export function listYoutubeCollectionCoverage() {
+  return db.prepare(
+    `SELECT yc.id, yc.title, yc.category, yc.influence_tier, yc.tracking_enabled,
+            yc.uploads_playlist_id, yc.subscriber_count,
+            COUNT(DISTINCT yv.id) AS known_videos,
+            COUNT(DISTINCT CASE WHEN yv.transcript_status = 'available' THEN yv.id END) AS transcript_videos,
+            COUNT(DISTINCT CASE WHEN yv.analysis_status = 'complete' THEN yv.id END) AS analyzed_videos,
+            COUNT(DISTINCT CASE WHEN yv.ingestion_status = 'backfill_pending' THEN yv.id END) AS queued_videos,
+            COUNT(DISTINCT CASE WHEN yv.ingestion_status = 'ingest_failed' THEN yv.id END) AS failed_videos,
+            COUNT(DISTINCT CASE WHEN am.id IS NOT NULL THEN yv.id END) AS mention_videos,
+            COUNT(DISTINCT CASE WHEN mc.direction IN ('bullish','bearish') THEN yv.id || ':' || am.asset_id END) AS directional_video_assets,
+            COUNT(DISTINCT CASE WHEN mc.direction IN ('bullish','bearish') AND am.event_time <= datetime('now','-90 days')
+                                THEN yv.id || ':' || am.asset_id END) AS mature_directional_video_assets,
+            MIN(yv.published_at) AS oldest_known_video,
+            MAX(yv.published_at) AS newest_known_video
+       FROM youtube_channels yc
+       LEFT JOIN youtube_videos yv ON yv.channel_id = yc.id
+       LEFT JOIN asset_mentions am ON am.video_id = yv.id
+       LEFT JOIN mention_classifications mc ON mc.id = (
+         SELECT id FROM mention_classifications WHERE mention_id = am.id ORDER BY id DESC LIMIT 1
+       )
+      GROUP BY yc.id
+      ORDER BY yc.title ASC`
+  ).all();
+}
+
 export function createContentDocument({ source_type, source_id, provider_name, language, raw_text, source_format, authorization_status }) {
   const res = db.prepare(
     `INSERT INTO content_documents
@@ -2700,8 +2977,8 @@ export function insertYoutubeBacktestSignalResult(input) {
        exit_1h_price, exit_6h_price, exit_24h_price, exit_7d_price, exit_30d_price,
        exit_90d_price, return_1h, return_6h, return_24h, return_7d, return_30d,
        return_90d, max_drawdown_30d, max_runup_30d, volume_change_24h,
-       benchmark_return_30d, result_metadata
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       benchmark_return_30d, return_components, result_metadata
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     input.backtest_run_id,
     input.signal_event_id ?? null,
@@ -2725,6 +3002,13 @@ export function insertYoutubeBacktestSignalResult(input) {
     input.max_runup_30d ?? null,
     input.volume_change_24h ?? null,
     input.benchmark_return_30d ?? null,
+    JSON.stringify(Object.fromEntries(
+      ['1h', '6h', '24h', '7d', '30d', '90d'].map((window) => [window, {
+        rawReturn: input[`raw_return_${window}`] ?? null,
+        benchmarkReturn: input[`benchmark_return_${window}`] ?? null,
+        abnormalReturn: input[`abnormal_return_${window}`] ?? null,
+      }])
+    )),
     JSON.stringify(input.result_metadata ?? {})
   );
 }
@@ -2750,6 +3034,134 @@ export function insertYoutubeBacktestPriceObservations(rows) {
     return changes;
   });
   return insert(rows);
+}
+
+export function createYoutubeResearchDataset(input) {
+  const result = db.prepare(
+    `INSERT INTO youtube_research_datasets (
+       dataset_version, schema_version, consolidation_version, cutoff_time, parameters
+     ) VALUES (?, ?, ?, ?, ?)`
+  ).run(
+    input.dataset_version, input.schema_version, input.consolidation_version,
+    input.cutoff_time, JSON.stringify(input.parameters || {})
+  );
+  return result.lastInsertRowid;
+}
+
+export function insertYoutubeResearchDatasetRows(datasetId, rows) {
+  const stmt = db.prepare(
+    `INSERT INTO youtube_research_dataset_rows (
+       dataset_id, canonical_signal_id, row_hash, included, exclusion_reasons,
+       signal_json, classification_json, creator_json, video_json, evidence_json,
+       outcomes_json, provenance_json
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  db.transaction((items) => {
+    for (const row of items) {
+      stmt.run(
+        datasetId, row.canonicalSignalId, row.rowHash, row.included ? 1 : 0,
+        JSON.stringify(row.exclusionReasons), JSON.stringify(row.signal),
+        JSON.stringify(row.classification), JSON.stringify(row.creator),
+        JSON.stringify(row.video), JSON.stringify(row.evidence),
+        JSON.stringify(row.outcomes), JSON.stringify(row.provenance)
+      );
+    }
+  })(rows);
+}
+
+export function finishYoutubeResearchDataset(id, input) {
+  db.prepare(
+    `UPDATE youtube_research_datasets SET status=?, row_count=?, included_count=?,
+       excluded_count=?, content_hash=?, completed_at=? WHERE id=?`
+  ).run(
+    input.status, input.row_count, input.included_count, input.excluded_count,
+    input.content_hash ?? null, input.completed_at, id
+  );
+}
+
+function parseResearchDataset(row) {
+  return row ? { ...row, parameters: jsonOrNull(row.parameters) || {} } : null;
+}
+
+export function listYoutubeResearchDatasets() {
+  return db.prepare(`SELECT * FROM youtube_research_datasets ORDER BY id DESC LIMIT 100`)
+    .all().map(parseResearchDataset);
+}
+
+export function getYoutubeResearchDataset(id) {
+  const dataset = parseResearchDataset(db.prepare(`SELECT * FROM youtube_research_datasets WHERE id=?`).get(id));
+  if (!dataset) return null;
+  const rows = db.prepare(
+    `SELECT * FROM youtube_research_dataset_rows WHERE dataset_id=? ORDER BY canonical_signal_id ASC`
+  ).all(id).map((row) => ({
+    id: row.id,
+    canonicalSignalId: row.canonical_signal_id,
+    rowHash: row.row_hash,
+    included: !!row.included,
+    exclusionReasons: jsonOrNull(row.exclusion_reasons) || [],
+    signal: jsonOrNull(row.signal_json) || {},
+    classification: jsonOrNull(row.classification_json) || {},
+    creator: jsonOrNull(row.creator_json) || {},
+    video: jsonOrNull(row.video_json) || {},
+    evidence: jsonOrNull(row.evidence_json) || {},
+    outcomes: jsonOrNull(row.outcomes_json) || {},
+    provenance: jsonOrNull(row.provenance_json) || {},
+  }));
+  return { ...dataset, rows };
+}
+
+export function listYoutubeResearchSourceRows(cutoffTime) {
+  return db.prepare(
+    `SELECT cs.*, a.symbol, a.canonical_name, a.asset_type, a.exchange, a.market,
+            yc.title AS channel_title, yc.category, yc.influence_tier, yc.subscriber_count,
+            yv.youtube_video_id, yv.title AS video_title, yv.published_at,
+            yv.duration_seconds, yv.has_paid_product_placement,
+            am.mention_text, am.surrounding_text, am.mention_start_seconds,
+            am.entity_confidence, am.detection_method,
+            mc.direction AS classified_direction, mc.conviction_score, mc.relevance_score,
+            mc.directness_score, mc.sponsorship_risk_score, mc.pump_risk_score,
+            mc.time_horizon, mc.mention_type, mc.summary, mc.evidence,
+            mc.should_create_signal, mc.mention_quality_score, mc.model_name,
+            mc.model_version, mc.prompt_version, mc.raw_model_output, mc.is_manual_override,
+            am.segment_id, cd.provider_name AS transcript_provider,
+            cd.authorization_status AS transcript_authorization, cd.fetched_at AS transcript_fetched_at,
+            vs.captured_at AS video_snapshot_at, vs.view_count, vs.like_count, vs.comment_count,
+            chs.captured_at AS channel_snapshot_at, chs.subscriber_count AS snapshot_subscribers,
+            chs.video_count AS snapshot_video_count, chs.view_count AS snapshot_channel_views,
+            br.id AS backtest_result_id, br.backtest_run_id, br.entry_price,
+            br.return_1h, br.return_6h, br.return_24h, br.return_7d, br.return_30d, br.return_90d,
+            br.max_drawdown_30d, br.max_runup_30d, br.benchmark_return_30d,
+            br.return_components, br.result_metadata, br.created_at AS backtested_at,
+            (SELECT GROUP_CONCAT(DISTINCT mt.theme) FROM mention_themes mt
+              WHERE mt.mention_id=cs.representative_mention_id) AS themes
+       FROM youtube_canonical_signals cs
+       JOIN assets a ON a.id=cs.asset_id
+       JOIN youtube_channels yc ON yc.id=cs.channel_id
+       JOIN youtube_videos yv ON yv.id=cs.video_id
+       LEFT JOIN asset_mentions am ON am.id=cs.representative_mention_id
+       LEFT JOIN content_segments seg ON seg.id=am.segment_id
+       LEFT JOIN content_documents cd ON cd.id=seg.document_id
+       LEFT JOIN mention_classifications mc ON mc.id=(
+         SELECT id FROM mention_classifications WHERE mention_id=cs.representative_mention_id
+         ORDER BY id DESC LIMIT 1
+       )
+       LEFT JOIN youtube_video_snapshots vs ON vs.id=(
+         SELECT id FROM youtube_video_snapshots WHERE video_id=cs.video_id
+         ORDER BY ABS(julianday(captured_at)-julianday(cs.event_time)) ASC, id ASC LIMIT 1
+       )
+       LEFT JOIN youtube_channel_snapshots chs ON chs.id=(
+         SELECT id FROM youtube_channel_snapshots WHERE channel_id=cs.channel_id
+         ORDER BY ABS(julianday(captured_at)-julianday(cs.event_time)) ASC, id ASC LIMIT 1
+       )
+       LEFT JOIN youtube_backtest_signal_results br ON br.id=(
+         SELECT r.id FROM youtube_backtest_signal_results r
+          WHERE CAST(json_extract(r.result_metadata,'$.canonicalSignalId') AS INTEGER)=cs.id
+             OR (json_extract(r.result_metadata,'$.canonicalSignalId') IS NULL AND r.mention_id=cs.representative_mention_id)
+          ORDER BY r.id DESC LIMIT 1
+       )
+      WHERE cs.event_time <= ?
+      ORDER BY cs.event_time ASC, cs.id ASC`
+  ).all(cutoffTime);
 }
 
 function parseBacktestRun(row) {

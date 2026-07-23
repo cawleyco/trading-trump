@@ -7,12 +7,30 @@ import { DefinitionLabel, SectionPanel, SignalCard } from '../../components/inte
 export default function YoutubeDashboard() {
   const [stats, setStats] = useState(null)
   const [signals, setSignals] = useState([])
+  const [collection, setCollection] = useState(null)
+  const [queuing, setQueuing] = useState(false)
+  const [queueMessage, setQueueMessage] = useState(null)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     api.youtubeDashboard().then(setStats).catch((e) => setError(e.message))
     api.influenceSignals('youtube').then(setSignals).catch(() => {})
+    api.youtubeCollectionPlan().then(setCollection).catch(() => {})
   }, [])
+
+  const queuePriorityBackfill = async () => {
+    setQueuing(true)
+    setQueueMessage(null)
+    try {
+      const result = await api.queueYoutubeCollectionPlan({ maxChannels: 5, maxVideos: 500, maxVideosPerChannel: 100 })
+      setCollection(result.plan)
+      setQueueMessage(`Queued ${result.queued} historical videos across ${result.results.filter((r) => !r.error).length} channels.`)
+    } catch (err) {
+      setQueueMessage(err.message)
+    } finally {
+      setQueuing(false)
+    }
+  }
 
   if (error) return <section style={card}><h3>YouTube Dashboard</h3><p style={{ color: 'var(--color-bearish)' }}>{error}</p></section>
   if (!stats) return <p className="intel-muted">Loading Influence Signals...</p>
@@ -79,10 +97,48 @@ export default function YoutubeDashboard() {
       </SectionPanel>
 
       <SectionPanel title="Data Quality" description="Transcript coverage, creator history, and sample size determine confidence.">
-        <p className="intel-muted">Sample size is too small for confidence when creator history or transcript evidence is missing.</p>
+        {!collection ? <p className="intel-muted">Loading collection coverage…</p> : (
+          <>
+            <p className="intel-muted">
+              {collection.totals.transcriptVideos}/{collection.totals.knownVideos} known videos have transcripts ·{' '}
+              {collection.totals.matureDirectionalSignals}/{collection.totals.directionalSignals} directional signals have 90-day maturity.
+            </p>
+            <p className="intel-muted">
+              Target: {collection.targets.videosPerChannel} videos and {collection.targets.historyMonths} months per creator · {collection.eligibleChannels} channels still eligible for collection.
+            </p>
+            <button onClick={queuePriorityBackfill} disabled={queuing || collection.eligibleChannels === 0}>
+              {queuing ? 'Queuing…' : 'Queue priority backfill'}
+            </button>
+            {queueMessage && <p className="intel-muted">{queueMessage}</p>}
+          </>
+        )}
       </SectionPanel>
         </div>
       </div>
+
+      {collection && (
+        <SectionPanel title="Historical Collection Priorities" description="Direct-call channels with the largest video and history gaps are queued first; processing remains oldest-first and bounded per poll cycle.">
+          <div className="intel-table-wrap">
+            <table className="intel-table">
+              <thead><tr><th>Priority</th><th>Channel</th><th>Known</th><th>Transcripts</th><th>Queued</th><th>Oldest</th><th>Gap</th><th>Status</th></tr></thead>
+              <tbody>
+                {collection.channels.slice(0, 12).map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.priorityScore}</td>
+                    <td>{row.title}</td>
+                    <td>{row.known_videos}</td>
+                    <td>{Math.round(row.transcriptCoverage * 100)}%</td>
+                    <td>{row.queued_videos}</td>
+                    <td>{row.oldest_known_video?.slice(0, 10) || '—'}</td>
+                    <td>{row.videoGap}</td>
+                    <td>{row.eligible ? 'ready' : row.blockedReasons.join(', ') || 'target met'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </SectionPanel>
+      )}
     </div>
   )
 }

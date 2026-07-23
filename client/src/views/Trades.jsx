@@ -47,7 +47,7 @@ export default function Trades() {
     <section style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div>
-          <h3 style={{ marginTop: 0 }}>Congress Trade Feed <HelpLink slug="trades" /></h3>
+          <h3 style={{ marginTop: 0 }}>Congressional Trades <HelpLink slug="trades" /></h3>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9em', margin: 0 }}>
             Archived disclosures joined to explainable copy-worthiness scores and do-not-copy warnings.
           </p>

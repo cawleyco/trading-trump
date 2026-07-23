@@ -18,6 +18,16 @@ export const api = {
   auditSignal: (signalId) => req(`/api/audit/signal/${encodeURIComponent(signalId)}`),
   auditOrder: (orderId) => req(`/api/audit/order/${encodeURIComponent(orderId)}`),
   attribution: () => req('/api/attribution'),
+  tradeHistory: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== '' && value != null))
+    return req(`/api/trading/history?${qs.toString()}`)
+  },
+  performance: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== '' && value != null))
+    return req(`/api/trading/performance?${qs.toString()}`)
+  },
+  previewPositionAction: (body) => req('/api/trading/positions/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  confirmPositionAction: (body) => req('/api/trading/positions/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   halt: (reason, fund) =>
     req('/api/halt', {
       method: 'POST',
@@ -272,6 +282,20 @@ export const api = {
       body: JSON.stringify(body),
     }),
   youtubeBackfillStatus: (id) => req(`/api/influence/youtube/channels/${id}/backfill-status`),
+  youtubeCollectionPlan: () => req('/api/influence/youtube/collection-plan'),
+  queueYoutubeCollectionPlan: (body = {}) =>
+    req('/api/influence/youtube/collection-plan/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  youtubeResearchDatasets: () => req('/api/influence/youtube/research-datasets'),
+  buildYoutubeResearchDataset: (body = {}) =>
+    req('/api/influence/youtube/research-datasets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   digestLatest: () => req('/api/digest/latest'),
   runDigest: () => req('/api/digest/run', { method: 'POST' }),
   assetTimeline: (ticker, params = {}) => {

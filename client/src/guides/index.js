@@ -78,14 +78,14 @@ export const GUIDES = [
   {
     slug: 'calendar',
     title: 'Political Calendar',
-    group: 'Trading ops',
+    group: 'Intelligence',
     description: 'Hearings, bill actions, and elections linked to recently traded tickers.',
     markdown: calendarMd,
   },
   {
     slug: 'trades',
-    title: 'Congress Trade Feed',
-    group: 'Trading ops',
+    title: 'Congressional Trades',
+    group: 'Intelligence',
     description: 'Scored disclosures, thesis cards, factor breakdowns, and connections.',
     markdown: tradesMd,
   },

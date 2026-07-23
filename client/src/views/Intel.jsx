@@ -87,7 +87,7 @@ function TabBody({ tab, data }) {
 }
 
 function tickerLink(ticker) {
-  return <a href={`/app/trades?ticker=${encodeURIComponent(ticker)}`}>{ticker}</a>
+  return <a href={`/app/research/congress-trades?ticker=${encodeURIComponent(ticker)}`}>{ticker}</a>
 }
 
 function num(v, digits = 0) {

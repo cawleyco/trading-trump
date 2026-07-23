@@ -4,7 +4,7 @@ import { navigate } from './ui.js'
 
 export default function InfluenceLayout({ path, children }) {
   const tabs = [
-    ['/app/influence/youtube', 'Overview'],
+    ['/app/influence/youtube', 'Dashboard'],
     ['/app/influence/youtube/channels', 'Channels'],
     ['/app/influence/youtube/videos', 'Videos'],
     ['/app/influence/youtube/mentions', 'Mentions'],
@@ -26,7 +26,9 @@ export default function InfluenceLayout({ path, children }) {
           <button
             key={href}
             onClick={() => navigate(href)}
-            style={path === href ? { borderColor: 'var(--color-accent-primary)', background: 'var(--color-accent-soft)' } : {}}
+            style={(path === href || (href === '/app/influence/youtube' && (path === '/' || path === '/app')))
+              ? { borderColor: 'var(--color-accent-primary)', background: 'var(--color-accent-soft)' }
+              : {}}
           >
             {label}
           </button>

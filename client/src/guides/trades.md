@@ -1,4 +1,4 @@
-The Congress Trade Feed is the archive of every disclosed trade the bot has seen, joined to explainable copy-worthiness scores and do-not-copy warnings.
+Congressional Trades is the archive of every disclosed trade the bot has seen, joined to explainable copy-worthiness scores and do-not-copy warnings.
 
 ## How to filter the feed
 
